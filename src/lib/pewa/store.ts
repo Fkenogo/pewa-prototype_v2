@@ -93,6 +93,7 @@ export const usePewa = create<PewaState & Actions>()(
                 services: i.services,
                 contact: { phone: i.phone, whatsapp: i.whatsapp, email: i.email },
                 tagline: "",
+                currency: i.currency,
               },
               ...s.venues.filter((v) => v.orgId !== s.organisation?.id),
             ],
@@ -184,7 +185,7 @@ export const usePewa = create<PewaState & Actions>()(
         },
       };
     },
-    { name: "pewa-prototype-v1" },
+    { name: "pewa-prototype-v1", skipHydration: true },
   ),
 );
 

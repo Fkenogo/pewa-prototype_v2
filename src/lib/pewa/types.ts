@@ -37,6 +37,7 @@ export interface Venue {
   services: string[];
   contact: { phone: string; whatsapp: string; email: string };
   tagline: string;
+  currency: string;
 }
 
 export interface ModifierGroup {

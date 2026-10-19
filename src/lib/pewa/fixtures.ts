@@ -30,6 +30,7 @@ const greenGardenVenue: Venue = {
   services: ["Dine-in", "Takeaway"],
   contact: { phone: "+254700123456", whatsapp: "+254700123456", email: "hello@greengarden.example" },
   tagline: "Garden-fresh breakfasts & slow coffee",
+  currency: "KES",
 };
 
 const greenGardenMenu = (soldOut: boolean): Menu => ({
