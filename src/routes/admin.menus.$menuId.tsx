@@ -39,7 +39,7 @@ const textToMods = (t: string): ModifierGroup[] =>
           .filter(Boolean)
           .map((o, oi) => {
             const m = o.match(/^(.*?)\s*\+\s*(\d+(?:\.\d+)?)$/);
-            return { id: `o${gi}_${oi}`, name: m ? m[1] : o, priceDelta: m ? Number(m[2]) : 0 };
+            return { id: `o${gi}_${oi}`, name: m ? (m[1] ?? o) : o, priceDelta: m ? Number(m[2]) : 0 };
           }),
       };
     });
@@ -60,7 +60,10 @@ function MenuEditor() {
   const save = () => {
     if (!editing) return;
     const { modifiersText, ...d } = editing.draft;
-    if (!d.name.trim() || !(d.price >= 0)) return toast.error("Add a name and price");
+    if (!d.name.trim() || !(d.price >= 0)) {
+      toast.error("Add a name and price");
+      return;
+    }
     s.upsertOffering(menu.id, editing.sectionId, { ...d, modifiers: textToMods(modifiersText) });
     setEditing(null);
   };

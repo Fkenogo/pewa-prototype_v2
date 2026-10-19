@@ -29,7 +29,7 @@ function Onboarding() {
   const [step, setStep] = useState(0);
   const [f, setF] = useState({
     orgName: "",
-    businessType: TYPES[0],
+    businessType: TYPES[0] as string,
     venueName: "",
     address: "",
     currency: "KES",

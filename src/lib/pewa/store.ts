@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   ActivityEvent,
+  Menu,
   MenuStatus,
   Offering,
   PewaState,
@@ -131,7 +132,7 @@ export const usePewa = create<PewaState & Actions>()(
             const j = i + dir;
             if (i < 0 || j < 0 || j >= ss.length) return ss;
             const c = [...ss];
-            [c[i], c[j]] = [c[j], c[i]];
+            [c[i], c[j]] = [c[j]!, c[i]!];
             return c;
           }),
         upsertOffering: (menuId, sectionId, o) => {
@@ -177,7 +178,7 @@ export const usePewa = create<PewaState & Actions>()(
           set((s) => ({
             menus: s.menus.map((x) =>
               x.id === menuId
-                ? { ...x, status, updatedAt: now(), publishedAt: status === "published" ? now() : x.publishedAt }
+                ? ({ ...x, status, updatedAt: now(), publishedAt: status === "published" ? now() : x.publishedAt } as Menu)
                 : x,
             ),
           }));
