@@ -1,4 +1,4 @@
-import type { Menu, PewaState, ScenarioId, Venue } from "./types";
+import type { Menu, OrderRequest, PewaState, ScenarioId, Venue } from "./types";
 
 export const SCENARIOS: { id: ScenarioId; label: string; ready: boolean; hint: string }[] = [
   { id: "new-cafe", label: "New café", ready: true, hint: "Empty workspace — start onboarding" },
@@ -7,14 +7,14 @@ export const SCENARIOS: { id: ScenarioId; label: string; ready: boolean; hint: s
   { id: "multi-brand", label: "Multi-brand business", ready: false, hint: "Slice P5" },
   { id: "hotel", label: "Hotel", ready: false, hint: "Slice P5" },
   { id: "delivery-only", label: "Delivery-only business", ready: false, hint: "Slice P2+" },
-  { id: "units-available", label: "Units available", ready: false, hint: "Slice P4" },
-  { id: "zero-units", label: "Zero units", ready: false, hint: "Slice P4" },
-  { id: "expired-beyond-grace", label: "Expired beyond grace", ready: false, hint: "Slice P4" },
-  { id: "admitted-pending", label: "Admitted pending order", ready: false, hint: "Slice P4" },
-  { id: "duplicate-accept", label: "Duplicate Accept", ready: false, hint: "Slice P3" },
-  { id: "withdraw-vs-accept", label: "Withdrawal vs acceptance", ready: false, hint: "Slice P3" },
-  { id: "outdated-price", label: "Outdated submitted price", ready: false, hint: "Slice P3" },
-  { id: "channel-unavailable", label: "Optional channel unavailable", ready: false, hint: "Slice P3" },
+  { id: "units-available", label: "Units available", ready: true, hint: "142 units · new request" },
+  { id: "zero-units", label: "Zero units", ready: true, hint: "Menus & contact stay live" },
+  { id: "expired-beyond-grace", label: "Expired beyond grace", ready: true, hint: "Manual contact only" },
+  { id: "admitted-pending", label: "Admitted pending order", ready: true, hint: "Accept using continuity" },
+  { id: "duplicate-accept", label: "Duplicate Accept", ready: true, hint: "Only one deduction" },
+  { id: "withdraw-vs-accept", label: "Withdrawal vs acceptance", ready: true, hint: "First decision is final" },
+  { id: "outdated-price", label: "Outdated submitted price", ready: true, hint: "Review changed cart price" },
+  { id: "channel-unavailable", label: "Optional channel unavailable", ready: true, hint: "Order without WhatsApp" },
   { id: "protected-denied", label: "Protected access denied", ready: false, hint: "Slice P5" },
   { id: "sponsored-campaign", label: "Sponsored campaign", ready: false, hint: "Slice P5" },
 ];
@@ -108,16 +108,33 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
 });
 
 export function buildScenario(id: ScenarioId): Omit<PewaState, "role"> & { role: PewaState["role"] } {
+  const common = {
+    favourites: [], recents: [], cart: null, orders: [], orderSequence: 0,
+    orderPolicy: { included: id === "units-available" || id === "duplicate-accept" ? 142 : 200, topUp: 0, overdraftUsed: 0, expired: id === "expired-beyond-grace" },
+  };
+  if (id === "zero-units" || id === "admitted-pending") common.orderPolicy.included = 0;
   if (id === "new-cafe") {
-    return { scenario: id, role: "owner", organisation: null, venues: [greenGardenVenue], menus: [greenGardenMenu(false)].map((m) => ({ ...m, orgId: "org_ggc" })), activity: [] };
+    return { ...common, scenario: id, role: "owner", organisation: null, venues: [greenGardenVenue], menus: [greenGardenMenu(false)].map((m) => ({ ...m, orgId: "org_ggc" })), activity: [] };
   }
   const soldOut = id === "unavailable-item";
+  const menu = greenGardenMenu(soldOut);
+  const venue = id === "channel-unavailable" ? { ...greenGardenVenue, contact: { ...greenGardenVenue.contact, whatsapp: "" } } : greenGardenVenue;
+  const line = { id: "line_seed", menuId: menu.id, offeringId: "off_flat", name: "Flat White", emoji: "☕", basePrice: 280, options: [], quantity: 2, note: "" };
+  const pending: OrderRequest[] = ["duplicate-accept", "withdraw-vs-accept", "admitted-pending"].includes(id) ? [{
+    id: "order_seed", reference: "PEWA-0001", venueId: venue.id, orgId: venue.orgId, venueName: venue.name, currency: venue.currency,
+    lines: [line], total: 560, guestName: "Amani", guestContact: "0700000000", service: "Takeaway", note: "Collect at the counter", status: "pending", submittedAt: "2026-10-20T05:00:00.000Z", unitConsumed: false,
+  }] : [];
+  if (id === "outdated-price") menu.sections[0]?.offerings.forEach((o) => { if (o.id === "off_flat") o.price = 300; });
   return {
+    ...common,
     scenario: id,
     role: "owner",
     organisation: { id: "org_ggc", name: "Green Garden Café Ltd", businessType: "Single-venue café", currency: "KES" },
-    venues: [greenGardenVenue],
-    menus: [greenGardenMenu(soldOut)],
+    venues: [venue],
+    menus: [menu],
+    orders: pending,
+    orderSequence: pending.length,
+    cart: id === "outdated-price" ? { venueId: venue.id, lines: [line] } : null,
     activity: [
       { id: "seed1", at: "2026-10-19T08:00:00.000Z", role: "owner", kind: "menu.published", message: "Menu “All-Day Menu” is now published" },
     ],
