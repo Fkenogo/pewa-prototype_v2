@@ -343,7 +343,31 @@ function Overview() {
 
                   {author && (
                     <>
-                      {m.status !== "published" ? (
+                      {m.status === "published" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 text-xs"
+                          onClick={() => {
+                            setMenuStatus(m.id, "hidden");
+                            toast.success(`“${m.name}” is now hidden from public view`);
+                          }}
+                        >
+                          <EyeOff className="h-3.5 w-3.5 mr-1" /> Hide
+                        </Button>
+                      ) : m.status === "archived" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 text-xs text-muted-foreground"
+                          onClick={() => {
+                            setMenuStatus(m.id, "draft");
+                            toast.success(`Restored “${m.name}” as draft`);
+                          }}
+                        >
+                          Restore as draft
+                        </Button>
+                      ) : (
                         <Button
                           size="sm"
                           variant="secondary"
@@ -356,18 +380,6 @@ function Overview() {
                         >
                           <Rocket className="h-3.5 w-3.5 mr-1 text-primary" /> Publish
                         </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-9 text-xs"
-                          onClick={() => {
-                            setMenuStatus(m.id, "hidden");
-                            toast.success(`“${m.name}” is now hidden from public view`);
-                          }}
-                        >
-                          <EyeOff className="h-3.5 w-3.5 mr-1" /> Hide
-                        </Button>
                       )}
 
                       <Button
@@ -376,7 +388,7 @@ function Overview() {
                         className="h-9 px-2 text-muted-foreground hover:text-foreground"
                         title="Duplicate menu as draft"
                         onClick={() => {
-                          const dupId = duplicateMenu(m.id);
+                          duplicateMenu(m.id);
                           toast.success(`Duplicated “${m.name}” as draft`);
                         }}
                       >
@@ -387,11 +399,21 @@ function Overview() {
                         size="sm"
                         variant="ghost"
                         className="h-9 px-2 text-muted-foreground hover:text-destructive"
-                        title="Delete menu"
+                        title={
+                          m.status === "draft" ? "Discard draft menu" : "Remove or archive menu"
+                        }
                         onClick={() => {
-                          if (confirm(`Are you sure you want to delete “${m.name}”?`)) {
-                            deleteMenu(m.id);
-                            toast.success(`Deleted “${m.name}”`);
+                          const isDraft = m.status === "draft";
+                          const confirmMsg = isDraft
+                            ? `Discard draft menu “${m.name}”?`
+                            : `Remove menu “${m.name}”? If this menu was previously published or has historical orders, it will be safely archived to preserve records.`;
+                          if (confirm(confirmMsg)) {
+                            const res = deleteMenu(m.id);
+                            if (res.action === "archived") {
+                              toast.info(res.message);
+                            } else {
+                              toast.success(res.message);
+                            }
                           }
                         }}
                       >

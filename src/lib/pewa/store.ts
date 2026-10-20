@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type {
   ActivityEvent,
   Menu,
+  MenuPublishedSnapshot,
   MenuStatus,
   Offering,
   PewaState,
@@ -69,6 +70,11 @@ type Actions = {
   removeOffering: (menuId: string, sectionId: string, offeringId: string) => void;
   toggleAvailability: (menuId: string, sectionId: string, offeringId: string) => void;
   setMenuStatus: (menuId: string, status: MenuStatus) => void;
+  publishMenu: (menuId: string) => boolean;
+  unpublishMenu: (menuId: string) => void;
+  hideMenu: (menuId: string) => void;
+  archiveMenu: (menuId: string) => void;
+  discardDraftChanges: (menuId: string) => void;
   addMenu: (
     nameOrInput:
       | string
@@ -94,7 +100,11 @@ type Actions = {
       coverImage?: string | null | undefined;
     },
   ) => void;
-  deleteMenu: (menuId: string) => void;
+  deleteMenu: (menuId: string) => {
+    success: boolean;
+    action: "deleted" | "archived";
+    message: string;
+  };
   duplicateMenu: (menuId: string) => string;
   log: (e: Omit<ActivityEvent, "id" | "at" | "role">) => void;
   visitVenue: (id: string) => void;
@@ -134,6 +144,84 @@ type Actions = {
 
 const now = () => new Date().toISOString();
 
+/**
+ * Returns the customer-facing live menu representation.
+ * If a published menu has a publishedSnapshot, the snapshot is returned
+ * so that uncommitted draft changes are isolated from customers until publication.
+ */
+export function getLiveMenu(menu: Menu): Menu {
+  if (menu.status !== "published" || !menu.publishedSnapshot) {
+    return menu;
+  }
+  return {
+    ...menu,
+    name: menu.publishedSnapshot.name,
+    description: menu.publishedSnapshot.description,
+    coverImage: menu.publishedSnapshot.coverImage,
+    venueId: menu.publishedSnapshot.venueId,
+    venueIds: menu.publishedSnapshot.venueIds,
+    isProtected: menu.publishedSnapshot.isProtected,
+    sections: menu.publishedSnapshot.sections,
+    publishedAt: menu.publishedSnapshot.publishedAt,
+  };
+}
+
+/**
+ * Checks whether a published menu has pending draft changes that differ from its live snapshot.
+ * Availability changes (sold out) take effect immediately and do not count as draft changes.
+ */
+export function hasUnpublishedDraftChanges(menu: Menu): boolean {
+  if (menu.status !== "published" || !menu.publishedSnapshot) return false;
+  const snap = menu.publishedSnapshot;
+
+  if (menu.name !== snap.name) return true;
+  if ((menu.description || "") !== (snap.description || "")) return true;
+  if ((menu.coverImage || "") !== (snap.coverImage || "")) return true;
+  if (Boolean(menu.isProtected) !== Boolean(snap.isProtected)) return true;
+  if ((menu.venueId || "") !== (snap.venueId || "")) return true;
+
+  const draftVenues = (menu.venueIds || []).slice().sort().join(",");
+  const snapVenues = (snap.venueIds || []).slice().sort().join(",");
+  if (draftVenues !== snapVenues) return true;
+
+  const normSec = (sections: Section[]) =>
+    sections.map((s) => ({
+      name: s.name,
+      offerings: s.offerings.map((o) => ({
+        name: o.name,
+        description: o.description,
+        price: o.price,
+        emoji: o.emoji,
+        image: o.image,
+        tags: (o.tags || []).slice().sort(),
+        modifiers: o.modifiers,
+        specialBadge: o.specialBadge,
+      })),
+    }));
+
+  return JSON.stringify(normSec(menu.sections)) !== JSON.stringify(normSec(snap.sections));
+}
+
+const ensurePublishedSnapshots = (menus: Menu[]): Menu[] =>
+  menus.map((m) => {
+    if (m.status === "published" && !m.publishedSnapshot) {
+      return {
+        ...m,
+        publishedSnapshot: {
+          name: m.name,
+          description: m.description,
+          coverImage: m.coverImage,
+          venueId: m.venueId,
+          venueIds: m.venueIds ? [...m.venueIds] : undefined,
+          isProtected: m.isProtected,
+          sections: JSON.parse(JSON.stringify(m.sections)),
+          publishedAt: m.publishedAt || now(),
+        },
+      };
+    }
+    return m;
+  });
+
 export const usePewa = create<PewaState & Actions>()(
   persist(
     (set, get) => {
@@ -143,8 +231,10 @@ export const usePewa = create<PewaState & Actions>()(
             m.id === menuId ? { ...m, sections: fn(m.sections), updatedAt: now() } : m,
           ),
         }));
+      const initialSeed = buildScenario("new-cafe");
       return {
-        ...buildScenario("new-cafe"),
+        ...initialSeed,
+        menus: ensurePublishedSnapshots(initialSeed.menus),
         visitVenue: (id) =>
           set((s) => ({ recents: [id, ...s.recents.filter((v) => v !== id)].slice(0, 12) })),
         toggleFavourite: (id) =>
@@ -156,6 +246,10 @@ export const usePewa = create<PewaState & Actions>()(
         clearCart: () => set({ cart: null }),
         addCartLine: (venueId, line) => {
           const s = get();
+          const targetMenu = s.menus.find((m) => m.id === line.menuId);
+          if (targetMenu && targetMenu.status !== "published") {
+            return "Cannot add items from an unpublished draft or archived menu.";
+          }
           if (!canAdmitOrder(s.orderPolicy))
             return "Structured requests are paused. Please contact the business directly.";
           if (s.cart?.lines.length && s.cart.venueId !== venueId)
@@ -438,8 +532,14 @@ export const usePewa = create<PewaState & Actions>()(
           set({ role });
           get().log({ kind: "role.switched", message: `Role switched to ${role}` });
         },
-        loadScenario: (id) => set({ ...buildScenario(id), role: get().role }),
-        reset: () => set({ ...buildScenario(get().scenario), role: get().role }),
+        loadScenario: (id) => {
+          const sc = buildScenario(id);
+          set({ ...sc, menus: ensurePublishedSnapshots(sc.menus), role: get().role });
+        },
+        reset: () => {
+          const sc = buildScenario(get().scenario);
+          set({ ...sc, menus: ensurePublishedSnapshots(sc.menus), role: get().role });
+        },
         log: (e) =>
           set((s) => ({
             activity: [{ ...e, id: uid("evt"), at: now(), role: s.role }, ...s.activity].slice(
@@ -598,13 +698,37 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         deleteMenu: (menuId) => {
-          const m = get().menus.find((x) => x.id === menuId);
-          set((s) => ({
-            menus: s.menus.filter((x) => x.id !== menuId),
-          }));
-          if (m) {
-            get().log({ kind: "menu.deleted", message: `Menu “${m.name}” deleted` });
+          const s = get();
+          const m = s.menus.find((x) => x.id === menuId);
+          if (!m) return { success: false, action: "deleted", message: "Menu not found" };
+
+          const wasPublished = m.status === "published" || !!m.publishedAt || !!m.publishedSnapshot;
+          const menuOfferingIds = new Set(
+            m.sections.flatMap((sec) => sec.offerings.map((o) => o.id)),
+          );
+          const hasOrders = s.orders.some((o) =>
+            o.lines.some((l) => menuOfferingIds.has(l.offeringId)),
+          );
+
+          if (wasPublished || hasOrders) {
+            // Cannot hard-delete historically meaningful menu content; archive it safely
+            set((state) => ({
+              menus: state.menus.map((x) =>
+                x.id === menuId ? { ...x, status: "archived" as MenuStatus, updatedAt: now() } : x,
+              ),
+            }));
+            const message = `Menu “${m.name}” has publication or order records. Archived safely to preserve historical audit trail.`;
+            get().log({ kind: "menu.archived", message });
+            return { success: true, action: "archived", message };
           }
+
+          // Safe to hard-delete uncommitted / unused draft
+          set((state) => ({
+            menus: state.menus.filter((x) => x.id !== menuId),
+          }));
+          const message = `Draft menu “${m.name}” discarded`;
+          get().log({ kind: "menu.deleted", message });
+          return { success: true, action: "deleted", message };
         },
         duplicateMenu: (menuId) => {
           const source = get().menus.find((x) => x.id === menuId);
@@ -617,6 +741,7 @@ export const usePewa = create<PewaState & Actions>()(
             status: "draft",
             updatedAt: now(),
             publishedAt: undefined,
+            publishedSnapshot: undefined,
             sections: source.sections.map((sec) => ({
               ...sec,
               id: uid("sec"),
@@ -758,12 +883,124 @@ export const usePewa = create<PewaState & Actions>()(
                 : x,
             ),
           );
+          // Immediate availability changes apply to publishedSnapshot as well
+          set((s) => ({
+            menus: s.menus.map((m) => {
+              if (m.id !== menuId || !m.publishedSnapshot) return m;
+              return {
+                ...m,
+                publishedSnapshot: {
+                  ...m.publishedSnapshot,
+                  sections: m.publishedSnapshot.sections.map((sec) => {
+                    if (sec.id !== sectionId) return sec;
+                    return {
+                      ...sec,
+                      offerings: sec.offerings.map((off) =>
+                        off.id === offeringId ? { ...off, available: avail } : off,
+                      ),
+                    };
+                  }),
+                },
+              };
+            }),
+          }));
           get().log({
             kind: "offering.availability",
             message: `“${name}” marked ${avail ? "available" : "sold out"}`,
           });
         },
+        publishMenu: (menuId) => {
+          const m = get().menus.find((x) => x.id === menuId);
+          if (!m) return false;
+          if (m.sections.length === 0 || !m.sections.some((s) => s.offerings.length > 0)) {
+            return false;
+          }
+          const snapshot: MenuPublishedSnapshot = {
+            name: m.name,
+            description: m.description,
+            coverImage: m.coverImage,
+            venueId: m.venueId,
+            venueIds: m.venueIds ? [...m.venueIds] : undefined,
+            isProtected: m.isProtected,
+            sections: JSON.parse(JSON.stringify(m.sections)),
+            publishedAt: now(),
+          };
+          set((s) => ({
+            menus: s.menus.map((x) =>
+              x.id === menuId
+                ? {
+                    ...x,
+                    status: "published" as MenuStatus,
+                    publishedAt: x.publishedAt || now(),
+                    updatedAt: now(),
+                    publishedSnapshot: snapshot,
+                  }
+                : x,
+            ),
+          }));
+          get().log({ kind: "menu.published", message: `Published “${m.name}”` });
+          return true;
+        },
+        unpublishMenu: (menuId) => {
+          const m = get().menus.find((x) => x.id === menuId);
+          set((s) => ({
+            menus: s.menus.map((x) =>
+              x.id === menuId ? { ...x, status: "hidden" as MenuStatus, updatedAt: now() } : x,
+            ),
+          }));
+          get().log({ kind: "menu.hidden", message: `Menu “${m?.name}” hidden from public view` });
+        },
+        hideMenu: (menuId) => {
+          get().unpublishMenu(menuId);
+        },
+        archiveMenu: (menuId) => {
+          const m = get().menus.find((x) => x.id === menuId);
+          set((s) => ({
+            menus: s.menus.map((x) =>
+              x.id === menuId ? { ...x, status: "archived" as MenuStatus, updatedAt: now() } : x,
+            ),
+          }));
+          get().log({ kind: "menu.archived", message: `Menu “${m?.name}” archived` });
+        },
+        discardDraftChanges: (menuId) => {
+          const m = get().menus.find((x) => x.id === menuId);
+          if (!m || !m.publishedSnapshot) return;
+          const snap = m.publishedSnapshot;
+          set((s) => ({
+            menus: s.menus.map((x) =>
+              x.id === menuId
+                ? {
+                    ...x,
+                    name: snap.name,
+                    description: snap.description,
+                    coverImage: snap.coverImage,
+                    venueId: snap.venueId,
+                    venueIds: snap.venueIds ? [...snap.venueIds] : undefined,
+                    isProtected: snap.isProtected,
+                    sections: JSON.parse(JSON.stringify(snap.sections)),
+                    updatedAt: now(),
+                  }
+                : x,
+            ),
+          }));
+          get().log({
+            kind: "menu.reverted",
+            message: `Discarded unpublished draft changes for “${m.name}”`,
+          });
+        },
         setMenuStatus: (menuId, status) => {
+          if (status === "published") {
+            get().publishMenu(menuId);
+            return;
+          }
+          if (status === "hidden") {
+            get().hideMenu(menuId);
+            return;
+          }
+          if (status === "archived") {
+            get().archiveMenu(menuId);
+            return;
+          }
           const m = get().menus.find((x) => x.id === menuId);
           set((s) => ({
             menus: s.menus.map((x) =>
@@ -772,7 +1009,6 @@ export const usePewa = create<PewaState & Actions>()(
                     ...x,
                     status,
                     updatedAt: now(),
-                    publishedAt: status === "published" ? now() : x.publishedAt,
                   } as Menu)
                 : x,
             ),
@@ -871,6 +1107,7 @@ export const usePewa = create<PewaState & Actions>()(
               description: m.description ?? currentMenu?.description,
               coverImage: m.coverImage ?? currentMenu?.coverImage,
               isProtected: m.isProtected ?? currentMenu?.isProtected,
+              publishedSnapshot: m.publishedSnapshot ?? currentMenu?.publishedSnapshot,
               sections: (m.sections || []).map((sec) => ({
                 ...sec,
                 offerings: (sec.offerings || []).map((off) => ({

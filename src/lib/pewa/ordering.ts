@@ -1,5 +1,6 @@
 import type { CartLine, GuestCart, OrderPolicy, PewaState } from "./types";
 import { isMenuEligibleForVenue } from "./taxonomy";
+import { getLiveMenu } from "./store";
 
 export const lineTotal = (line: CartLine) =>
   (line.basePrice + line.options.reduce((sum, option) => sum + option.priceDelta, 0)) *
@@ -17,13 +18,17 @@ export function validateCart(state: PewaState, cart: GuestCart | null): string |
   const venue = state.venues.find((v) => v.id === cart.venueId);
   if (!venue) return "This venue is no longer available.";
   for (const line of cart.lines) {
-    const menu = state.menus.find(
+    const rawMenu = state.menus.find(
       (m) =>
         m.id === line.menuId &&
         m.status === "published" &&
         isMenuEligibleForVenue(m, venue, state.venues),
     );
-    const offering = menu?.sections
+    if (!rawMenu) {
+      return "Orders cannot be placed for unpublished draft, hidden or archived menus.";
+    }
+    const menu = getLiveMenu(rawMenu);
+    const offering = menu.sections
       .flatMap((s) => s.offerings)
       .find((o) => o.id === line.offeringId);
     if (!offering?.available)

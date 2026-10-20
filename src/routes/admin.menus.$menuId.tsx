@@ -26,7 +26,13 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { canAuthorMenus, canToggleAvailability, formatPrice, usePewa } from "@/lib/pewa/store";
+import {
+  canAuthorMenus,
+  canToggleAvailability,
+  formatPrice,
+  hasUnpublishedDraftChanges,
+  usePewa,
+} from "@/lib/pewa/store";
 import type { ModifierGroup, Offering } from "@/lib/pewa/types";
 import { StatusBadge } from "@/components/pewa/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -129,6 +135,7 @@ function MenuEditor() {
 
   const currency = primaryVenue?.currency || s.organisation?.currency || "KES";
   const author = canAuthorMenus(s.role);
+  const hasDraftChanges = menu ? hasUnpublishedDraftChanges(menu) : false;
 
   // Local State
   const [customSectionInput, setCustomSectionInput] = useState("");
@@ -359,16 +366,34 @@ function MenuEditor() {
 
         <div className="flex items-center gap-1.5">
           {/* Customer Preview Button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setPreviewOpen(true)}
-            className="h-9 text-xs font-semibold gap-1.5"
-          >
-            <Eye className="h-3.5 w-3.5 text-primary" />
-            <span className="hidden sm:inline">Customer</span> Preview
-          </Button>
+          {primaryVenue ? (
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs font-semibold gap-1.5"
+            >
+              <Link
+                to="/m/$slug"
+                params={{ slug: primaryVenue.slug }}
+                search={{ preview: menu.id }}
+              >
+                <Eye className="h-3.5 w-3.5 text-primary" />
+                <span className="hidden sm:inline">Customer</span> Preview
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setPreviewOpen(true)}
+              className="h-9 text-xs font-semibold gap-1.5"
+            >
+              <Eye className="h-3.5 w-3.5 text-primary" />
+              <span className="hidden sm:inline">Customer</span> Preview
+            </Button>
+          )}
 
           {/* Menu Settings Button */}
           {author && (
@@ -433,6 +458,62 @@ function MenuEditor() {
         </div>
       </div>
 
+      {/* Draft Changes Alert Banner */}
+      {menu.status === "published" && hasDraftChanges && author && (
+        <aside
+          role="status"
+          aria-label="Pending draft changes alert"
+          className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <p className="font-bold text-amber-950 dark:text-amber-200 flex items-center gap-1.5 text-sm">
+                <Sparkles className="h-4 w-4 text-amber-600 shrink-0" />
+                <span>Unpublished Draft Changes Pending</span>
+              </p>
+              <p className="text-amber-800 dark:text-amber-300">
+                You have edited this published menu. Customers continue seeing the last published
+                snapshot until you publish these changes.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                size="sm"
+                className="h-8 text-xs font-semibold bg-amber-600 text-white hover:bg-amber-700"
+                onClick={() => {
+                  s.publishMenu(menu.id);
+                  toast.success("Draft changes published to live menu!");
+                }}
+              >
+                <Rocket className="h-3.5 w-3.5 mr-1" /> Publish now
+              </Button>
+              {primaryVenue && (
+                <Button asChild size="sm" variant="outline" className="h-8 text-xs font-semibold">
+                  <Link
+                    to="/m/$slug"
+                    params={{ slug: primaryVenue.slug }}
+                    search={{ preview: menu.id }}
+                  >
+                    <Eye className="h-3.5 w-3.5 mr-1" /> Preview draft
+                  </Link>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  s.discardDraftChanges(menu.id);
+                  toast.info("Unpublished draft changes discarded");
+                }}
+              >
+                Discard
+              </Button>
+            </div>
+          </div>
+        </aside>
+      )}
+
       {/* Sticky Mobile Publication Bar */}
       {author && (
         <div className="sticky top-0 z-30 -mx-4 mt-4 flex items-center gap-2 border-b bg-background/95 px-4 py-3 backdrop-blur shadow-xs">
@@ -452,12 +533,66 @@ function MenuEditor() {
                       : "Publish menu now"}
                 </span>
               </Button>
+              {primaryVenue ? (
+                <Button asChild variant="outline" className="h-12 text-xs font-semibold">
+                  <Link
+                    to="/m/$slug"
+                    params={{ slug: primaryVenue.slug }}
+                    search={{ preview: menu.id }}
+                  >
+                    <Eye className="h-4 w-4 mr-1 text-primary" /> Preview
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="h-12 text-xs font-semibold"
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  <Eye className="h-4 w-4 mr-1 text-primary" /> Preview
+                </Button>
+              )}
+            </>
+          ) : hasDraftChanges ? (
+            <>
               <Button
-                variant="outline"
-                className="h-12 text-xs font-semibold"
-                onClick={() => setPreviewOpen(true)}
+                className="h-12 flex-1 font-semibold gap-2 shadow-sm bg-primary text-primary-foreground"
+                onClick={() => {
+                  s.publishMenu(menu.id);
+                  toast.success("Draft changes published to live menu!");
+                }}
               >
-                <Eye className="h-4 w-4 mr-1 text-primary" /> Preview
+                <Rocket className="h-5 w-5" />
+                <span>Publish draft changes</span>
+              </Button>
+              {primaryVenue ? (
+                <Button asChild variant="outline" className="h-12 text-xs font-semibold">
+                  <Link
+                    to="/m/$slug"
+                    params={{ slug: primaryVenue.slug }}
+                    search={{ preview: menu.id }}
+                  >
+                    <Eye className="h-4 w-4 mr-1 text-primary" /> Preview draft
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="h-12 text-xs font-semibold"
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  <Eye className="h-4 w-4 mr-1 text-primary" /> Preview draft
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                className="h-12 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  s.discardDraftChanges(menu.id);
+                  toast.info("Unpublished draft changes discarded");
+                }}
+              >
+                Discard
               </Button>
             </>
           ) : (
@@ -481,13 +616,13 @@ function MenuEditor() {
               </Button>
               <Button
                 variant="ghost"
-                className="h-12 text-xs text-muted-foreground hover:text-foreground"
+                className="h-12 text-xs text-muted-foreground hover:text-destructive"
                 onClick={() => {
-                  s.setMenuStatus(menu.id, "draft");
-                  toast.success("Menu status reverted to draft");
+                  s.setMenuStatus(menu.id, "archived");
+                  toast.success("Menu archived safely");
                 }}
               >
-                Revert to draft
+                Archive
               </Button>
             </>
           )}

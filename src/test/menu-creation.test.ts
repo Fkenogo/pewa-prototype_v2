@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { usePewa } from "../lib/pewa/store";
-import { getSuggestedMenuNamesForCategory, getVenueBrandContext } from "../lib/pewa/taxonomy";
+import {
+  canAuthorMenus,
+  getLiveMenu,
+  hasUnpublishedDraftChanges,
+  usePewa,
+} from "../lib/pewa/store";
+import { validateCart } from "../lib/pewa/ordering";
+import {
+  getSuggestedMenuNamesForCategory,
+  getVenueBrandContext,
+  isMenuEligibleForVenue,
+} from "../lib/pewa/taxonomy";
 import type { Offering } from "../lib/pewa/types";
 
 describe("R1-B — Mobile-First Menu Creation and Organisation Experience", () => {
@@ -481,7 +491,7 @@ describe("R1-B — Mobile-First Menu Creation and Organisation Experience", () =
   });
 
   describe("Scenario F — Publication Correction & Lifecycle Reversal", () => {
-    it("transitions draft -> published -> draft -> deleted cleanly", () => {
+    it("transitions draft -> published -> hidden -> safely archived on delete to preserve audit trail", () => {
       usePewa.getState().loadScenario("established-restaurant");
       const venue = usePewa.getState().venues[0]!;
 
@@ -509,16 +519,333 @@ describe("R1-B — Mobile-First Menu Creation and Organisation Experience", () =
       expect(usePewa.getState().menus.find((m) => m.id === menu.id)!.status).toBe("draft");
 
       // 1. Publish
-      usePewa.getState().setMenuStatus(menu.id, "published");
+      usePewa.getState().publishMenu(menu.id);
       expect(usePewa.getState().menus.find((m) => m.id === menu.id)!.status).toBe("published");
+      expect(
+        usePewa.getState().menus.find((m) => m.id === menu.id)!.publishedSnapshot,
+      ).toBeDefined();
 
-      // 2. Take down / hide back to draft
-      usePewa.getState().setMenuStatus(menu.id, "draft");
-      expect(usePewa.getState().menus.find((m) => m.id === menu.id)!.status).toBe("draft");
+      // 2. Hide from public view
+      usePewa.getState().hideMenu(menu.id);
+      expect(usePewa.getState().menus.find((m) => m.id === menu.id)!.status).toBe("hidden");
 
-      // 3. Delete
-      usePewa.getState().deleteMenu(menu.id);
-      expect(usePewa.getState().menus.find((m) => m.id === menu.id)).toBeUndefined();
+      // 3. Delete historically published menu safely archives it rather than hard-deleting
+      const res = usePewa.getState().deleteMenu(menu.id);
+      expect(res.action).toBe("archived");
+      expect(res.success).toBe(true);
+      const archived = usePewa.getState().menus.find((m) => m.id === menu.id);
+      expect(archived).toBeDefined();
+      expect(archived!.status).toBe("archived");
+    });
+
+    it("hard-deletes uncommitted drafts that were never published and have no order history", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const venue = usePewa.getState().venues[0]!;
+
+      const draftId = usePewa.getState().addMenu({
+        name: "Unused Draft Menu",
+        venueId: venue.id,
+        venueIds: [venue.id],
+        initialSections: ["Experimental"],
+      });
+
+      expect(usePewa.getState().menus.find((m) => m.id === draftId)).toBeDefined();
+
+      const res = usePewa.getState().deleteMenu(draftId);
+      expect(res.action).toBe("deleted");
+      expect(res.success).toBe(true);
+      expect(usePewa.getState().menus.find((m) => m.id === draftId)).toBeUndefined();
+    });
+  });
+
+  describe("CORR-A — Controlled Draft Preview", () => {
+    it("denies preview access when user has customer role", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const venue = state.venues[0]!;
+      const draftId = state.addMenu({
+        name: "Secret Unreleased Menu",
+        venueId: venue.id,
+        venueIds: [venue.id],
+        initialSections: ["Secrets"],
+      });
+
+      // Simulate customer role visiting menu route
+      usePewa.getState().setRole("customer");
+      const customerState = usePewa.getState();
+
+      const isAuthorised =
+        canAuthorMenus(customerState.role) &&
+        !!customerState.organisation &&
+        customerState.organisation.id === venue.orgId;
+
+      expect(isAuthorised).toBe(false);
+
+      // Customer route resolves previewTarget as undefined
+      const previewTarget =
+        draftId && isAuthorised
+          ? customerState.menus.find(
+              (m) => m.id === draftId && m.orgId === customerState.organisation?.id,
+            )
+          : undefined;
+
+      expect(previewTarget).toBeUndefined();
+    });
+
+    it("denies cross-venue preview when menu is not eligible for the requested venue", () => {
+      usePewa.getState().loadScenario("multi-brand");
+      const state = usePewa.getState();
+      const venueA = state.venues[0]!;
+      const venueB = state.venues[1]!;
+
+      // Create a menu strictly assigned to venueA
+      const menuAId = state.addMenu({
+        name: "Venue A Only Menu",
+        venueId: venueA.id,
+        venueIds: [venueA.id],
+        initialSections: ["Special"],
+      });
+
+      const menuA = usePewa.getState().menus.find((m) => m.id === menuAId)!;
+      expect(isMenuEligibleForVenue(menuA, venueA, state.venues)).toBe(true);
+      expect(isMenuEligibleForVenue(menuA, venueB, state.venues)).toBe(false);
+
+      // Attempt preview under Venue B
+      const canPreviewAtVenueB =
+        canAuthorMenus(state.role) && isMenuEligibleForVenue(menuA, venueB, state.venues);
+
+      expect(canPreviewAtVenueB).toBe(false);
+    });
+
+    it("denies structured order admission and cart lines from unpublished draft menus", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const venue = state.venues[0]!;
+
+      const draftId = state.addMenu({
+        name: "Draft Tasting Menu",
+        venueId: venue.id,
+        venueIds: [venue.id],
+        initialSections: ["Tasting"],
+      });
+      const draftMenu = usePewa.getState().menus.find((m) => m.id === draftId)!;
+      usePewa.getState().upsertOffering(draftMenu.id, draftMenu.sections[0]!.id, {
+        id: "item_caviar",
+        name: "Caviar Tart",
+        description: "Draft offering",
+        price: 2500,
+        available: true,
+        tags: [],
+        modifiers: [],
+        emoji: "🥫",
+      });
+
+      // Attempt to add cart line from draft menu
+      const addError = usePewa.getState().addCartLine(venue.id, {
+        menuId: draftId,
+        offeringId: "item_caviar",
+        name: "Caviar Tart",
+        emoji: "🥫",
+        basePrice: 2500,
+        options: [],
+        quantity: 1,
+        note: "",
+      });
+
+      expect(addError).toContain("unpublished draft or archived menu");
+      expect(usePewa.getState().cart).toBeNull();
+    });
+
+    it("denies cart validation if cart contains items from an unpublished or archived menu", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const venue = state.venues[0]!;
+      const publishedMenu = state.menus.find((m) => m.status === "published")!;
+      const offering = publishedMenu.sections[0]!.offerings[0]!;
+
+      // Add published item to cart
+      usePewa.getState().addCartLine(venue.id, {
+        menuId: publishedMenu.id,
+        offeringId: offering.id,
+        name: offering.name,
+        emoji: offering.emoji,
+        basePrice: offering.price,
+        options: [],
+        quantity: 1,
+        note: "",
+      });
+
+      expect(usePewa.getState().cart).not.toBeNull();
+      const cart = usePewa.getState().cart!;
+
+      // Validate cart initially passes
+      const initialValidation = validateCart(usePewa.getState(), cart);
+      expect(initialValidation).toBeNull();
+
+      // Now unpublish/hide the menu
+      usePewa.getState().hideMenu(publishedMenu.id);
+
+      // Cart validation must now fail
+      const failedValidation = validateCart(usePewa.getState(), cart);
+      expect(failedValidation).toContain("unpublished draft, hidden or archived menus");
+    });
+  });
+
+  describe("CORR-B — Draft versus Published Menu State", () => {
+    it("preserves customer-facing live snapshot when substantive edits are made in draft", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const menu = state.menus.find((m) => m.status === "published")!;
+      const originalPrice = menu.sections[0]!.offerings[0]!.price;
+      const offeringId = menu.sections[0]!.offerings[0]!.id;
+
+      expect(menu.publishedSnapshot).toBeDefined();
+      expect(hasUnpublishedDraftChanges(menu)).toBe(false);
+
+      // 1. Merchant edits the offering price in working draft
+      usePewa.getState().upsertOffering(menu.id, menu.sections[0]!.id, {
+        ...menu.sections[0]!.offerings[0]!,
+        price: originalPrice + 500,
+      });
+
+      const updatedMenu = usePewa.getState().menus.find((m) => m.id === menu.id)!;
+      expect(hasUnpublishedDraftChanges(updatedMenu)).toBe(true);
+      expect(updatedMenu.sections[0]!.offerings[0]!.price).toBe(originalPrice + 500);
+
+      // 2. Customer-facing getLiveMenu returns the original published snapshot
+      const liveMenu = getLiveMenu(updatedMenu);
+      expect(liveMenu.sections[0]!.offerings[0]!.price).toBe(originalPrice);
+
+      // 3. Merchant publishes changes
+      usePewa.getState().publishMenu(menu.id);
+      const republishedMenu = usePewa.getState().menus.find((m) => m.id === menu.id)!;
+      expect(hasUnpublishedDraftChanges(republishedMenu)).toBe(false);
+
+      // Now live menu reflects the new price
+      const newLiveMenu = getLiveMenu(republishedMenu);
+      expect(newLiveMenu.sections[0]!.offerings[0]!.price).toBe(originalPrice + 500);
+    });
+
+    it("applies immediate availability changes directly to both working draft and published snapshot", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const menu = state.menus.find((m) => m.status === "published")!;
+      const section = menu.sections[0]!;
+      const offering = section.offerings[0]!;
+
+      expect(offering.available).toBe(true);
+      expect(menu.publishedSnapshot?.sections[0]!.offerings[0]!.available).toBe(true);
+
+      // Toggle availability (e.g. 86'd / sold out)
+      usePewa.getState().toggleAvailability(menu.id, section.id, offering.id);
+
+      const updatedMenu = usePewa.getState().menus.find((m) => m.id === menu.id)!;
+      // Working draft has available = false
+      expect(updatedMenu.sections[0]!.offerings[0]!.available).toBe(false);
+      // Published snapshot also immediately reflects available = false without full republication
+      expect(updatedMenu.publishedSnapshot?.sections[0]!.offerings[0]!.available).toBe(false);
+      // Immediate availability alone does NOT count as an uncommitted draft change
+      expect(hasUnpublishedDraftChanges(updatedMenu)).toBe(false);
+
+      const live = getLiveMenu(updatedMenu);
+      expect(live.sections[0]!.offerings[0]!.available).toBe(false);
+    });
+
+    it("discards draft changes and restores working draft from published snapshot", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const menu = state.menus.find((m) => m.status === "published")!;
+      const originalName = menu.name;
+      const originalSectionCount = menu.sections.length;
+
+      // Make substantive edits
+      usePewa.getState().updateMenuMeta(menu.id, { name: "Accidentally Renamed Menu" });
+      usePewa.getState().addSection(menu.id, "Unwanted Section");
+
+      const editedMenu = usePewa.getState().menus.find((m) => m.id === menu.id)!;
+      expect(hasUnpublishedDraftChanges(editedMenu)).toBe(true);
+      expect(editedMenu.name).toBe("Accidentally Renamed Menu");
+      expect(editedMenu.sections.length).toBe(originalSectionCount + 1);
+
+      // Discard changes
+      usePewa.getState().discardDraftChanges(menu.id);
+
+      const restoredMenu = usePewa.getState().menus.find((m) => m.id === menu.id)!;
+      expect(hasUnpublishedDraftChanges(restoredMenu)).toBe(false);
+      expect(restoredMenu.name).toBe(originalName);
+      expect(restoredMenu.sections.length).toBe(originalSectionCount);
+    });
+  });
+
+  describe("CORR-C — Safe Menu Archive and Deletion", () => {
+    it("safely archives previously published menus and excludes them from public discovery", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const menu = state.menus.find((m) => m.status === "published")!;
+
+      const res = usePewa.getState().deleteMenu(menu.id);
+      expect(res.action).toBe("archived");
+      expect(res.success).toBe(true);
+
+      const archivedMenu = usePewa.getState().menus.find((m) => m.id === menu.id)!;
+      expect(archivedMenu.status).toBe("archived");
+      expect(archivedMenu.publishedSnapshot).toBeDefined();
+
+      // Customer search / discovery excludes archived menus
+      const venue = state.venues[0]!;
+      const publicMenus = usePewa
+        .getState()
+        .menus.filter(
+          (m) => m.status === "published" && isMenuEligibleForVenue(m, venue, state.venues),
+        );
+      expect(publicMenus.some((m) => m.id === menu.id)).toBe(false);
+    });
+
+    it("safely archives menus with historical order lines to preserve audit trail", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const state = usePewa.getState();
+      const venue = state.venues[0]!;
+      const publishedMenu = state.menus.find((m) => m.status === "published")!;
+      const offering = publishedMenu.sections[0]!.offerings[0]!;
+
+      // 1. Add item to cart and submit order
+      usePewa.getState().addCartLine(venue.id, {
+        menuId: publishedMenu.id,
+        offeringId: offering.id,
+        name: offering.name,
+        emoji: offering.emoji,
+        basePrice: offering.price,
+        options: [],
+        quantity: 1,
+        note: "",
+      });
+
+      const orderResult = usePewa.getState().submitOrder({
+        guestName: "Alice Guest",
+        guestContact: "+254700000001",
+        service: "Dine-in",
+        note: "Table 4",
+      });
+      expect(orderResult.id).toBeDefined();
+
+      // Verify order exists with line pointing to this offering
+      const order = usePewa.getState().orders.find((o) => o.id === orderResult.id)!;
+      expect(order).toBeDefined();
+      expect(order.lines[0]!.offeringId).toBe(offering.id);
+
+      // 2. Attempt to delete the menu that owns the ordered offering
+      const res = usePewa.getState().deleteMenu(publishedMenu.id);
+      expect(res.action).toBe("archived");
+      expect(res.success).toBe(true);
+
+      // Verify menu was archived rather than hard-deleted
+      const archivedMenu = usePewa.getState().menus.find((m) => m.id === publishedMenu.id)!;
+      expect(archivedMenu.status).toBe("archived");
+
+      // Verify order lines still exist intact
+      const preservedOrder = usePewa.getState().orders.find((o) => o.id === orderResult.id)!;
+      expect(preservedOrder.lines[0]!.offeringId).toBe(offering.id);
+      expect(preservedOrder.lines[0]!.name).toBe(offering.name);
     });
   });
 });

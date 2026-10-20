@@ -9,7 +9,7 @@ import {
   Tag as TagIcon,
   Building2,
 } from "lucide-react";
-import { formatPrice, usePewa } from "@/lib/pewa/store";
+import { formatPrice, getLiveMenu, usePewa } from "@/lib/pewa/store";
 import type { Offering, Venue } from "@/lib/pewa/types";
 import { isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
 import { Button } from "@/components/ui/button";
@@ -40,9 +40,11 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
 
   // Eligible public menus for each venue (published and not protected)
   const getVenuePublicMenus = (v: Venue) =>
-    menus.filter(
-      (m) => m.status === "published" && !m.isProtected && isMenuEligibleForVenue(m, v, venues),
-    );
+    menus
+      .filter(
+        (m) => m.status === "published" && !m.isProtected && isMenuEligibleForVenue(m, v, venues),
+      )
+      .map(getLiveMenu);
 
   const live = venues.filter((v) => getVenuePublicMenus(v).length > 0);
   const businessCategories = [...new Set(live.map((v) => v.category).filter(Boolean))] as string[];
@@ -438,9 +440,10 @@ function VenueCard({
 }) {
   const { favourites, toggleFavourite, menus, venues } = usePewa();
   const saved = favourites.includes(venue.id);
-  const venueMenu = menus.find(
+  const venueMenuRaw = menus.find(
     (m) => m.status === "published" && !m.isProtected && isMenuEligibleForVenue(m, venue, venues),
   );
+  const venueMenu = venueMenuRaw ? getLiveMenu(venueMenuRaw) : undefined;
   const previewImage = venueMenu?.sections.flatMap((s) => s.offerings).find((o) => o.image)?.image;
 
   return (

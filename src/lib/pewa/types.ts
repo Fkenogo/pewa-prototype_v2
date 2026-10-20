@@ -75,6 +75,17 @@ export interface Section {
   offerings: Offering[];
 }
 
+export interface MenuPublishedSnapshot {
+  name: string;
+  description?: string | undefined;
+  coverImage?: string | undefined;
+  venueId?: string | undefined;
+  venueIds?: string[] | undefined;
+  isProtected?: boolean | undefined;
+  sections: Section[];
+  publishedAt: string;
+}
+
 export interface Menu {
   id: string;
   orgId: string;
@@ -88,6 +99,7 @@ export interface Menu {
   updatedAt: string;
   publishedAt?: string | undefined;
   isProtected?: boolean | undefined;
+  publishedSnapshot?: MenuPublishedSnapshot | undefined;
 }
 
 export interface ActivityEvent {

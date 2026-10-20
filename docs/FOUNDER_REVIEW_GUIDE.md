@@ -277,12 +277,36 @@
 5. Tap **Resume Draft**:
    - The editor opens with all sections, items, and metadata exactly as left.
 
-#### Scenario F — Publication Correction & Lifecycle Reversal
-1. Take an active published menu in `/admin`.
-2. Open its **Menu Settings** or use the quick action in the card to set status to **Draft / Hidden**.
-3. Check the customer menu route: the menu disappears from customer view immediately.
-4. Return to `/admin`, tap **Duplicate**:
-   - A copy is created named `[Menu Name] (Copy)` in draft status.
-5. Tap **Delete** on the duplicate:
-   - Prompt confirms and deletes cleanly without affecting original menus.
+#### Scenario F — Publication Correction, Draft vs Published State & Safe Archiving
+1. **Unpublished Draft Changes on Live Menu (CORR-B)**:
+   - Select **Established restaurant** (`established-restaurant`).
+   - Open the published **All-Day Menu** in `/admin/menus/:menuId`.
+   - Edit the price of *Flat White* from 280 to 350 KES.
+   - Notice the amber alert banner appears: *"Unpublished Draft Changes Pending — Customers continue seeing the last published snapshot until you publish these changes."*
+   - Open `/m/green-garden-cafe` as a customer in another tab: *Flat White* remains 280 KES on the live public menu.
+   - Return to the editor and tap **Customer Preview**: the draft preview shows the updated 350 KES price with the Merchant Preview banner.
+   - Tap **Publish changes**: the live customer route now instantly serves the updated 350 KES price.
+
+2. **Immediate Availability Bypass (CORR-B)**:
+   - In `/admin/menus/:menuId`, toggle *Cardamom Mandazi* to **Sold out**.
+   - Notice it is marked sold out immediately in both working draft and published snapshot without needing full republication.
+   - Refresh the customer menu at `/m/green-garden-cafe`: *Cardamom Mandazi* is instantly marked *Sold out today*.
+
+3. **Controlled Draft Preview Access & Ordering Denial (CORR-A)**:
+   - In `/admin`, create a new draft menu *Secret Chef's Table*.
+   - Copy the preview URL (`/m/green-garden-cafe?preview=:menuId`).
+   - Switch role to **Customer** in the Scenario Control Panel and visit that preview URL.
+   - Notice the preview is denied: the customer sees the live public menu and an explanatory notice: *"Preview link unavailable: requires merchant authorisation and venue assignment."*
+   - Switch role back to **Organisation Owner**: the draft preview loads with the prominent amber Merchant Preview Banner.
+   - Tap on an item in the draft preview: notice the order button is disabled with *"Ordering disabled in draft preview"* to prevent structured order leakage.
+
+4. **Safe Archiving vs Hard Deletion (CORR-C)**:
+   - In `/admin`, tap **Duplicate** on a menu to create an uncommitted draft copy.
+   - Click **Delete** on the uncommitted draft copy: it is discarded and permanently removed from state.
+   - Now click **Delete** on the published *All-Day Menu*:
+     - A confirmation dialog explains that because this menu was published or has order history, it will be safely archived to preserve records.
+     - Upon confirmation, status updates to `Archived`.
+     - The menu is immediately excluded from customer discovery (`/` and `/directory`) and public venue pages (`/m/:slug`).
+     - Past customer orders and receipts retain their original snapshots and line references with complete audit integrity.
+
 

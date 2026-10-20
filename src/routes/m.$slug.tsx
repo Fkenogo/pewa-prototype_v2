@@ -11,8 +11,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, usePewa } from "@/lib/pewa/store";
-import type { Offering } from "@/lib/pewa/types";
+import { canAuthorMenus, formatPrice, getLiveMenu, usePewa } from "@/lib/pewa/store";
+import type { Menu, Offering } from "@/lib/pewa/types";
 import { ContactDrawer } from "@/components/pewa/ContactDrawer";
 import {
   Drawer,
@@ -59,6 +59,8 @@ function PublicMenu() {
   const search = Route.useSearch();
   const previewMenuId = search.preview;
   const {
+    role,
+    organisation,
     venues,
     menus,
     visitVenue,
@@ -71,19 +73,34 @@ function PublicMenu() {
     clearGuestSession,
   } = usePewa();
   const venue = venues.find((v) => v.slug === slug);
-  const previewMenu = previewMenuId
-    ? menus.find(
-        (m) =>
-          m.id === previewMenuId &&
-          venue &&
-          (isMenuEligibleForVenue(m, venue, venues) || m.orgId === venue.orgId),
-      )
-    : undefined;
 
-  const live = venue
+  // CORR-A: Controlled draft preview
+  // Preview access requires an explicitly authorised simulated merchant role with appropriate organisation/venue scope.
+  // The preview URL alone (?preview=...) must not grant access to private or unpublished content for unauthorised users.
+  const isAuthorisedMerchant =
+    canAuthorMenus(role) && !!organisation && !!venue && organisation.id === venue.orgId;
+
+  // Find preview menu ONLY if authorised and strictly eligible for this venue (no organisation-only cross-venue fallback)
+  const previewMenu =
+    previewMenuId && isAuthorisedMerchant && venue
+      ? menus.find(
+          (m) =>
+            m.id === previewMenuId &&
+            m.orgId === organisation.id &&
+            isMenuEligibleForVenue(m, venue, venues),
+        )
+      : undefined;
+
+  const isPreviewRequested = Boolean(previewMenuId);
+  const isPreviewMode = Boolean(previewMenu);
+  const isPreviewDenied = isPreviewRequested && !isPreviewMode;
+
+  const live: Menu[] = venue
     ? previewMenu
       ? [previewMenu]
-      : menus.filter((m) => isMenuEligibleForVenue(m, venue, venues) && m.status === "published")
+      : menus
+          .filter((m) => isMenuEligibleForVenue(m, venue, venues) && m.status === "published")
+          .map(getLiveMenu)
     : [];
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
@@ -112,7 +129,7 @@ function PublicMenu() {
 
   return (
     <main className="mx-auto min-h-screen max-w-lg pb-44">
-      {previewMenu && (
+      {isPreviewMode && previewMenu && (
         <aside
           role="status"
           aria-label="Menu preview mode"
@@ -121,7 +138,8 @@ function PublicMenu() {
           <div className="flex items-center gap-1.5 min-w-0">
             <Eye className="h-4 w-4 shrink-0" />
             <span className="truncate">
-              Customer Preview ({previewMenu.status.toUpperCase()}): “{previewMenu.name}”
+              Merchant Preview ({previewMenu.status.toUpperCase()}): “{previewMenu.name}” ·{" "}
+              {venue.name} ({role.toUpperCase()})
             </span>
           </div>
           <Link
@@ -131,6 +149,19 @@ function PublicMenu() {
           >
             Back to editor
           </Link>
+        </aside>
+      )}
+      {isPreviewDenied && (
+        <aside
+          role="status"
+          aria-label="Preview access denied"
+          className="bg-muted border-b px-4 py-2 text-xs text-muted-foreground flex items-center justify-between"
+        >
+          <span>
+            Preview link unavailable: requires merchant authorisation and venue assignment for{" "}
+            {venue.name}.
+          </span>
+          <span className="font-medium text-foreground">Showing public menu</span>
         </aside>
       )}
       <header className="bg-primary px-4 pb-6 pt-16 text-primary-foreground">
@@ -470,6 +501,7 @@ function PublicMenu() {
                     offering={detail}
                     venue={venue}
                     menuId={menu.id}
+                    isPreview={isPreviewMode || menu.status !== "published"}
                     onAdded={() => setDetail(null)}
                     onOpenContact={() => setContact(true)}
                   />
