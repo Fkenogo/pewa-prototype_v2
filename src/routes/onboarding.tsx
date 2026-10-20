@@ -11,9 +11,15 @@ export const Route = createFileRoute("/onboarding")({
   head: () => ({
     meta: [
       { title: "Set up your business — PEWA" },
-      { name: "description", content: "Create your business and first menu on PEWA in four short steps." },
+      {
+        name: "description",
+        content: "Create your business and first menu on PEWA in four short steps.",
+      },
       { property: "og:title", content: "Set up your business — PEWA" },
-      { property: "og:description", content: "Create your business and first menu in four short steps." },
+      {
+        property: "og:description",
+        content: "Create your business and first menu in four short steps.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -55,21 +61,34 @@ function Onboarding() {
 
   const next = () => {
     if (step < 3) return setStep(step + 1);
-    const menuId = complete({ ...f, deliveryOnly, services: deliveryOnly ? ["Delivery"] : f.services });
+    const menuId = complete({
+      ...f,
+      deliveryOnly,
+      services: deliveryOnly ? ["Delivery"] : f.services,
+    });
     navigate({ to: "/admin/menus/$menuId", params: { menuId } });
   };
 
   return (
     <main className="mx-auto flex min-h-screen max-w-lg flex-col px-4 pt-5 pb-safe">
       <div className="mb-6 flex items-center gap-2 pr-28">
-        <button onClick={() => (step ? setStep(step - 1) : navigate({ to: "/" }))} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted">
+        <button
+          onClick={() => (step ? setStep(step - 1) : navigate({ to: "/" }))}
+          aria-label="Back"
+          className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted"
+        >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <span className="text-sm text-muted-foreground">Step {step + 1} of 4 · {steps[step]}</span>
+        <span className="text-sm text-muted-foreground">
+          Step {step + 1} of 4 · {steps[step]}
+        </span>
       </div>
       <div className="mb-8 flex gap-1.5">
         {steps.map((_, i) => (
-          <div key={i} className={cn("h-1.5 flex-1 rounded-full", i <= step ? "bg-primary" : "bg-muted")} />
+          <div
+            key={i}
+            className={cn("h-1.5 flex-1 rounded-full", i <= step ? "bg-primary" : "bg-muted")}
+          />
         ))}
       </div>
 
@@ -77,12 +96,24 @@ function Onboarding() {
         {step === 0 && (
           <>
             <h1 className="text-3xl">What's your business called?</h1>
-            <Field label="Business name" value={f.orgName} onChange={(v) => set("orgName", v)} placeholder="e.g. Mama Njeri's Kitchen" autoFocus />
+            <Field
+              label="Business name"
+              value={f.orgName}
+              onChange={(v) => set("orgName", v)}
+              placeholder="e.g. Mama Njeri's Kitchen"
+              autoFocus
+            />
             <div>
               <Label className="mb-2 block">What kind of business?</Label>
               <div className="grid gap-2">
                 {TYPES.map((t) => (
-                  <Choice key={t} active={f.businessType === t} onClick={() => set("businessType", t)}>{t}</Choice>
+                  <Choice
+                    key={t}
+                    active={f.businessType === t}
+                    onClick={() => set("businessType", t)}
+                  >
+                    {t}
+                  </Choice>
                 ))}
               </div>
             </div>
@@ -90,15 +121,27 @@ function Onboarding() {
         )}
         {step === 1 && (
           <>
-            <h1 className="text-3xl">{deliveryOnly ? "Where do you deliver?" : "Where can customers find you?"}</h1>
-            <Field label="Name customers see" value={f.venueName || f.orgName} onChange={(v) => set("venueName", v)} />
+            <h1 className="text-3xl">
+              {deliveryOnly ? "Where do you deliver?" : "Where can customers find you?"}
+            </h1>
+            <Field
+              label="Name customers see"
+              value={f.venueName || f.orgName}
+              onChange={(v) => set("venueName", v)}
+            />
             <Field
               label={deliveryOnly ? "Service area" : "Street address"}
               value={f.address}
               onChange={(v) => set("address", v)}
-              placeholder={deliveryOnly ? "e.g. Westlands & Kilimani" : "e.g. 14 Moi Avenue, Nairobi"}
+              placeholder={
+                deliveryOnly ? "e.g. Westlands & Kilimani" : "e.g. 14 Moi Avenue, Nairobi"
+              }
             />
-            {deliveryOnly && <p className="text-sm text-muted-foreground">No street address needed — we'll only show your service area.</p>}
+            {deliveryOnly && (
+              <p className="text-sm text-muted-foreground">
+                No street address needed — we'll only show your service area.
+              </p>
+            )}
           </>
         )}
         {step === 2 && (
@@ -112,7 +155,14 @@ function Onboarding() {
                     <Choice
                       key={s}
                       active={f.services.includes(s)}
-                      onClick={() => set("services", f.services.includes(s) ? f.services.filter((x) => x !== s) : [...f.services, s])}
+                      onClick={() =>
+                        set(
+                          "services",
+                          f.services.includes(s)
+                            ? f.services.filter((x) => x !== s)
+                            : [...f.services, s],
+                        )
+                      }
                     >
                       {s}
                     </Choice>
@@ -124,13 +174,32 @@ function Onboarding() {
               <Label className="mb-2 block">Currency</Label>
               <div className="flex flex-wrap gap-2">
                 {CURRENCIES.map((c) => (
-                  <Choice key={c} active={f.currency === c} onClick={() => set("currency", c)}>{c}</Choice>
+                  <Choice key={c} active={f.currency === c} onClick={() => set("currency", c)}>
+                    {c}
+                  </Choice>
                 ))}
               </div>
             </div>
-            <Field label="WhatsApp number" value={f.whatsapp} onChange={(v) => set("whatsapp", v)} placeholder="+254 7…" type="tel" />
-            <Field label="Phone number" value={f.phone} onChange={(v) => set("phone", v)} placeholder="+254 7…" type="tel" />
-            <Field label="Email (optional)" value={f.email} onChange={(v) => set("email", v)} type="email" />
+            <Field
+              label="WhatsApp number"
+              value={f.whatsapp}
+              onChange={(v) => set("whatsapp", v)}
+              placeholder="+254 7…"
+              type="tel"
+            />
+            <Field
+              label="Phone number"
+              value={f.phone}
+              onChange={(v) => set("phone", v)}
+              placeholder="+254 7…"
+              type="tel"
+            />
+            <Field
+              label="Email (optional)"
+              value={f.email}
+              onChange={(v) => set("email", v)}
+              type="email"
+            />
             <p className="text-xs text-muted-foreground">Add at least one way to reach you.</p>
           </>
         )}
@@ -140,10 +209,14 @@ function Onboarding() {
             <Field label="Menu name" value={f.menuName} onChange={(v) => set("menuName", v)} />
             <div className="flex flex-wrap gap-2">
               {["All-Day Menu", "Breakfast", "Drinks", "Lunch"].map((t) => (
-                <Choice key={t} active={f.menuName === t} onClick={() => set("menuName", t)}>{t}</Choice>
+                <Choice key={t} active={f.menuName === t} onClick={() => set("menuName", t)}>
+                  {t}
+                </Choice>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">You'll add sections and items next. Nothing goes live until you tap Publish.</p>
+            <p className="text-sm text-muted-foreground">
+              You'll add sections and items next. Nothing goes live until you tap Publish.
+            </p>
           </>
         )}
       </div>
@@ -164,16 +237,37 @@ function Onboarding() {
   );
 }
 
-function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & Omit<React.ComponentProps<typeof Input>, "onChange" | "value">) {
+function Field({
+  label,
+  value,
+  onChange,
+  ...rest
+}: { label: string; value: string; onChange: (v: string) => void } & Omit<
+  React.ComponentProps<typeof Input>,
+  "onChange" | "value"
+>) {
   return (
     <div>
       <Label className="mb-1.5 block">{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-12 text-base" {...rest} />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-12 text-base"
+        {...rest}
+      />
     </div>
   );
 }
 
-function Choice({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Choice({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"

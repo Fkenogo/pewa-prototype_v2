@@ -11,7 +11,8 @@ const ROLES = Object.keys(ROLE_LABELS) as Role[];
 
 export function ScenarioPanel() {
   const [open, setOpen] = useState(false);
-  const { role, scenario, setRole, loadScenario, reset, activity, venues, organisation, orders } = usePewa();
+  const { role, scenario, setRole, loadScenario, reset, activity, venues, organisation, orders } =
+    usePewa();
   const navigate = useNavigate();
   const myVenue = venues.find((v) => v.orgId === organisation?.id);
 
@@ -26,23 +27,34 @@ export function ScenarioPanel() {
         <span className="max-w-24 truncate">{ROLE_LABELS[role]}</span>
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-foreground/30" onClick={() => setOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-foreground/30"
+          onClick={() => setOpen(false)}
+        >
           <aside
             onClick={(e) => e.stopPropagation()}
             className="flex h-full w-full max-w-sm flex-col overflow-y-auto bg-proto p-4 text-proto-foreground pb-safe"
           >
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Prototype only</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">
+                  Prototype only
+                </p>
                 <h2 className="text-xl">Scenario control</h2>
               </div>
-              <button onClick={() => setOpen(false)} aria-label="Close" className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-proto-foreground/10">
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-proto-foreground/10"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <section className="mb-5">
-              <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">Acting as</h3>
+              <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">
+                Acting as
+              </h3>
               <div className="grid grid-cols-2 gap-2">
                 {ROLES.map((r) => (
                   <button
@@ -60,23 +72,111 @@ export function ScenarioPanel() {
             </section>
 
             <section className="mb-5">
-              <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">Jump to</h3>
+              <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">
+                Jump to
+              </h3>
               <div className="flex flex-wrap gap-2 text-xs">
-                <Link to="/" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Customer home</Link>
-                <Link to="/admin" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Business workspace</Link>
-                <Link to="/directory" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Directory</Link>
-                <Link to="/admin/orders" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Merchant orders</Link>
-                <Link to="/orders" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Customer requests ({orders.length})</Link>
+                <Link
+                  to="/"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                >
+                  Customer home
+                </Link>
+                <Link
+                  to="/admin"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                >
+                  Business workspace
+                </Link>
+                <Link
+                  to="/directory"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                >
+                  Directory
+                </Link>
+                <Link
+                  to="/admin/orders"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                >
+                  Merchant orders
+                </Link>
+                <Link
+                  to="/orders"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                >
+                  Customer requests ({orders.length})
+                </Link>
                 {myVenue && (
-                  <Link to="/m/$slug" params={{ slug: myVenue.slug }} onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">My public menu</Link>
+                  <Link
+                    to="/m/$slug"
+                    params={{ slug: myVenue.slug }}
+                    onClick={() => setOpen(false)}
+                    className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                  >
+                    My public menu
+                  </Link>
                 )}
-                <Link to="/m/$slug" params={{ slug: "green-garden-cafe" }} onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">/m/green-garden-cafe</Link>
+                <Link
+                  to="/m/$slug"
+                  params={{ slug: "green-garden-cafe" }}
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                >
+                  /m/green-garden-cafe
+                </Link>
+                <Link
+                  to="/operator"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/20 px-3 py-2 font-semibold"
+                >
+                  Operator console
+                </Link>
+                <Link
+                  to="/docs"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-accent/40 text-accent-foreground px-3 py-2 font-bold hover:bg-accent/60"
+                >
+                  Deliverables & Review Guide →
+                </Link>
               </div>
             </section>
 
             <section className="mb-5">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="font-sans text-xs font-bold uppercase tracking-wider opacity-70">Scenario</h3>
+                <h3 className="font-sans text-xs font-bold uppercase tracking-wider opacity-70">
+                  Network Resilience
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  const next = !usePewa.getState().simulatedOffline;
+                  usePewa.getState().setSimulatedOffline(next);
+                  toast(next ? "Simulated offline mode enabled" : "Online connection restored");
+                }}
+                className={cn(
+                  "flex min-h-10 w-full items-center justify-between rounded-lg border px-3 text-xs font-semibold transition-colors",
+                  usePewa.getState().simulatedOffline
+                    ? "border-amber-400 bg-amber-500/20 text-amber-200"
+                    : "border-proto-foreground/20 hover:bg-proto-foreground/10",
+                )}
+              >
+                <span>Offline Network Simulation</span>
+                <span className="font-mono text-[10px]">
+                  {usePewa.getState().simulatedOffline ? "OFFLINE (Active)" : "ONLINE"}
+                </span>
+              </button>
+            </section>
+
+            <section className="mb-5">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="font-sans text-xs font-bold uppercase tracking-wider opacity-70">
+                  Scenario
+                </h3>
                 <button
                   onClick={() => {
                     reset();
@@ -96,8 +196,28 @@ export function ScenarioPanel() {
                         loadScenario(s.id);
                         setOpen(false);
                         if (s.id === "new-cafe") navigate({ to: "/onboarding" });
-                        else if (["unavailable-item", "zero-units", "expired-beyond-grace", "outdated-price", "channel-unavailable", "units-available"].includes(s.id)) navigate({ to: "/m/$slug", params: { slug: "green-garden-cafe" } });
-                        else if (["duplicate-accept", "withdraw-vs-accept", "admitted-pending"].includes(s.id)) navigate({ to: "/admin/orders" });
+                        else if (s.id === "hotel" || s.id === "protected-denied")
+                          navigate({ to: "/m/$slug", params: { slug: "grand-horizon-hotel" } });
+                        else if (s.id === "delivery-only")
+                          navigate({ to: "/m/$slug", params: { slug: "cloudburger" } });
+                        else if (s.id === "sponsored-campaign") navigate({ to: "/" });
+                        else if (
+                          [
+                            "unavailable-item",
+                            "zero-units",
+                            "expired-beyond-grace",
+                            "outdated-price",
+                            "channel-unavailable",
+                            "units-available",
+                          ].includes(s.id)
+                        )
+                          navigate({ to: "/m/$slug", params: { slug: "green-garden-cafe" } });
+                        else if (
+                          ["duplicate-accept", "withdraw-vs-accept", "admitted-pending"].includes(
+                            s.id,
+                          )
+                        )
+                          navigate({ to: "/admin/orders" });
                         else navigate({ to: "/admin" });
                         toast(`Loaded: ${s.label}`);
                       }}
@@ -108,7 +228,9 @@ export function ScenarioPanel() {
                       )}
                     >
                       <span>{s.label}</span>
-                      <span className="text-[10px] opacity-70">{s.ready ? s.hint : `Coming · ${s.hint}`}</span>
+                      <span className="text-[10px] opacity-70">
+                        {s.ready ? s.hint : `Coming · ${s.hint}`}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -116,12 +238,17 @@ export function ScenarioPanel() {
             </section>
 
             <section>
-              <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">Event log</h3>
+              <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">
+                Event log
+              </h3>
               <ul className="space-y-1 font-mono text-[11px] opacity-80">
                 {activity.length === 0 && <li>No events yet.</li>}
                 {activity.slice(0, 15).map((e) => (
                   <li key={e.id}>
-                    <span className="opacity-60">{new Date(e.at).toLocaleTimeString()} · {e.role}</span> {e.message}
+                    <span className="opacity-60" suppressHydrationWarning>
+                      {new Date(e.at).toLocaleTimeString()} · {e.role}
+                    </span>{" "}
+                    {e.message}
                   </li>
                 ))}
               </ul>

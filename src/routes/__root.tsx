@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ScenarioPanel } from "@/components/pewa/ScenarioPanel";
 import { HydrationGate } from "@/components/pewa/HydrationGate";
+import { OfflineBanner } from "@/components/pewa/OfflineBanner";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -84,7 +85,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport-fit", content: "cover" },
       { name: "theme-color", content: "#2f5a43" },
       { title: "PEWA — Menus customers can open instantly" },
-      { name: "description", content: "PEWA prototype: publish your menu from your phone and share it by QR or link." },
+      {
+        name: "description",
+        content: "PEWA prototype: publish your menu from your phone and share it by QR or link.",
+      },
+      { property: "og:title", content: "PEWA — Menus customers can open instantly" },
+      {
+        property: "og:description",
+        content: "PEWA prototype: publish your menu from your phone and share it by QR or link.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -111,11 +120,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         {children}
         <Scripts />
       </body>
@@ -130,10 +139,11 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <HydrationGate>
+        <OfflineBanner />
         <Outlet />
         <ScenarioPanel />
+        <Toaster position="top-center" />
       </HydrationGate>
-      <Toaster position="top-center" />
     </QueryClientProvider>
   );
 }

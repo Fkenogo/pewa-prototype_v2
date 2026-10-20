@@ -1,5 +1,13 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Activity, BookOpen, ClipboardList, LayoutGrid, MoreHorizontal, ShieldAlert } from "lucide-react";
+import {
+  Activity,
+  BookOpen,
+  ClipboardList,
+  CreditCard,
+  LayoutGrid,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
 import { ROLE_LABELS, isBusinessRole, usePewa } from "@/lib/pewa/store";
 import { Button } from "@/components/ui/button";
 
@@ -7,9 +15,15 @@ export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
       { title: "Business workspace — PEWA" },
-      { name: "description", content: "Manage your menus, items and availability from your phone." },
+      {
+        name: "description",
+        content: "Manage your menus, items and availability from your phone.",
+      },
       { property: "og:title", content: "Business workspace — PEWA" },
-      { property: "og:description", content: "Manage menus, items and availability from your phone." },
+      {
+        property: "og:description",
+        content: "Manage menus, items and availability from your phone.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -21,8 +35,9 @@ const NAV = [
   { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
   { label: "Menus", icon: BookOpen, to: "/admin", ready: true },
   { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: true },
-  { label: "Activity", icon: Activity, ready: false },
-  { label: "More", icon: MoreHorizontal, ready: false },
+  { label: "Promos", icon: Sparkles, to: "/admin/promotions", ready: true },
+  { label: "Activity", icon: Activity, to: "/admin/activity", ready: true },
+  { label: "Billing", icon: CreditCard, to: "/admin/billing", ready: true },
 ];
 
 function AdminLayout() {
@@ -34,9 +49,19 @@ function AdminLayout() {
         <ShieldAlert className="h-10 w-10 text-muted-foreground" />
         <h1 className="text-2xl">Business workspace only</h1>
         <p className="text-muted-foreground">
-          You're acting as <b>{ROLE_LABELS[role]}</b>. {role === "operator" ? "Operators can't edit a business's menus or prices." : "Customers don't need an account to browse."}
+          You're acting as <b>{ROLE_LABELS[role]}</b>.{" "}
+          {role === "operator"
+            ? "Operators can't edit a business's menus or prices."
+            : "Customers don't need an account to browse."}
         </p>
-        <p className="text-sm text-muted-foreground">Switch role from the panel in the top-right.</p>
+        <p className="text-sm text-muted-foreground">
+          Switch role from the panel in the top-right.
+        </p>
+        {role === "operator" && (
+          <Button asChild className="mt-3 h-10" size="sm">
+            <Link to="/operator">Open PEWA Operator Console</Link>
+          </Button>
+        )}
       </Centered>
     );
   }
@@ -66,7 +91,7 @@ function AdminLayout() {
       <div className="flex-1 pb-24 md:pb-8">
         <Outlet />
       </div>
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-card pb-safe pt-1 md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t bg-card pb-safe pt-1 md:hidden">
         {NAV.map((n) => (
           <NavItem key={n.label} {...n} />
         ))}
@@ -75,7 +100,19 @@ function AdminLayout() {
   );
 }
 
-function NavItem({ label, icon: Icon, to, ready, desktop }: { label: string; icon: typeof LayoutGrid; to?: string; ready: boolean; desktop?: boolean }) {
+function NavItem({
+  label,
+  icon: Icon,
+  to,
+  ready,
+  desktop,
+}: {
+  label: string;
+  icon: typeof LayoutGrid;
+  to?: string;
+  ready: boolean;
+  desktop?: boolean;
+}) {
   const cls = desktop
     ? "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium"
     : "flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium";
@@ -87,7 +124,7 @@ function NavItem({ label, icon: Icon, to, ready, desktop }: { label: string; ico
       </span>
     );
   return (
-    <Link to={label === "Orders" ? "/admin/orders" : "/admin"} className={`${cls} text-primary`}>
+    <Link to={to} className={`${cls} text-primary`}>
       <Icon className="h-5 w-5" />
       {label}
     </Link>
@@ -95,5 +132,9 @@ function NavItem({ label, icon: Icon, to, ready, desktop }: { label: string; ico
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-3 px-6 text-center">{children}</main>;
+  return (
+    <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-3 px-6 text-center">
+      {children}
+    </main>
+  );
 }

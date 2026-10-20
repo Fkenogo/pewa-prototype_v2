@@ -13,7 +13,10 @@ export function HydrationGate({ children }: { children: ReactNode }) {
   }, []);
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div
+        className="flex min-h-screen items-center justify-center bg-background"
+        suppressHydrationWarning
+      >
         <span className="font-display text-3xl text-primary">pewa</span>
       </div>
     );

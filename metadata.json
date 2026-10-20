@@ -1,0 +1,5 @@
+{
+  "name": "PEWA — Menus customers can open instantly",
+  "description": "PEWA prototype: publish your menu from your phone and share it by QR or link.",
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

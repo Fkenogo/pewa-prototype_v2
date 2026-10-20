@@ -1,5 +1,10 @@
-# PEWA discovery and ordering
-- [x] Home and directory search, recents and favourites.
-- [x] Guest cart, explicit submission and immutable order snapshot.
-- [x] Merchant incoming orders, accept/decline/ready and customer tracking/withdrawal.
-- [x] Ordering scenarios, business-rule tests and end-to-end verification.
+# PEWA Implementation Slices
+
+- [x] **Slice P0 — Foundation, Design Tokens & Scenario Control Engine**: Scaffolding, tokens, Zustand store with persistence, 16 scenarios, role switcher.
+- [x] **Slice P1 — Customer Discovery & Public Menu Journey**: Home, Directory, `/m/:slug` public menus, offering sheet, direct manual contact (WhatsApp/Phone/Email).
+- [x] **Slice P2 — Business Onboarding, Workspace & Menu Authoring**: Onboarding wizard, `/admin` workspace hub, menu authoring, sections/offerings/modifiers, instant publishing, QR codes.
+- [x] **Slice P3 — Structured Ordering & Lifecycle Decision Engine**: Guest cart, explicit submission disclaimers, `/admin/orders` merchant cockpit, accept/decline/ready actions, live customer order status `/orders/$orderId`, withdrawal workflow.
+- [x] **Slice P4 — Subscription Entitlements & Consumption Mechanics**: 200 included monthly units, top-up balances carrying forward, priority deduction (included -> top-up -> debt overdraft), critical zero-unit graceful exhaustion (menu and contact stay live, cart falls back to direct contact), `/admin/billing` dashboard with visual fuel gauges and simulation sandbox, staff RBAC restrictions.
+- [x] **Slice P5 — Advanced Experiences**: Hotel multi-context & protected in-room dining guest verification, Featured Offers campaign studio (`/admin/promotions`), PEWA-observed activity insights (`/admin/activity`), multi-brand administration, in-menu special badges, and RBAC permission enforcement.
+- [x] **Slice P6 — PEWA Operator Console**: Dedicated platform operator oversight (`/operator`), tenant status, bounded suspension/reactivation, dispute credit adjustments, allergen/content moderation, and technical guardrails prohibiting order acceptance or menu pricing by operators.
+- [x] **Slice P7 — Experience Hardening, Accessibility & Freeze Candidate**: 16-scenario audit, 15/15 Acceptance Criteria automated verification, WCAG 2.1 AA a11y focus rings & skip-to-content, simulated offline network banner, and formal Deliverables package (Deliverables A through H, `docs/`, and in-app `/docs` viewer). Versioned as `v1.0.0-rc1`.

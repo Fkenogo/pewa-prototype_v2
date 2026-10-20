@@ -19,11 +19,15 @@ export type ScenarioId =
   | "protected-denied"
   | "sponsored-campaign";
 
+export type OrgStatus = "active" | "suspended" | "pending_review";
+
 export interface Organisation {
   id: string;
   name: string;
   businessType: string;
   currency: string;
+  status?: OrgStatus;
+  statusNote?: string;
 }
 
 export interface Venue {
@@ -55,6 +59,7 @@ export interface Offering {
   available: boolean;
   modifiers: ModifierGroup[];
   emoji: string;
+  specialBadge?: string;
 }
 
 export interface Section {
@@ -71,6 +76,7 @@ export interface Menu {
   sections: Section[];
   updatedAt: string;
   publishedAt?: string;
+  isProtected?: boolean;
 }
 
 export interface ActivityEvent {
@@ -79,6 +85,53 @@ export interface ActivityEvent {
   role: Role;
   kind: string;
   message: string;
+}
+
+export interface GuestSession {
+  venueId: string;
+  roomNumber: string;
+  lastName: string;
+  verified: boolean;
+}
+
+export interface PromotionCampaign {
+  id: string;
+  orgId: string;
+  venueId: string;
+  title: string;
+  tagline: string;
+  badgeText: string;
+  budget: number;
+  spent: number;
+  impressions: number;
+  clicks: number;
+  active: boolean;
+  startDate: string;
+  endDate: string;
+}
+
+export interface UsageDisputeCase {
+  id: string;
+  orgId: string;
+  orderReference: string;
+  merchantName: string;
+  reason: string;
+  status: "open" | "resolved" | "dismissed";
+  openedAt: string;
+  resolvedAt?: string;
+  resolutionNote?: string;
+  adjustmentUnits?: number;
+}
+
+export interface ModerationCase {
+  id: string;
+  orgId: string;
+  targetType: "offering" | "menu" | "venue";
+  targetName: string;
+  reportReason: string;
+  status: "pending" | "resolved" | "dismissed";
+  flaggedAt: string;
+  actionTaken?: string;
 }
 
 export interface PewaState {
@@ -94,6 +147,11 @@ export interface PewaState {
   orders: OrderRequest[];
   orderSequence: number;
   orderPolicy: OrderPolicy;
+  campaigns: PromotionCampaign[];
+  guestSession: GuestSession | null;
+  disputes: UsageDisputeCase[];
+  moderationCases: ModerationCase[];
+  simulatedOffline: boolean;
 }
 
 export interface CartLine {
@@ -138,7 +196,11 @@ export interface OrderRequest {
 
 export interface OrderPolicy {
   included: number;
+  includedMax: number;
   topUp: number;
   overdraftUsed: number;
+  overdraftMax: number;
   expired: boolean;
+  cycleRenewsAt: string;
+  tier: string;
 }

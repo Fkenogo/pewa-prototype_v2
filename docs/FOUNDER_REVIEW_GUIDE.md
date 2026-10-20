@@ -1,0 +1,95 @@
+# Deliverable F — Founder Review Guide
+**Step-by-Step Walkthrough Scripts for Reviewing Every Experience Slice**
+
+---
+
+## 1. Quick Start & Reviewer Controls
+- **Floating Scenario Control Panel**: Located at the top right of every screen. Tap to change roles (`Customer`, `Organisation Owner`, `Organisation Administrator`, `Business Manager`, `Operational Staff`, `PEWA Operator`), load any of the 16 scenarios, jump to key routes, or reset state to baseline.
+- **Responsive Viewport Testing**: Test on mobile viewports (375px iPhone SE, 390px iPhone 14/15, 414px Max) as well as desktop (1280px+).
+
+---
+
+## 2. Slice-by-Slice Review Walkthroughs
+
+### Slice P0 & P1 — Customer Discovery & Public Menu Journey
+1. Open the floating Scenario Panel and tap **Customer Home** (`/`).
+2. Search for "coffee", "bistro", or "smash". Notice real-time filtering across titles, tags, and offerings.
+3. Open the **Menu Directory** (`/directory`). Filter by Category ("Smashed Burgers", "Pastries"), Service ("Takeaway"), and Area.
+4. Click into **Green Garden Café** (`/m/green-garden-cafe`).
+5. Notice:
+   - Category anchor links scroll smoothly to sections.
+   - Dietary and specialty tags are visible on dishes.
+   - Floating action bar offers **Contact business** (direct WhatsApp, Phone, Email) and **View cart**.
+   - Tap **Contact business** to inspect the Contact Drawer. Notice direct external links bypassing platform order creation.
+
+### Slice P2 — Business Onboarding, Workspace & Menu Authoring
+1. In the Scenario Panel, select scenario **New café** (`new-cafe`). The app navigates to `/onboarding`.
+2. Follow the 3-step mobile wizard:
+   - Step 1: Account name & currency (KES).
+   - Step 2: Venue name, services (Dine-in, Takeaway), phone & WhatsApp contact.
+   - Step 3: Enter first menu name and add a sample offering.
+3. Tap **Publish & Open Workspace**.
+4. You are directed to `/admin`. Notice the published status badge, QR code preview & print/save buttons, and venue switchers.
+5. Tap **Manage menu** to visit `/admin/menus/:menuId`. Add offerings, adjust price, add milk/modifier options, and toggle visibility.
+
+### Slice P3 — Structured Ordering & Lifecycle Decision Engine
+1. In the Scenario Panel, select scenario **Units available** (`units-available`).
+2. On `/m/green-garden-cafe`, tap on **Flat White**.
+3. Choose modifier (e.g. "Oat Milk +50"), enter optional kitchen note ("Extra hot"), tap **Add to cart**.
+4. Open the Cart Drawer. Tap **Review request**.
+5. Observe the mandatory disclaimer: *"This is a request, not a confirmed sale"*.
+6. Check the confirmation checkbox and tap **Submit order request**.
+7. You are redirected to `/orders/:orderId`. Status shows **Submitted** (`pending`).
+8. Open the Scenario Panel, switch role to **Operational Staff**, and jump to **Merchant orders** (`/admin/orders`).
+9. Tap **Accept order**. Notice:
+   - Order moves from "Incoming" to "Preparing".
+   - Exactly **1 acceptance unit** is deducted.
+   - Tap **Mark as ready** to advance kitchen status (consumes 0 units).
+10. Check live customer view (`/orders/:orderId`) in another tab or link: status instantly updates to **Ready**.
+
+### Slice P4 — Commercial Entitlements & Zero-Unit Graceful Fallback
+1. Open the Scenario Panel and load scenario **Zero units** (`zero-units`).
+2. Switch role to **Organisation Owner** and visit **Subscription & Units** (`/admin/billing`).
+3. Notice:
+   - Fuel gauges clearly show `0 / 200 included units` and `0 top-up units`.
+   - Alert informs: *"New structured requests paused. Public menus and direct contact remain live."*
+4. Visit `/m/green-garden-cafe`: The menu is 100% visible, phone and WhatsApp are accessible. Attempting to add an item to the cart politely displays: *"Structured requests are paused. Please contact the business directly."*
+5. Return to `/admin/billing`. Click **Purchase Top-Up Bundle** (e.g. `+100 units`).
+6. Notice balances instantly replenish and ordering capability resumes.
+7. Switch role to **Operational Staff** and attempt to visit `/admin/billing`: Access is strictly blocked with an informative security message.
+
+### Slice P5 — Advanced Hospitality, Promotions & Observational Insights
+1. **Luxury Hotel Context**:
+   - In the Scenario Panel, load scenario **Protected access denied** (`protected-denied`).
+   - Visit `/m/grand-horizon-hotel`.
+   - Notice the public menu ("Terrace Bistro & Lounge") is openly browseable.
+   - Tap the tab for **In-Room Dining (Guests Only)**.
+   - The room verification barrier appears: enter demo credentials (Room `402`, Last name `Smith`).
+   - Room service unlocks; room number is stored in session and attached to orders.
+2. **Featured Offers Campaign Studio**:
+   - In the Scenario Panel, load scenario **Sponsored campaign** (`sponsored-campaign`).
+   - Visit `/admin/promotions`. Inspect active campaign metrics (Budget: $50, Clicks: 18, CPC: $0.79).
+   - Visit Home (`/`): Observe the "Featured Offers" block with clear "Sponsored" badge.
+3. **PEWA-Observed Activity**:
+   - Visit `/admin/activity` to review digital interaction insights, acceptance rate, and WhatsApp click-throughs.
+
+### Slice P6 — PEWA Operator Console & Guardrails
+1. In the Scenario Panel, switch role to **PEWA Operator** and jump to **Operator console** (`/operator`).
+2. Notice the dedicated platform dashboard:
+   - **Tenants & Subscriptions Tab**: Inspect Green Garden Café, Grand Horizon Hotel, and CloudBurger.
+   - Test **Suspend Tenant** / **Reactivate Tenant** with audit notes.
+   - **Dispute Resolution Tab**: Inspect usage dispute `disp_1`; resolve with manual credit adjustments (+1 unit) or dismiss.
+   - **Content Moderation Tab**: Inspect flagged allergen claim on CloudBurger; take action (issue warning or hide item).
+   - **Campaign Review Tab**: Review sponsored offers; test policy pause.
+   - **Platform Guardrails Tab**: Review technical prohibition tests verifying operators cannot accept food orders, change kitchen status, or edit prices.
+
+### Slice P7 — Experience Hardening & Freeze Candidate
+1. Open the documentation portal at `/docs` to inspect all 8 deliverables.
+2. Toggle **Offline Network Simulation** in the Scenario Panel:
+   - Observe the yellow Offline Banner at the top of the app.
+   - Verify menus and local cart remain responsive while offline.
+   - Verify cart submission gracefully prevents submission until connection restores.
+3. Test keyboard navigation using `Tab` key:
+   - "Skip to main content" link appears on first tab.
+   - All buttons have visible focus rings (`ring-2 ring-ring`).
+4. Run automated test suite: 100% of tests passing across scenarios, operator guardrails, and ordering state machines.
