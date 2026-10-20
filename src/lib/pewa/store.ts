@@ -50,9 +50,17 @@ type Actions = {
     menuName: string;
   }) => string;
   addSection: (menuId: string, name: string, categoryTag?: string) => void;
+  addSectionsBatch: (menuId: string, names: string[]) => void;
   renameSection: (menuId: string, sectionId: string, name: string) => void;
   removeSection: (menuId: string, sectionId: string) => void;
   moveSection: (menuId: string, sectionId: string, dir: -1 | 1) => void;
+  reorderSections: (menuId: string, sectionIds: string[]) => void;
+  moveOfferingBetweenSections: (
+    menuId: string,
+    fromSectionId: string,
+    toSectionId: string,
+    offeringId: string,
+  ) => void;
   upsertOffering: (
     menuId: string,
     sectionId: string,
@@ -61,7 +69,33 @@ type Actions = {
   removeOffering: (menuId: string, sectionId: string, offeringId: string) => void;
   toggleAvailability: (menuId: string, sectionId: string, offeringId: string) => void;
   setMenuStatus: (menuId: string, status: MenuStatus) => void;
-  addMenu: (name: string, venueId?: string) => string;
+  addMenu: (
+    nameOrInput:
+      | string
+      | {
+          name: string;
+          venueId?: string | undefined;
+          venueIds?: string[] | undefined;
+          description?: string | undefined;
+          isProtected?: boolean | undefined;
+          coverImage?: string | undefined;
+          initialSections?: string[] | undefined;
+        },
+    venueId?: string | undefined,
+  ) => string;
+  updateMenuMeta: (
+    menuId: string,
+    updates: {
+      name?: string | undefined;
+      description?: string | null | undefined;
+      venueId?: string | null | undefined;
+      venueIds?: string[] | undefined;
+      isProtected?: boolean | undefined;
+      coverImage?: string | null | undefined;
+    },
+  ) => void;
+  deleteMenu: (menuId: string) => void;
+  duplicateMenu: (menuId: string) => string;
   log: (e: Omit<ActivityEvent, "id" | "at" | "role">) => void;
   visitVenue: (id: string) => void;
   toggleFavourite: (id: string) => void;
@@ -463,21 +497,66 @@ export const usePewa = create<PewaState & Actions>()(
           get().log({ kind: "menu.created", message: `Draft menu “${i.menuName}” created` });
           return menuId;
         },
-        addMenu: (name, venueId) => {
+        addMenu: (nameOrInput, venueId) => {
           const org = get().organisation;
           const id = uid("menu");
-          if (!org) return id;
-          const targetVenueId = venueId || get().venues.find((v) => v.orgId === org.id)?.id;
+          const orgId = org?.id ?? get().venues[0]?.orgId ?? "org_default";
+
+          if (typeof nameOrInput === "string") {
+            const targetVenueId =
+              venueId ||
+              (org ? get().venues.find((v) => v.orgId === org.id)?.id : get().venues[0]?.id);
+            set((s) => ({
+              menus: [
+                ...s.menus,
+                {
+                  id,
+                  orgId,
+                  venueId: targetVenueId,
+                  name: nameOrInput,
+                  status: "draft",
+                  sections: [],
+                  updatedAt: now(),
+                },
+              ],
+            }));
+            get().log({ kind: "menu.created", message: `Draft menu “${nameOrInput}” created` });
+            return id;
+          }
+
+          const {
+            name,
+            venueId: inputVenueId,
+            venueIds,
+            description,
+            isProtected = false,
+            coverImage,
+            initialSections = [],
+          } = nameOrInput;
+
+          const targetVenueId = inputVenueId || (venueIds?.length === 1 ? venueIds[0] : undefined);
+          const targetVenueIds = venueIds && venueIds.length > 0 ? venueIds : undefined;
+
+          const sections: Section[] = initialSections.map((secName) => ({
+            id: uid("sec"),
+            name: secName,
+            offerings: [],
+          }));
+
           set((s) => ({
             menus: [
               ...s.menus,
               {
                 id,
-                orgId: org.id,
+                orgId,
                 venueId: targetVenueId,
+                venueIds: targetVenueIds,
                 name,
+                description,
+                coverImage,
+                isProtected,
                 status: "draft",
-                sections: [],
+                sections,
                 updatedAt: now(),
               },
             ],
@@ -485,9 +564,92 @@ export const usePewa = create<PewaState & Actions>()(
           get().log({ kind: "menu.created", message: `Draft menu “${name}” created` });
           return id;
         },
+        updateMenuMeta: (menuId, updates) => {
+          const m = get().menus.find((x) => x.id === menuId);
+          if (!m) return;
+          set((s) => ({
+            menus: s.menus.map((x) => {
+              if (x.id !== menuId) return x;
+              const next: Menu = {
+                ...x,
+                ...(updates.name !== undefined && { name: updates.name }),
+                ...(updates.description !== undefined && {
+                  description: updates.description || undefined,
+                }),
+                ...(updates.isProtected !== undefined && { isProtected: updates.isProtected }),
+                ...(updates.coverImage !== undefined && {
+                  coverImage: updates.coverImage || undefined,
+                }),
+                ...(updates.venueIds !== undefined && {
+                  venueIds:
+                    updates.venueIds && updates.venueIds.length > 0 ? updates.venueIds : undefined,
+                }),
+                ...(updates.venueId !== undefined && {
+                  venueId: updates.venueId || undefined,
+                }),
+                updatedAt: now(),
+              };
+              return next;
+            }),
+          }));
+          get().log({
+            kind: "menu.updated",
+            message: `Updated menu settings for “${updates.name || m.name}”`,
+          });
+        },
+        deleteMenu: (menuId) => {
+          const m = get().menus.find((x) => x.id === menuId);
+          set((s) => ({
+            menus: s.menus.filter((x) => x.id !== menuId),
+          }));
+          if (m) {
+            get().log({ kind: "menu.deleted", message: `Menu “${m.name}” deleted` });
+          }
+        },
+        duplicateMenu: (menuId) => {
+          const source = get().menus.find((x) => x.id === menuId);
+          if (!source) return "";
+          const newId = uid("menu");
+          const duplicated: Menu = {
+            ...source,
+            id: newId,
+            name: `${source.name} (Copy)`,
+            status: "draft",
+            updatedAt: now(),
+            publishedAt: undefined,
+            sections: source.sections.map((sec) => ({
+              ...sec,
+              id: uid("sec"),
+              offerings: sec.offerings.map((off) => ({
+                ...off,
+                id: uid("off"),
+              })),
+            })),
+          };
+          set((s) => ({
+            menus: [...s.menus, duplicated],
+          }));
+          get().log({ kind: "menu.duplicated", message: `Duplicated “${source.name}” as draft` });
+          return newId;
+        },
         addSection: (menuId, name, categoryTag) => {
           mutateMenu(menuId, (ss) => [...ss, { id: uid("sec"), name, categoryTag, offerings: [] }]);
           get().log({ kind: "section.created", message: `Section “${name}” added` });
+        },
+        addSectionsBatch: (menuId, names) => {
+          const cleanNames = names.map((n) => n.trim()).filter(Boolean);
+          if (cleanNames.length === 0) return;
+          mutateMenu(menuId, (ss) => {
+            const existing = new Set(ss.map((s) => s.name.trim().toLowerCase()));
+            const toAdd = cleanNames
+              .filter((n) => !existing.has(n.toLowerCase()))
+              .map((name) => ({ id: uid("sec"), name, offerings: [] }));
+            return [...ss, ...toAdd];
+          });
+          get().log({
+            kind: "section.created",
+            message: `Added ${cleanNames.length} sections to menu`,
+          });
         },
         renameSection: (menuId, sectionId, name) =>
           mutateMenu(menuId, (ss) => ss.map((x) => (x.id === sectionId ? { ...x, name } : x))),
@@ -505,13 +667,58 @@ export const usePewa = create<PewaState & Actions>()(
             [c[i], c[j]] = [to, from];
             return c;
           }),
+        reorderSections: (menuId, sectionIds) =>
+          mutateMenu(menuId, (ss) => {
+            const map = new Map(ss.map((s) => [s.id, s]));
+            const reordered: Section[] = [];
+            for (const id of sectionIds) {
+              const sec = map.get(id);
+              if (sec) {
+                reordered.push(sec);
+                map.delete(id);
+              }
+            }
+            for (const sec of map.values()) {
+              reordered.push(sec);
+            }
+            return reordered;
+          }),
+        moveOfferingBetweenSections: (menuId, fromSectionId, toSectionId, offeringId) => {
+          if (fromSectionId === toSectionId) return;
+          let movedName = "";
+          mutateMenu(menuId, (ss) => {
+            const fromSec = ss.find((s) => s.id === fromSectionId);
+            const offering = fromSec?.offerings.find((o) => o.id === offeringId);
+            if (!offering) return ss;
+            movedName = offering.name;
+            return ss.map((s) => {
+              if (s.id === fromSectionId) {
+                return { ...s, offerings: s.offerings.filter((o) => o.id !== offeringId) };
+              }
+              if (s.id === toSectionId) {
+                return { ...s, offerings: [...s.offerings, offering] };
+              }
+              return s;
+            });
+          });
+          if (movedName) {
+            get().log({
+              kind: "offering.moved",
+              message: `Moved “${movedName}” to another section`,
+            });
+          }
+        },
         upsertOffering: (menuId, sectionId, o) => {
-          const isNew = !o.id;
+          let isNew = false;
           mutateMenu(menuId, (ss) =>
             ss.map((x) => {
               if (x.id !== sectionId) return x;
-              if (isNew)
-                return { ...x, offerings: [...x.offerings, { ...o, id: uid("off") } as Offering] };
+              const exists = o.id ? x.offerings.some((y) => y.id === o.id) : false;
+              if (!exists) {
+                isNew = true;
+                const newItem: Offering = { ...o, id: o.id || uid("off") } as Offering;
+                return { ...x, offerings: [...x.offerings, newItem] };
+              }
               return {
                 ...x,
                 offerings: x.offerings.map((y) =>
@@ -659,8 +866,11 @@ export const usePewa = create<PewaState & Actions>()(
             const currentMenu = current.menus.find((cm) => cm.id === m.id);
             return {
               ...m,
-              venueId: m.venueId || currentMenu?.venueId,
-              venueIds: m.venueIds || currentMenu?.venueIds,
+              venueId: m.venueId ?? currentMenu?.venueId,
+              venueIds: m.venueIds ?? currentMenu?.venueIds,
+              description: m.description ?? currentMenu?.description,
+              coverImage: m.coverImage ?? currentMenu?.coverImage,
+              isProtected: m.isProtected ?? currentMenu?.isProtected,
               sections: (m.sections || []).map((sec) => ({
                 ...sec,
                 offerings: (sec.offerings || []).map((off) => ({

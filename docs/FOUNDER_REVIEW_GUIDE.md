@@ -184,3 +184,105 @@
      - **Fail-closed image compression (Final Correction A)**: Canvas context unavailability and memory failure reject cleanly without writing uncompressed raw data to state.
      - Tag grouping, dietary unverified declarations, and image library provenance.
 
+---
+
+## 4. Work Package R1-B — Mobile-First Menu Creation & Organisation Experience
+
+### Overview of Capabilities Introduced in R1-B
+- **Guided 3-Step Mobile Creation Wizard (`CreateMenuModal.tsx`)**:
+  - **Step 1 (Context)**: Intelligently auto-selects venue for single-venue businesses; presents clear checkboxes for multi-venue groups with "Select All" / "Clear" buttons.
+  - **Step 2 (Details)**: Name input with 1-tap suggested names based on venue category (Café, Restaurant, Hotel, Bakery, Delivery), optional description, and Public vs Protected (In-Room / Resident) visibility toggle.
+  - **Step 3 (Categories & Sections)**: Multi-selection batch addition chips for recommended sections, custom section addition with Enter key, and clear chip removal before creation.
+- **Enhanced Workspace Menu List (`/admin`)**:
+  - Filter menus by venue tab when managing multi-venue organizations.
+  - Rich cards showing status badges (`Published`, `Draft`, `Hidden`), venue context badges, section counts, and item counts.
+  - Direct quick actions: **Resume Draft / Edit**, **Customer Preview**, **Publish / Take down**, **Duplicate** (`(Copy)`), and **Delete**.
+- **Customer Preview Workflow**:
+  - Customer route (`/m/:slug?preview=:menuId`) renders draft menus safely without publishing them to public directory or search.
+  - Prominent top preview banner explains: *"Draft Preview Mode — This menu is in draft and not yet visible to the public."* with a 1-tap **Back to editor** button.
+- **In-Editor Organisation Controls (`/admin/menus/:menuId`)**:
+  - Menu Settings drawer to update name, description, venue assignments, and protected visibility at any time.
+  - Batch add suggested sections or custom sections directly in the editor.
+  - Section reordering buttons (`↑` and `↓`) tailored for mobile touch targets.
+  - Move items between sections via the item editor dropdown or the dedicated 1-tap **Move to section** drawer button on each item row.
+  - Publication guard: prevents publishing empty menus (requires >= 1 section and >= 1 offering).
+
+---
+
+### Scenario Walkthroughs for Founder Review
+
+#### Scenario A — New Café Menu Creation
+1. Open the floating Scenario Panel and select **New café** (`new-cafe`).
+2. Complete onboarding or navigate to `/admin` as Owner.
+3. Tap **+ New Menu**.
+4. Notice **Step 1 (Context)** automatically confirms the single café context without unnecessary dropdowns.
+5. In **Step 2 (Details)**:
+   - Tap one of the suggested names (e.g., `All-Day Menu` or `Breakfast & Morning`) or type a custom name.
+   - Enter an optional description (e.g., *"Artisan espresso, sourdough bakes, and breakfast classics"*).
+6. In **Step 3 (Categories & Sections)**:
+   - Tap suggested category chips to batch-select (e.g. `Espresso & Coffee`, `Pastries & Bakes`).
+   - Type a custom section name (e.g., `Daily Sandwiches`) and tap **+ Add**.
+7. Tap **Create & Open Menu**:
+   - The editor opens immediately at `/admin/menus/:menuId` with the 3 sections pre-created.
+8. Add a sample offering using the R1-A item editor (e.g., *Butter Croissant*, 450 KES, add tag *Freshly Baked*, pick library image).
+9. Tap **Publish menu**: notice validation passes and status changes to `Published`.
+
+#### Scenario B — Established Restaurant (Second Menu & Draft Isolation)
+1. In the Scenario Panel, select **Established restaurant** (`established-restaurant`).
+2. Navigate to `/admin`. Notice the primary menu (`All-Day Menu`) is currently **Published**.
+3. Tap **+ New Menu**:
+   - Choose a suggested name like `Evening Tasting Menu`.
+   - Add sections `Amuse-Bouche`, `First Course`, `Mains`, `Dessert`.
+4. The new menu is created in **Draft** status.
+5. Open `/m/green-garden-cafe` in a new tab:
+   - Verify the published `All-Day Menu` is completely unaffected and continues serving customer traffic.
+   - The new `Evening Tasting Menu` does NOT appear on the public menu page.
+6. In the editor for `Evening Tasting Menu`, tap **Customer Preview**:
+   - Verify the draft displays accurately with the yellow Draft Preview Banner.
+   - Tap **Back to editor** to return seamlessly.
+
+#### Scenario C — Multi-Venue Business Assignment & Isolation
+1. In the Scenario Panel, select **Multi-brand** (`multi-brand`).
+2. Go to `/admin`. Notice the organization has 3 distinct venues.
+3. Tap **+ New Menu**:
+   - In Step 1, observe the multi-venue checklist displaying the 3 venues.
+   - Select **Sol Artisan Bakery** only (uncheck the other two).
+   - Enter name `Weekend Sourdough Specials`.
+4. Add an item and publish the menu.
+5. Inspect the venue filter tabs in `/admin`:
+   - Filter by **Sol Artisan Bakery**: `Weekend Sourdough Specials` is displayed.
+   - Filter by **Gelato Craft Lab**: `Weekend Sourdough Specials` is NOT displayed.
+6. Check customer routes:
+   - `/m/sol-artisan-bakery` displays the new sourdough menu.
+   - `/m/gelato-craft-lab` does NOT display the sourdough menu.
+
+#### Scenario D — Hotel Public vs Protected In-Room Dining Isolation
+1. In the Scenario Panel, select **Hotel** (`hotel`).
+2. In `/admin`, observe the existing menus:
+   - `Terrace Bistro Menu` (Public)
+   - `In-Room Dining Menu` (Protected)
+3. Tap **+ New Menu**:
+   - Name: `Late Night In-Room Bites`
+   - Toggle **Protected menu (In-room / Private)** to `ON`.
+4. In `/directory`, search for dishes in the new protected menu:
+   - Protected menu dishes are excluded from the public directory.
+5. In `/m/grand-horizon-hotel`, verify protected menus require verified room credentials.
+
+#### Scenario E — Interrupted Setup & Draft Persistence
+1. In `/admin`, tap **+ New Menu** and create a draft menu with 3 sections.
+2. In the editor, add 1 item to the draft.
+3. Without publishing, navigate away (e.g. tap **Customer Home**, switch roles in the Scenario Panel, or refresh the browser).
+4. Return to `/admin`:
+   - The draft menu appears in the menu list with a clear `Draft` badge and accurate item/section counts.
+5. Tap **Resume Draft**:
+   - The editor opens with all sections, items, and metadata exactly as left.
+
+#### Scenario F — Publication Correction & Lifecycle Reversal
+1. Take an active published menu in `/admin`.
+2. Open its **Menu Settings** or use the quick action in the card to set status to **Draft / Hidden**.
+3. Check the customer menu route: the menu disappears from customer view immediately.
+4. Return to `/admin`, tap **Duplicate**:
+   - A copy is created named `[Menu Name] (Copy)` in draft status.
+5. Tap **Delete** on the duplicate:
+   - Prompt confirms and deletes cleanly without affecting original menus.
+
