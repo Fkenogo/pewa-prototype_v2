@@ -1,4 +1,5 @@
 import type { CartLine, GuestCart, OrderPolicy, PewaState } from "./types";
+import { isMenuEligibleForVenue } from "./taxonomy";
 
 export const lineTotal = (line: CartLine) =>
   (line.basePrice + line.options.reduce((sum, option) => sum + option.priceDelta, 0)) *
@@ -17,7 +18,10 @@ export function validateCart(state: PewaState, cart: GuestCart | null): string |
   if (!venue) return "This venue is no longer available.";
   for (const line of cart.lines) {
     const menu = state.menus.find(
-      (m) => m.id === line.menuId && m.orgId === venue.orgId && m.status === "published",
+      (m) =>
+        m.id === line.menuId &&
+        m.status === "published" &&
+        isMenuEligibleForVenue(m, venue, state.venues),
     );
     const offering = menu?.sections
       .flatMap((s) => s.offerings)

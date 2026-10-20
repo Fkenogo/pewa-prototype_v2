@@ -32,8 +32,13 @@ import {
   getExistingMenuTags,
   getRecommendedSectionsForCategory,
   getRecommendedTagsForCategory,
+  getGroupedTagSuggestionsForCategory,
+  isDietaryClaimTag,
+  processImageUpload,
+  PEWA_TAG_DISCLAIMER,
   PROTOTYPE_IMAGE_LIBRARY,
 } from "@/lib/pewa/taxonomy";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/menus/$menuId")({
   head: () =>
@@ -44,7 +49,12 @@ export const Route = createFileRoute("/admin/menus/$menuId")({
   component: MenuEditor,
 });
 
-type Draft = Omit<Offering, "id" | "modifiers"> & { id?: string; modifiersText: string };
+type Draft = Omit<Offering, "id" | "modifiers" | "image" | "imageSource"> & {
+  id?: string;
+  modifiersText: string;
+  image?: string | undefined;
+  imageSource?: "library" | "upload" | undefined;
+};
 
 const emptyDraft: Draft = {
   name: "",
@@ -54,7 +64,6 @@ const emptyDraft: Draft = {
   available: true,
   emoji: "🍽️",
   modifiersText: "",
-  image: undefined,
 };
 
 const modsToText = (m: ModifierGroup[]) =>
@@ -114,9 +123,11 @@ function MenuEditor() {
     );
 
   const itemCount = menu.sections.reduce((n, x) => n + x.offerings.length, 0);
-  const categoryContext = venue?.category || s.organisation?.category || venue?.businessType || "";
+  const categoryContext =
+    venue?.category || s.organisation?.category || s.organisation?.businessType || "";
   const recommendedSections = getRecommendedSectionsForCategory(categoryContext);
   const recommendedTags = getRecommendedTagsForCategory(categoryContext);
+  const groupedTagSuggestions = getGroupedTagSuggestionsForCategory(categoryContext);
   const existingMenuTags = getExistingMenuTags(menu);
 
   const save = () => {
@@ -148,21 +159,22 @@ function MenuEditor() {
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !editing) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        setEditing({
-          ...editing,
-          draft: { ...editing.draft, image: result },
-        });
-        toast.success("Photo attached to item");
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const { dataUrl, source } = await processImageUpload(file);
+      setEditing({
+        ...editing,
+        draft: { ...editing.draft, image: dataUrl, imageSource: source },
+      });
+      toast.success("Merchant photo attached to item");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to process photo.";
+      toast.error(message);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   return (
@@ -435,7 +447,7 @@ function MenuEditor() {
                         onClick={() =>
                           setEditing({
                             ...editing,
-                            draft: { ...editing.draft, image: undefined },
+                            draft: { ...editing.draft, image: undefined, imageSource: undefined },
                           })
                         }
                         className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white"
@@ -520,7 +532,11 @@ function MenuEditor() {
                           onClick={() => {
                             setEditing({
                               ...editing,
-                              draft: { ...editing.draft, image: item.url },
+                              draft: {
+                                ...editing.draft,
+                                image: item.url,
+                                imageSource: "library",
+                              },
                             });
                             setShowImageLibrary(false);
                             toast.success(`Attached "${item.title}"`);
@@ -680,26 +696,45 @@ function MenuEditor() {
                   </div>
                 )}
 
-                {/* Suggested Tags based on Category */}
-                <div className="pt-2 border-t mt-2">
-                  <span className="text-[11px] font-semibold text-muted-foreground block mb-1">
-                    Suggested tags:
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {recommendedTags
-                      .filter((t) => !editing.draft.tags.includes(t))
-                      .slice(0, 8)
-                      .map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => addTagToDraft(t)}
-                          className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/10 transition-colors"
-                        >
-                          + {t}
-                        </button>
-                      ))}
-                  </div>
+                {/* Grouped Suggested Tags */}
+                <div className="pt-2 border-t mt-2 space-y-2.5">
+                  {groupedTagSuggestions.map((group) => {
+                    const availableTags = group.tags.filter(
+                      (t) => !editing.draft.tags.some((dt) => dt.toLowerCase() === t.toLowerCase()),
+                    );
+                    if (availableTags.length === 0) return null;
+                    return (
+                      <div key={group.id} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-muted-foreground">
+                            {group.label}
+                          </span>
+                          {group.id === "dietary_claims" && (
+                            <span className="text-[10px] text-muted-foreground/80 italic">
+                              Merchant-asserted · Not certified by PEWA
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {availableTags.map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => addTagToDraft(t)}
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                                group.id === "dietary_claims"
+                                  ? "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                                  : "border-border bg-card text-foreground hover:bg-muted",
+                              )}
+                            >
+                              + {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

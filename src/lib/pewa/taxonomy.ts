@@ -1,5 +1,7 @@
 // src/lib/pewa/taxonomy.ts
-// R1-A: Bounded Menu Taxonomy and Structure Engine for PEWA Prototype
+// R1-A: Bounded Menu Taxonomy, Eligibility, and Safeguards Engine for PEWA Prototype
+
+import type { Menu, Offering, Venue } from "./types";
 
 export interface BusinessCategoryDefinition {
   id: string;
@@ -7,6 +9,15 @@ export interface BusinessCategoryDefinition {
   description: string;
   recommendedSections: string[];
   recommendedTags: string[];
+}
+
+export type TagGroupKind = "dietary_claims" | "promotional" | "descriptive";
+
+export interface TagSuggestionGroup {
+  id: TagGroupKind;
+  label: string;
+  hint: string;
+  tags: string[];
 }
 
 export const SUGGESTED_BUSINESS_CATEGORIES: BusinessCategoryDefinition[] = [
@@ -131,20 +142,87 @@ export const SUGGESTED_BUSINESS_CATEGORIES: BusinessCategoryDefinition[] = [
   },
 ];
 
-export const GENERAL_SUGGESTED_TAGS = [
+export const DIETARY_AND_DECLARATION_TAGS = [
   "Vegetarian",
   "Vegan",
   "Gluten-Free",
   "Halal",
   "Dairy-Free",
-  "Spicy",
+  "Nut-Free",
+];
+
+export const PROMOTIONAL_HIGHLIGHT_TAGS = [
   "Chef's Special",
   "Popular",
+  "Signature",
+  "Seasonal",
+  "New",
+  "Guest Exclusive",
+];
+
+export const PEWA_TAG_DISCLAIMER =
+  "Dietary and attribute declarations are merchant-provided and have not been independently verified by PEWA. Customers with severe allergies or religious requirements should verify directly with the business.";
+
+export function isDietaryClaimTag(tag: string): boolean {
+  const norm = tag.trim().toLowerCase();
+  return DIETARY_AND_DECLARATION_TAGS.some((d) => d.toLowerCase() === norm);
+}
+
+export const GENERAL_SUGGESTED_TAGS = [
+  ...DIETARY_AND_DECLARATION_TAGS,
+  ...PROMOTIONAL_HIGHLIGHT_TAGS,
+  "Spicy",
   "Single Origin",
   "Sourdough",
   "Organic",
   "Kids",
 ];
+
+export function getGroupedTagSuggestionsForCategory(
+  categoryOrType: string = "",
+): TagSuggestionGroup[] {
+  const norm = categoryOrType.toLowerCase().trim();
+  const matched = SUGGESTED_BUSINESS_CATEGORIES.find(
+    (c) =>
+      norm.includes(c.id) ||
+      norm.includes(c.label.toLowerCase()) ||
+      c.label.toLowerCase().includes(norm),
+  );
+
+  const categorySpecific = matched?.recommendedTags || [
+    "Specialty",
+    "House Blend",
+    "Organic",
+    "Spicy",
+  ];
+  const descriptive = categorySpecific.filter(
+    (t) =>
+      !DIETARY_AND_DECLARATION_TAGS.some((d) => d.toLowerCase() === t.toLowerCase()) &&
+      !PROMOTIONAL_HIGHLIGHT_TAGS.some((p) => p.toLowerCase() === t.toLowerCase()),
+  );
+
+  return [
+    {
+      id: "dietary_claims",
+      label: "Dietary & Consequential Claims",
+      hint: "Merchant-declared; not certified by PEWA.",
+      tags: DIETARY_AND_DECLARATION_TAGS,
+    },
+    {
+      id: "promotional",
+      label: "Promotional Highlights",
+      hint: "Highlight chef specialties and customer favorites.",
+      tags: PROMOTIONAL_HIGHLIGHT_TAGS,
+    },
+    {
+      id: "descriptive",
+      label: "Preparation & Style Attributes",
+      hint: "Style, origin, temperature, or culinary technique.",
+      tags:
+        descriptive.length > 0 ? descriptive : ["Freshly Made", "Artisanal", "Organic", "Spicy"],
+    },
+  ];
+}
 
 export interface CuratedLibraryImage {
   id: string;
@@ -278,4 +356,141 @@ export function getExistingMenuTags(menu?: {
     }
   }
   return Array.from(tags);
+}
+
+/**
+ * Minimum explicit venue/menu publication eligibility check.
+ * Ensures organisation ownership alone does not make a menu available at every venue.
+ */
+export function isMenuEligibleForVenue(menu: Menu, venue: Venue, allVenues?: Venue[]): boolean {
+  if (menu.orgId !== venue.orgId) return false;
+
+  // 1. Explicit multi-venue eligibility list
+  if (menu.venueIds && menu.venueIds.length > 0) {
+    return menu.venueIds.includes(venue.id);
+  }
+
+  // 2. Explicit single venue assignment
+  if (menu.venueId) {
+    return menu.venueId === venue.id;
+  }
+
+  // 3. Fallback for single-venue organisations (e.g. initial onboarding or single-store)
+  if (allVenues) {
+    const orgVenues = allVenues.filter((v) => v.orgId === menu.orgId);
+    if (orgVenues.length <= 1) return true;
+    // Multi-venue organisation without explicit venue assignment is NOT eligible at this venue
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Returns whether an offering image originates from the curated prototype library or merchant upload.
+ */
+export function getImageSource(offering: {
+  image?: string;
+  imageSource?: "library" | "upload";
+}): "library" | "upload" | undefined {
+  if (!offering.image) return undefined;
+  if (offering.imageSource) return offering.imageSource;
+  if (PROTOTYPE_IMAGE_LIBRARY.some((lib) => lib.url === offering.image)) {
+    return "library";
+  }
+  return "upload";
+}
+
+/**
+ * Validates and scales down an uploaded user image to prevent unbounded base64 strings
+ * from overwhelming persisted prototype localStorage.
+ * Max dimension 800px, JPEG quality 0.82. Rejects files > 5MB or non-images.
+ */
+export async function processImageUpload(file: File): Promise<{
+  dataUrl: string;
+  source: "upload";
+}> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Unsupported file format. Please upload a JPEG, PNG, or WebP image.");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Image file is too large (max 5MB). Please choose a smaller photo.");
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(
+        new Error("Failed to read the selected file. Previously selected image is preserved."),
+      );
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      if (!dataUrl) {
+        return reject(
+          new Error("Failed to process image data. Previously selected image is preserved."),
+        );
+      }
+
+      // Check if window and Image exist (browser environment)
+      if (typeof window === "undefined" || typeof Image === "undefined") {
+        return reject(
+          new Error(
+            "Image processing requires a browser environment. Previously selected image is preserved.",
+          ),
+        );
+      }
+
+      const img = new Image();
+      img.onerror = () =>
+        reject(new Error("Unable to decode image file. Previously selected image is preserved."));
+      img.onload = () => {
+        try {
+          const maxDim = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            return reject(
+              new Error(
+                "Unable to compress image: 2D canvas context is unavailable. Previously selected image is preserved.",
+              ),
+            );
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.82);
+          if (!compressed || !compressed.startsWith("data:image/")) {
+            return reject(
+              new Error(
+                "Image compression output was invalid. Previously selected image is preserved.",
+              ),
+            );
+          }
+          resolve({ dataUrl: compressed, source: "upload" });
+        } catch (err: unknown) {
+          const detail = err instanceof Error ? err.message : "Compression failed";
+          reject(
+            new Error(
+              `Unable to compress image (${detail}). Previously selected image is preserved.`,
+            ),
+          );
+        }
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
 }

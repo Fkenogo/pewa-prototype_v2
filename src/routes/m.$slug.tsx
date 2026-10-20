@@ -18,6 +18,12 @@ import { Input } from "@/components/ui/input";
 import { CartDrawer } from "@/components/pewa/CartDrawer";
 import { OfferingOrderForm } from "@/components/pewa/OfferingOrderForm";
 import { canAdmitOrder, cartTotal } from "@/lib/pewa/ordering";
+import {
+  isMenuEligibleForVenue,
+  getImageSource,
+  isDietaryClaimTag,
+  PEWA_TAG_DISCLAIMER,
+} from "@/lib/pewa/taxonomy";
 
 export const Route = createFileRoute("/m/$slug")({
   head: ({ params }) => {
@@ -51,7 +57,9 @@ function PublicMenu() {
     clearGuestSession,
   } = usePewa();
   const venue = venues.find((v) => v.slug === slug);
-  const live = menus.filter((m) => m.orgId === venue?.orgId && m.status === "published");
+  const live = venue
+    ? menus.filter((m) => isMenuEligibleForVenue(m, venue, venues) && m.status === "published")
+    : [];
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
   const [detail, setDetail] = useState<Offering | null>(null);
@@ -324,13 +332,16 @@ function PublicMenu() {
         </>
       )}
 
-      <p className="px-4 pt-10 text-center text-xs text-muted-foreground">
-        Prices and dishes are set by {venue.name}. Menu powered by{" "}
-        <Link to="/" className="underline">
-          PEWA
-        </Link>
-        .
-      </p>
+      <div className="space-y-2 px-4 pt-10 text-center text-xs text-muted-foreground">
+        <p className="italic">{PEWA_TAG_DISCLAIMER}</p>
+        <p>
+          Prices and dishes are set by {venue.name}. Menu powered by{" "}
+          <Link to="/" className="underline">
+            PEWA
+          </Link>
+          .
+        </p>
+      </div>
 
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg px-4 pb-safe">
         {cart?.lines.length ? (
@@ -360,12 +371,17 @@ function PublicMenu() {
             <>
               <DrawerHeader className="text-left">
                 {detail.image ? (
-                  <div className="mb-3 overflow-hidden rounded-2xl border">
+                  <div className="relative mb-3 overflow-hidden rounded-2xl border">
                     <img
                       src={detail.image}
                       alt={detail.name}
                       className="h-44 w-full object-cover"
                     />
+                    <span className="absolute bottom-2 right-2 rounded-md bg-black/65 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">
+                      {getImageSource(detail) === "library"
+                        ? "Representative photo"
+                        : "Merchant photo"}
+                    </span>
                   </div>
                 ) : (
                   <div className="mb-2 text-5xl">{detail.emoji}</div>
@@ -377,12 +393,22 @@ function PublicMenu() {
                     {detail.tags.map((t) => (
                       <span
                         key={t}
-                        className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
+                        className={cn(
+                          "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                          isDietaryClaimTag(t)
+                            ? "border border-primary/30 bg-primary/10 text-primary"
+                            : "bg-secondary text-secondary-foreground",
+                        )}
                       >
                         {t}
                       </span>
                     ))}
                   </div>
+                )}
+                {detail.tags && detail.tags.some(isDietaryClaimTag) && (
+                  <p className="mt-2 rounded-md bg-muted/60 p-2 text-[11px] text-muted-foreground leading-snug">
+                    ℹ {PEWA_TAG_DISCLAIMER}
+                  </p>
                 )}
                 <p className="pt-1 text-lg font-semibold">{formatPrice(detail.price, currency)}</p>
                 {!detail.available && (
