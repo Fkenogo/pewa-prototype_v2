@@ -170,11 +170,17 @@
      - On customer menu `/m/green-garden-cafe`, tap `Flat White`: detail drawer shows `Representative photo` badge.
    - Attach an image via **Upload**:
      - Image is scaled on client-side canvas (max 800px, JPEG 0.82) to keep local storage lightweight and avoid unbounded base64 state.
+     - **Fail-closed image processing (Final Correction A)**: Canvas compression failure or memory error strictly rejects and displays an understandable error toast without returning uncompressed images or corrupting persistent store state. Previously selected images are preserved intact.
      - Detail drawer displays `Merchant photo` badge.
      - Test uploading a `.txt` file or file >5MB: graceful toast error notification appears without crashing.
      - Tap `×` on the image preview in the editor: cleanly clears photo and restores emoji icon.
 
 5. **CORR-E: Traceability & Test Results**:
-   - Automated test suite runs 94 tests across 6 suites (all passing).
-   - Dedicated regression tests in `src/test/taxonomy.test.ts` verify multi-venue isolation, coherent combined queries, protected menu isolation, tag grouping, and image downsampling.
+   - Automated test suite runs 97 tests across 6 suites (100% passing).
+   - Dedicated regression tests in `src/test/taxonomy.test.ts` verify:
+     - Multi-venue isolation and single-venue automatic eligibility.
+     - Coherent offering-level matching and protected menu isolation.
+     - **Accurate venue-name discovery explanations (Final Correction B)**: Searches matching business names return the business with a distinct `"Matched business: [Name]"` explanation without mislabeling unrelated offerings as search matches.
+     - **Fail-closed image compression (Final Correction A)**: Canvas context unavailability and memory failure reject cleanly without writing uncompressed raw data to state.
+     - Tag grouping, dietary unverified declarations, and image library provenance.
 
