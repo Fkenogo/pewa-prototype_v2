@@ -67,6 +67,13 @@ type Actions = {
     sectionId: string,
     o: Omit<Offering, "id"> & { id?: string },
   ) => void;
+  duplicateOffering: (menuId: string, sectionId: string, offeringId: string) => string;
+  moveOfferingWithinSection: (
+    menuId: string,
+    sectionId: string,
+    offeringId: string,
+    dir: -1 | 1,
+  ) => void;
   removeOffering: (menuId: string, sectionId: string, offeringId: string) => void;
   toggleAvailability: (menuId: string, sectionId: string, offeringId: string) => void;
   setMenuStatus: (menuId: string, status: MenuStatus) => void;
@@ -144,7 +151,13 @@ type Actions = {
 
 const now = () => new Date().toISOString();
 
-export { getLiveMenu, getVenuePublishedMenus } from "./taxonomy";
+export {
+  getLiveMenu,
+  getVenuePublishedMenus,
+  IMAGE_LIBRARY_CATEGORIES,
+  searchImageLibrary,
+  cropAndCompressImage,
+} from "./taxonomy";
 
 /**
  * Checks whether a published menu has pending draft changes that differ from its live snapshot.
@@ -837,6 +850,62 @@ export const usePewa = create<PewaState & Actions>()(
             message: `${isNew ? "Added" : "Updated"} “${o.name}”`,
           });
         },
+        duplicateOffering: (menuId, sectionId, offeringId) => {
+          let newId = "";
+          let clonedName = "";
+          mutateMenu(menuId, (ss) =>
+            ss.map((x) => {
+              if (x.id !== sectionId) return x;
+              const targetIndex = x.offerings.findIndex((o) => o.id === offeringId);
+              if (targetIndex === -1) return x;
+              const target = x.offerings[targetIndex];
+              if (!target) return x;
+              newId = uid("off");
+              clonedName = `${target.name} (Copy)`;
+              const clone: Offering = {
+                ...target,
+                id: newId,
+                name: clonedName,
+                description: target.description ?? "",
+                modifiers: target.modifiers.map((g, gi) => ({
+                  ...g,
+                  id: `g${gi}_${uid("mod")}`,
+                  options: g.options.map((opt, oi) => ({
+                    ...opt,
+                    id: `o${gi}_${oi}_${uid("opt")}`,
+                  })),
+                })),
+              };
+              const updated = [...x.offerings];
+              updated.splice(targetIndex + 1, 0, clone);
+              return { ...x, offerings: updated };
+            }),
+          );
+          if (clonedName) {
+            get().log({
+              kind: "offering.created",
+              message: `Duplicated offering “${clonedName}”`,
+            });
+          }
+          return newId;
+        },
+        moveOfferingWithinSection: (menuId, sectionId, offeringId, dir) => {
+          mutateMenu(menuId, (ss) =>
+            ss.map((x) => {
+              if (x.id !== sectionId) return x;
+              const idx = x.offerings.findIndex((o) => o.id === offeringId);
+              if (idx === -1) return x;
+              const newIdx = idx + dir;
+              if (newIdx < 0 || newIdx >= x.offerings.length) return x;
+              const copy = [...x.offerings];
+              const item = copy[idx];
+              if (!item) return x;
+              copy.splice(idx, 1);
+              copy.splice(newIdx, 0, item);
+              return { ...x, offerings: copy };
+            }),
+          );
+        },
         removeOffering: (menuId, sectionId, offeringId) =>
           mutateMenu(menuId, (ss) =>
             ss.map((x) =>
@@ -849,19 +918,20 @@ export const usePewa = create<PewaState & Actions>()(
           let name = "";
           let avail = true;
           mutateMenu(menuId, (ss) =>
-            ss.map((x) =>
-              x.id === sectionId
-                ? {
-                    ...x,
-                    offerings: x.offerings.map((y) => {
-                      if (y.id !== offeringId) return y;
-                      name = y.name;
-                      avail = !y.available;
-                      return { ...y, available: !y.available };
-                    }),
-                  }
-                : x,
-            ),
+            ss.map((x) => {
+              if (sectionId && x.id !== sectionId) return x;
+              const hasOffering = x.offerings.some((y) => y.id === offeringId);
+              if (!hasOffering) return x;
+              return {
+                ...x,
+                offerings: x.offerings.map((y) => {
+                  if (y.id !== offeringId) return y;
+                  name = y.name;
+                  avail = !y.available;
+                  return { ...y, available: !y.available };
+                }),
+              };
+            }),
           );
           // Immediate availability changes apply to publishedSnapshot as well
           set((s) => ({
@@ -872,7 +942,8 @@ export const usePewa = create<PewaState & Actions>()(
                 publishedSnapshot: {
                   ...m.publishedSnapshot,
                   sections: m.publishedSnapshot.sections.map((sec) => {
-                    if (sec.id !== sectionId) return sec;
+                    const hasOff = sec.offerings.some((o) => o.id === offeringId);
+                    if (!hasOff) return sec;
                     return {
                       ...sec,
                       offerings: sec.offerings.map((off) =>

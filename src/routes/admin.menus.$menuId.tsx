@@ -49,17 +49,13 @@ import {
 } from "@/components/ui/sheet";
 import { pageHead } from "@/lib/pewa/metadata";
 import {
-  getExistingMenuTags,
   getRecommendedSectionsForCategory,
-  getRecommendedTagsForCategory,
-  getGroupedTagSuggestionsForCategory,
   getSuggestedMenuNamesForCategory,
   isDietaryClaimTag,
   isMenuEligibleForVenue,
-  processImageUpload,
-  PEWA_TAG_DISCLAIMER,
-  PROTOTYPE_IMAGE_LIBRARY,
+  getImageSource,
 } from "@/lib/pewa/taxonomy";
+import { OfferingEditorSheet, type OfferingDraft } from "@/components/pewa/OfferingEditorSheet";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/menus/$menuId")({
@@ -70,56 +66,6 @@ export const Route = createFileRoute("/admin/menus/$menuId")({
     ),
   component: MenuEditor,
 });
-
-type Draft = Omit<Offering, "id" | "modifiers" | "image" | "imageSource"> & {
-  id?: string;
-  modifiersText: string;
-  image?: string | undefined;
-  imageSource?: "library" | "upload" | undefined;
-};
-
-const emptyDraft: Draft = {
-  name: "",
-  description: "",
-  price: 0,
-  tags: [],
-  available: true,
-  emoji: "🍽️",
-  modifiersText: "",
-};
-
-const modsToText = (m: ModifierGroup[]) =>
-  m
-    .map(
-      (g) =>
-        `${g.name}: ${g.options.map((o) => (o.priceDelta ? `${o.name} +${o.priceDelta}` : o.name)).join(", ")}`,
-    )
-    .join("\n");
-
-const textToMods = (t: string): ModifierGroup[] =>
-  t
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.includes(":"))
-    .map((l, gi) => {
-      const [name, rest] = [l.slice(0, l.indexOf(":")).trim(), l.slice(l.indexOf(":") + 1)];
-      return {
-        id: `g${gi}_${name}`,
-        name,
-        options: rest
-          .split(",")
-          .map((o) => o.trim())
-          .filter(Boolean)
-          .map((o, oi) => {
-            const m = o.match(/^(.*?)\s*\+\s*(\d+(?:\.\d+)?)$/);
-            return {
-              id: `o${gi}_${oi}`,
-              name: m ? (m[1] ?? o) : o,
-              priceDelta: m ? Number(m[2]) : 0,
-            };
-          }),
-      };
-    });
 
 function MenuEditor() {
   const { menuId } = Route.useParams();
@@ -140,13 +86,10 @@ function MenuEditor() {
   // Local State
   const [customSectionInput, setCustomSectionInput] = useState("");
   const [selectedBatchSections, setSelectedBatchSections] = useState<string[]>([]);
-  const [editing, setEditing] = useState<{
+  const [editingOffering, setEditingOffering] = useState<{
     sectionId: string;
-    originalSectionId: string;
-    draft: Draft;
+    offering: Offering | null;
   } | null>(null);
-  const [customTagInput, setCustomTagInput] = useState("");
-  const [showImageLibrary, setShowImageLibrary] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [reorganizeOpen, setReorganizeOpen] = useState(false);
@@ -155,7 +98,6 @@ function MenuEditor() {
     fromSectionId: string;
     offeringName: string;
   } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Settings Draft State
   const [settingsDraft, setSettingsDraft] = useState({
@@ -185,9 +127,6 @@ function MenuEditor() {
 
   const recommendedSections = getRecommendedSectionsForCategory(categoryContext);
   const suggestedNames = getSuggestedMenuNamesForCategory(categoryContext);
-  const recommendedTags = getRecommendedTagsForCategory(categoryContext);
-  const groupedTagSuggestions = getGroupedTagSuggestionsForCategory(categoryContext);
-  const existingMenuTags = getExistingMenuTags(menu);
 
   // Open Settings Modal
   const openSettings = () => {
@@ -224,73 +163,66 @@ function MenuEditor() {
     setSettingsOpen(false);
   };
 
-  // Offering Save & Move
-  const saveOffering = () => {
-    if (!editing) return;
-    const { modifiersText, ...d } = editing.draft;
-    if (!d.name.trim() || !(d.price >= 0)) {
-      toast.error("Add a name and price");
-      return;
-    }
+  // Offering Actions
+  const handleSaveOffering = (
+    targetSectionId: string,
+    draft: OfferingDraft,
+    continueAdding?: boolean,
+  ) => {
+    if (!editingOffering) return;
+    const { sectionId: origSectionId } = editingOffering;
 
-    const { sectionId, originalSectionId } = editing;
-
-    if (d.id) {
-      // Existing item: update
-      s.upsertOffering(menu.id, originalSectionId, {
-        ...d,
-        modifiers: textToMods(modifiersText),
+    if (draft.id) {
+      // Update item
+      s.upsertOffering(menu.id, origSectionId, {
+        id: draft.id,
+        name: draft.name.trim(),
+        price: draft.price,
+        description: draft.description.trim(),
+        available: draft.available,
+        emoji: draft.emoji,
+        image: draft.image,
+        imageSource: draft.imageSource,
+        tags: draft.tags,
+        modifiers: draft.modifiers,
+        specialBadge: draft.specialBadge,
       });
 
-      // If section was changed, move it
-      if (sectionId !== originalSectionId) {
-        s.moveOfferingBetweenSections(menu.id, originalSectionId, sectionId, d.id);
+      if (targetSectionId !== origSectionId) {
+        s.moveOfferingBetweenSections(menu.id, origSectionId, targetSectionId, draft.id);
       }
+      toast.success(`Updated “${draft.name}”`);
     } else {
-      // New item: insert into target section
-      s.upsertOffering(menu.id, sectionId, {
-        ...d,
-        modifiers: textToMods(modifiersText),
+      // Create new item in target section
+      s.upsertOffering(menu.id, targetSectionId, {
+        name: draft.name.trim(),
+        price: draft.price,
+        description: draft.description.trim(),
+        available: draft.available,
+        emoji: draft.emoji,
+        image: draft.image,
+        imageSource: draft.imageSource,
+        tags: draft.tags,
+        modifiers: draft.modifiers,
+        specialBadge: draft.specialBadge,
       });
+      toast.success(`Added “${draft.name}”`);
     }
 
-    setEditing(null);
-  };
-
-  const addTagToDraft = (tag: string) => {
-    const clean = tag.trim();
-    if (!clean || !editing) return;
-    if (editing.draft.tags.some((t) => t.toLowerCase() === clean.toLowerCase())) return;
-    setEditing({
-      ...editing,
-      draft: { ...editing.draft, tags: [...editing.draft.tags, clean] },
-    });
-  };
-
-  const removeTagFromDraft = (tag: string) => {
-    if (!editing) return;
-    setEditing({
-      ...editing,
-      draft: { ...editing.draft, tags: editing.draft.tags.filter((t) => t !== tag) },
-    });
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !editing) return;
-    try {
-      const { dataUrl, source } = await processImageUpload(file);
-      setEditing({
-        ...editing,
-        draft: { ...editing.draft, image: dataUrl, imageSource: source },
-      });
-      toast.success("Merchant photo attached to item");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to process photo.";
-      toast.error(message);
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!continueAdding) {
+      setEditingOffering(null);
     }
+  };
+
+  const handleDeleteOffering = (secId: string, offId: string) => {
+    s.removeOffering(menu.id, secId, offId);
+    toast.success("Offering removed");
+    setEditingOffering(null);
+  };
+
+  const handleDuplicateOffering = (secId: string, offId: string) => {
+    s.duplicateOffering(menu.id, secId, offId);
+    toast.success("Offering duplicated");
   };
 
   // Section batch add
@@ -704,21 +636,33 @@ function MenuEditor() {
                   No items in this section yet. Tap “Add item” below to populate.
                 </li>
               ) : (
-                sec.offerings.map((o) => (
-                  <li key={o.id} className="flex items-center gap-3 p-3">
-                    {o.image ? (
-                      <img
-                        src={o.image}
-                        alt={o.name}
-                        className="h-14 w-14 shrink-0 rounded-xl object-cover border"
-                      />
-                    ) : (
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-muted text-2xl">
-                        {o.emoji}
-                      </span>
-                    )}
+                sec.offerings.map((o, oIdx) => (
+                  <li key={o.id} className="flex items-center gap-2.5 p-3">
+                    <div className="relative shrink-0">
+                      {o.image ? (
+                        <img
+                          src={o.image}
+                          alt={o.name}
+                          className="h-14 w-14 rounded-xl object-cover border"
+                        />
+                      ) : (
+                        <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-2xl">
+                          {o.emoji}
+                        </span>
+                      )}
+                      {o.image && (
+                        <span className="absolute -bottom-1 -right-1 rounded bg-black/75 px-1 py-0.2 text-[8px] font-medium text-white backdrop-blur">
+                          {getImageSource(o) === "library" ? "Lib" : "Photo"}
+                        </span>
+                      )}
+                    </div>
 
-                    <div className="min-w-0 flex-1">
+                    <div
+                      className="min-w-0 flex-1 cursor-pointer"
+                      onClick={() =>
+                        author && setEditingOffering({ sectionId: sec.id, offering: o })
+                      }
+                    >
                       <p
                         className={cn(
                           "truncate font-medium text-sm",
@@ -738,7 +682,12 @@ function MenuEditor() {
                           {o.tags.map((t) => (
                             <span
                               key={t}
-                              className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                                isDietaryClaimTag(t)
+                                  ? "bg-primary/10 text-primary border border-primary/20"
+                                  : "bg-secondary text-secondary-foreground",
+                              )}
                             >
                               {t}
                             </span>
@@ -747,7 +696,7 @@ function MenuEditor() {
                       )}
                     </div>
 
-                    {/* Quick Move Offering Button */}
+                    {/* Quick Move Offering to Another Section */}
                     {author && menu.sections.length > 1 && (
                       <button
                         type="button"
@@ -758,16 +707,42 @@ function MenuEditor() {
                             offeringName: o.name,
                           })
                         }
-                        className="h-9 px-2 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors flex items-center gap-1"
+                        className="h-8 px-1.5 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors flex items-center gap-0.5"
                         title="Move to another section"
+                        aria-label="Move to another section"
                       >
-                        <MoveRight className="h-3 w-3" />
-                        <span className="hidden sm:inline">Move</span>
+                        <MoveRight className="h-3.5 w-3.5" />
                       </button>
                     )}
 
+                    {/* Mobile Reorder and Duplicate Controls */}
+                    {author && (
+                      <div className="flex items-center gap-0.5">
+                        <IconBtn
+                          label="Move item up"
+                          disabled={oIdx === 0}
+                          onClick={() => s.moveOfferingWithinSection(menu.id, sec.id, o.id, -1)}
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </IconBtn>
+                        <IconBtn
+                          label="Move item down"
+                          disabled={oIdx === sec.offerings.length - 1}
+                          onClick={() => s.moveOfferingWithinSection(menu.id, sec.id, o.id, 1)}
+                        >
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </IconBtn>
+                        <IconBtn
+                          label="Duplicate item"
+                          onClick={() => handleDuplicateOffering(sec.id, o.id)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </IconBtn>
+                      </div>
+                    )}
+
                     {canToggleAvailability(s.role) && (
-                      <label className="flex flex-col items-center text-[10px] text-muted-foreground shrink-0">
+                      <label className="flex flex-col items-center text-[10px] text-muted-foreground shrink-0 cursor-pointer">
                         <Switch
                           checked={o.available}
                           onCheckedChange={() => s.toggleAvailability(menu.id, sec.id, o.id)}
@@ -781,10 +756,9 @@ function MenuEditor() {
                       <IconBtn
                         label="Edit item"
                         onClick={() =>
-                          setEditing({
+                          setEditingOffering({
                             sectionId: sec.id,
-                            originalSectionId: sec.id,
-                            draft: { ...o, modifiersText: modsToText(o.modifiers) },
+                            offering: o,
                           })
                         }
                       >
@@ -800,10 +774,9 @@ function MenuEditor() {
               <button
                 type="button"
                 onClick={() =>
-                  setEditing({
+                  setEditingOffering({
                     sectionId: sec.id,
-                    originalSectionId: sec.id,
-                    draft: { ...emptyDraft },
+                    offering: null,
                   })
                 }
                 className="flex min-h-12 w-full items-center justify-center gap-2 border-t text-sm font-semibold text-primary hover:bg-muted/40 transition-colors"
@@ -926,398 +899,21 @@ function MenuEditor() {
         )}
       </div>
 
-      {/* MODAL 1: Item Editor Sheet */}
-      <Sheet open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[92vh] overflow-y-auto rounded-t-3xl sm:mx-auto sm:max-w-lg focus:outline-none"
-        >
-          <SheetHeader className="px-0 text-left pb-2">
-            <SheetTitle className="font-display text-2xl">
-              {editing?.draft.id ? "Edit item" : "New item"}
-            </SheetTitle>
-          </SheetHeader>
-          {editing && (
-            <div className="space-y-4 pb-safe pt-2">
-              {/* Section Selector: Allows moving item to another section */}
-              {menu.sections.length > 1 && (
-                <div>
-                  <Label className="mb-1 block text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Menu section
-                  </Label>
-                  <select
-                    value={editing.sectionId}
-                    onChange={(e) => setEditing({ ...editing, sectionId: e.target.value })}
-                    className="h-11 w-full rounded-xl border bg-card px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {menu.sections.map((sec) => (
-                      <option key={sec.id} value={sec.id}>
-                        {sec.name} {sec.id === editing.originalSectionId ? "(Current)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Media Selection: Image Library & User Upload */}
-              <div className="rounded-2xl border bg-muted/30 p-3">
-                <Label className="mb-2 block font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                  Photo & Icon
-                </Label>
-                <div className="flex items-center gap-3">
-                  {editing.draft.image ? (
-                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border">
-                      <img
-                        src={editing.draft.image}
-                        alt="Preview"
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setEditing({
-                            ...editing,
-                            draft: { ...editing.draft, image: undefined, imageSource: undefined },
-                          })
-                        }
-                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white"
-                        aria-label="Remove image"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-16">
-                      <Input
-                        value={editing.draft.emoji}
-                        onChange={(e) =>
-                          setEditing({
-                            ...editing,
-                            draft: { ...editing.draft, emoji: e.target.value },
-                          })
-                        }
-                        className="h-14 text-center text-2xl"
-                        title="Emoji Icon"
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex-1 space-y-1.5">
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowImageLibrary(!showImageLibrary)}
-                        className="h-9 flex-1 text-xs"
-                      >
-                        <ImageIcon className="mr-1.5 h-3.5 w-3.5 text-primary" />
-                        Library
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="h-9 flex-1 text-xs"
-                      >
-                        <Upload className="mr-1.5 h-3.5 w-3.5 text-primary" />
-                        Upload
-                      </Button>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleFileUpload}
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      {editing.draft.image
-                        ? "Photo attached. Tap × to revert to emoji."
-                        : "Pick from curated library or upload your own image."}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Inline Curated Prototype Image Library Grid */}
-                {showImageLibrary && (
-                  <div className="mt-3 rounded-xl border bg-card p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-semibold">Curated Prototype Library</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        onClick={() => setShowImageLibrary(false)}
-                      >
-                        Close
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
-                      {PROTOTYPE_IMAGE_LIBRARY.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            setEditing({
-                              ...editing,
-                              draft: {
-                                ...editing.draft,
-                                image: item.url,
-                                imageSource: "library",
-                              },
-                            });
-                            setShowImageLibrary(false);
-                            toast.success(`Attached "${item.title}"`);
-                          }}
-                          className="group relative flex flex-col items-start rounded-lg border p-1 text-left hover:border-primary transition-all"
-                        >
-                          <img
-                            src={item.url}
-                            alt={item.title}
-                            className="h-16 w-full rounded-md object-cover"
-                          />
-                          <span className="mt-1 line-clamp-1 text-[11px] font-medium group-hover:text-primary">
-                            {item.title}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <Label className="mb-1.5 block">Name</Label>
-                <Input
-                  autoFocus
-                  value={editing.draft.name}
-                  onChange={(e) =>
-                    setEditing({ ...editing, draft: { ...editing.draft, name: e.target.value } })
-                  }
-                  className="h-12 text-base"
-                  placeholder="e.g. Cappuccino or Sourdough Loaf"
-                />
-              </div>
-
-              <div>
-                <Label className="mb-1.5 block">Price ({currency})</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  value={editing.draft.price || ""}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      draft: { ...editing.draft, price: Number(e.target.value) },
-                    })
-                  }
-                  className="h-12 text-base"
-                />
-              </div>
-
-              <div>
-                <Label className="mb-1.5 block">Description</Label>
-                <Textarea
-                  value={editing.draft.description}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      draft: { ...editing.draft, description: e.target.value },
-                    })
-                  }
-                  rows={2}
-                  placeholder="Describe ingredients, preparation, origin..."
-                />
-              </div>
-
-              {/* Descriptive Tags Engine */}
-              <div className="space-y-2 rounded-2xl border p-3">
-                <div className="flex items-center justify-between">
-                  <Label className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <TagIcon className="h-3.5 w-3.5 text-primary" />
-                    Descriptive Tags & Dietaries
-                  </Label>
-                  <span className="text-[11px] text-muted-foreground">
-                    {editing.draft.tags.length} assigned
-                  </span>
-                </div>
-
-                {/* Assigned Tag Chips with Dismiss */}
-                {editing.draft.tags.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {editing.draft.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="inline-flex items-center gap-1 rounded-full bg-primary/15 text-primary px-2.5 py-1 text-xs font-medium"
-                      >
-                        {t}
-                        <button
-                          type="button"
-                          onClick={() => removeTagFromDraft(t)}
-                          aria-label={`Remove tag ${t}`}
-                          className="hover:text-primary-foreground hover:bg-primary rounded-full p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground italic">
-                    No tags yet. Select suggested tags or create custom ones below.
-                  </p>
-                )}
-
-                {/* Custom Tag Input */}
-                <div className="flex gap-1.5 pt-1">
-                  <Input
-                    value={customTagInput}
-                    onChange={(e) => setCustomTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        if (customTagInput.trim()) {
-                          addTagToDraft(customTagInput);
-                          setCustomTagInput("");
-                        }
-                      }
-                    }}
-                    placeholder="Create custom tag (e.g. Sourdough, Keto, Halal)"
-                    className="h-10 text-xs"
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="h-10 shrink-0 text-xs"
-                    onClick={() => {
-                      if (customTagInput.trim()) {
-                        addTagToDraft(customTagInput);
-                        setCustomTagInput("");
-                      }
-                    }}
-                  >
-                    + Tag
-                  </Button>
-                </div>
-
-                {/* Menu Tag Reuse */}
-                {existingMenuTags.filter((t) => !editing.draft.tags.includes(t)).length > 0 && (
-                  <div className="pt-2 border-t mt-2">
-                    <span className="text-[11px] font-semibold text-muted-foreground block mb-1">
-                      Reuse tags from this menu:
-                    </span>
-                    <div className="flex flex-wrap gap-1">
-                      {existingMenuTags
-                        .filter((t) => !editing.draft.tags.includes(t))
-                        .map((t) => (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() => addTagToDraft(t)}
-                            className="rounded-full border bg-muted/60 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                          >
-                            + {t}
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Grouped Suggested Tags */}
-                <div className="pt-2 border-t mt-2 space-y-2.5">
-                  {groupedTagSuggestions.map((group) => {
-                    const availableTags = group.tags.filter(
-                      (t) => !editing.draft.tags.some((dt) => dt.toLowerCase() === t.toLowerCase()),
-                    );
-                    if (availableTags.length === 0) return null;
-                    return (
-                      <div key={group.id} className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-muted-foreground">
-                            {group.label}
-                          </span>
-                          {group.id === "dietary_claims" && (
-                            <span className="text-[10px] text-muted-foreground/80 italic">
-                              Merchant-asserted · Not certified by PEWA
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {availableTags.map((t) => (
-                            <button
-                              key={t}
-                              type="button"
-                              onClick={() => addTagToDraft(t)}
-                              className={cn(
-                                "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                                group.id === "dietary_claims"
-                                  ? "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
-                                  : "border-border bg-card text-foreground hover:bg-muted",
-                              )}
-                            >
-                              + {t}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <Label className="mb-1.5 block">Options & Modifiers</Label>
-                <Textarea
-                  value={editing.draft.modifiersText}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      draft: { ...editing.draft, modifiersText: e.target.value },
-                    })
-                  }
-                  rows={3}
-                  placeholder={"Milk: Whole, Oat +50, Almond +60\nExtras: Extra shot +70"}
-                  className="font-mono text-xs"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  One group per line. “+50” adds to the price.
-                </p>
-              </div>
-
-              <label className="flex min-h-11 items-center justify-between rounded-xl border px-3">
-                <span className="text-sm font-medium">Available now</span>
-                <Switch
-                  checked={editing.draft.available}
-                  onCheckedChange={(v) =>
-                    setEditing({ ...editing, draft: { ...editing.draft, available: v } })
-                  }
-                />
-              </label>
-
-              <div className="flex gap-2 pt-2">
-                {editing.draft.id && (
-                  <Button
-                    variant="outline"
-                    className="h-12"
-                    onClick={() => {
-                      s.removeOffering(menu.id, editing.originalSectionId, editing.draft.id!);
-                      setEditing(null);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-                <Button className="h-12 flex-1 text-base font-semibold" onClick={saveOffering}>
-                  Save item
-                </Button>
-              </div>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+      {/* MODAL 1: Offering Editor Sheet */}
+      {editingOffering && (
+        <OfferingEditorSheet
+          open={!!editingOffering}
+          onOpenChange={(open) => !open && setEditingOffering(null)}
+          menu={menu}
+          sectionId={editingOffering.sectionId}
+          initialOffering={editingOffering.offering}
+          currency={currency}
+          categoryContext={categoryContext}
+          onSave={handleSaveOffering}
+          onDelete={handleDeleteOffering}
+          onDuplicate={handleDuplicateOffering}
+        />
+      )}
 
       {/* MODAL 2: Menu Settings Drawer */}
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
