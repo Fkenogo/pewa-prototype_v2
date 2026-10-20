@@ -19,7 +19,26 @@ import type {
   ModerationCase,
 } from "./types";
 import { buildScenario } from "./fixtures";
-import { canAdmitOrder, cartTotal, validateCart } from "./ordering";
+import { getVenuePublishedMenus } from "./taxonomy";
+import {
+  canAdmitOrder,
+  cartTotal,
+  validateCart,
+  validateModifierGroupConfig,
+  validateOfferingModifiersConfig,
+  validateModifierSelection,
+  validateAndRecalculateLineModifiers,
+} from "./ordering";
+
+export {
+  canAdmitOrder,
+  cartTotal,
+  validateCart,
+  validateModifierGroupConfig,
+  validateOfferingModifiersConfig,
+  validateModifierSelection,
+  validateAndRecalculateLineModifiers,
+};
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -247,7 +266,40 @@ export const usePewa = create<PewaState & Actions>()(
             return "Structured requests are paused. Please contact the business directly.";
           if (s.cart?.lines.length && s.cart.venueId !== venueId)
             return "Your cart belongs to another business. Clear it before starting a new cart.";
-          const cart = { venueId, lines: [...(s.cart?.lines ?? []), { ...line, id: uid("line") }] };
+
+          const venue = s.venues.find((v) => v.id === venueId);
+          if (!venue) return "This venue is no longer available.";
+
+          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+            includeProtected: true,
+          });
+          const publishedMenu = venuePublishedMenus.find((m) => m.id === line.menuId);
+          if (!publishedMenu) {
+            return "Cannot add items from an unpublished draft or archived menu.";
+          }
+          const publishedOffering = publishedMenu.sections
+            .flatMap((sec) => sec.offerings)
+            .find((o) => o.id === line.offeringId);
+          if (!publishedOffering) {
+            return "This offering is not found on the published menu.";
+          }
+          if (!publishedOffering.available) {
+            return `${publishedOffering.name} is currently sold out.`;
+          }
+
+          const modCheck = validateAndRecalculateLineModifiers(publishedOffering, line.options);
+          if (!modCheck.valid) {
+            return modCheck.error || "Invalid option selection.";
+          }
+
+          const authoritativeLine: CartLine = {
+            ...line,
+            id: uid("line"),
+            basePrice: publishedOffering.price,
+            options: modCheck.authoritativeOptions || line.options,
+          };
+
+          const cart = { venueId, lines: [...(s.cart?.lines ?? []), authoritativeLine] };
           const error = validateCart(s, cart);
           if (error) return error;
           set({ cart });
@@ -280,6 +332,28 @@ export const usePewa = create<PewaState & Actions>()(
           if (!venue || !s.cart) return { error: "This venue is no longer available." };
           if (!venue.services.includes(input.service))
             return { error: "Choose a service offered by this business." };
+
+          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+            includeProtected: true,
+          });
+
+          // Authoritatively recalculate lines and prices from the effective published snapshot
+          const authoritativeLines: CartLine[] = s.cart.lines.map((line) => {
+            const menu = venuePublishedMenus.find((m) => m.id === line.menuId);
+            const offering = menu?.sections
+              .flatMap((sec) => sec.offerings)
+              .find((o) => o.id === line.offeringId);
+            if (!offering) {
+              return structuredClone(line);
+            }
+            const modCheck = validateAndRecalculateLineModifiers(offering, line.options);
+            return {
+              ...line,
+              basePrice: offering.price,
+              options: modCheck.authoritativeOptions || line.options,
+            };
+          });
+
           const id = uid("order");
           const sequence = s.orderSequence + 1;
           const order: OrderRequest = {
@@ -292,8 +366,8 @@ export const usePewa = create<PewaState & Actions>()(
             orgId: venue.orgId,
             venueName: venue.name,
             currency: venue.currency,
-            lines: structuredClone(s.cart.lines),
-            total: cartTotal(s.cart.lines),
+            lines: authoritativeLines,
+            total: cartTotal(authoritativeLines),
             status: "pending",
             submittedAt: now(),
             unitConsumed: false,

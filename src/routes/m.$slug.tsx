@@ -387,19 +387,20 @@ function PublicMenu() {
                                   Sold out today
                                 </span>
                               )}
-                              {o.tags && o.tags.slice(0, 3).map((t) => (
-                                <span
-                                  key={t}
-                                  className={cn(
-                                    "rounded-full px-2 py-0.5 text-[10px] font-medium",
-                                    isDietaryClaimTag(t)
-                                      ? "border border-primary/25 bg-primary/10 text-primary font-semibold"
-                                      : "bg-secondary text-secondary-foreground",
-                                  )}
-                                >
-                                  {t}
-                                </span>
-                              ))}
+                              {o.tags &&
+                                o.tags.slice(0, 3).map((t) => (
+                                  <span
+                                    key={t}
+                                    className={cn(
+                                      "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                                      isDietaryClaimTag(t)
+                                        ? "border border-primary/25 bg-primary/10 text-primary font-semibold"
+                                        : "bg-secondary text-secondary-foreground",
+                                    )}
+                                  >
+                                    {t}
+                                  </span>
+                                ))}
                               {o.tags && o.tags.length > 3 && (
                                 <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-medium">
                                   +{o.tags.length - 3}

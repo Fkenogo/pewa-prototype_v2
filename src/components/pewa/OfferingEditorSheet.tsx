@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Menu, ModifierGroup, Offering, Section } from "@/lib/pewa/types";
-import { formatPrice } from "@/lib/pewa/store";
+import { formatPrice, validateOfferingModifiersConfig } from "@/lib/pewa/store";
 import {
   getExistingMenuTags,
   getGroupedTagSuggestionsForCategory,
@@ -102,7 +102,9 @@ export function OfferingEditorSheet({
           image: initialOffering.image,
           imageSource: initialOffering.imageSource,
           tags: Array.isArray(initialOffering.tags) ? [...initialOffering.tags] : [],
-          modifiers: initialOffering.modifiers ? JSON.parse(JSON.stringify(initialOffering.modifiers)) : [],
+          modifiers: initialOffering.modifiers
+            ? JSON.parse(JSON.stringify(initialOffering.modifiers))
+            : [],
           specialBadge: initialOffering.specialBadge,
         });
       } else {
@@ -137,6 +139,13 @@ export function OfferingEditorSheet({
     if (isNaN(draft.price) || draft.price < 0) {
       toast.error("Please enter a valid price (>= 0).");
       setActiveTab("details");
+      return;
+    }
+
+    const modConfigError = validateOfferingModifiersConfig(draft.modifiers);
+    if (modConfigError) {
+      toast.error(modConfigError);
+      setActiveTab("modifiers");
       return;
     }
 
@@ -290,7 +299,8 @@ export function OfferingEditorSheet({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Description <span className="text-muted-foreground font-normal">(Optional)</span>
+                      Description{" "}
+                      <span className="text-muted-foreground font-normal">(Optional)</span>
                     </Label>
                     <span className="text-[10px] text-muted-foreground">
                       {draft.description.length}/300
@@ -298,7 +308,9 @@ export function OfferingEditorSheet({
                   </div>
                   <Textarea
                     value={draft.description}
-                    onChange={(e) => setDraft({ ...draft, description: e.target.value.slice(0, 300) })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, description: e.target.value.slice(0, 300) })
+                    }
                     placeholder="Describe ingredients, preparation style, origin, or flavor profile..."
                     rows={2}
                     className="text-xs"
@@ -314,7 +326,9 @@ export function OfferingEditorSheet({
                     </Label>
                     {draft.image && (
                       <span className="text-[10px] rounded-md bg-primary/10 text-primary px-2 py-0.5 font-semibold">
-                        {draft.imageSource === "upload" ? "Merchant Photo" : "Representative Library"}
+                        {draft.imageSource === "upload"
+                          ? "Merchant Photo"
+                          : "Representative Library"}
                       </span>
                     )}
                   </div>
@@ -364,7 +378,9 @@ export function OfferingEditorSheet({
                         className="h-9 w-full text-xs font-semibold gap-1.5 shadow-2xs"
                       >
                         <ImageIcon className="h-3.5 w-3.5 text-primary" />
-                        {draft.image ? "Replace / Adjust Photo" : "Select Photo from Library or Upload"}
+                        {draft.image
+                          ? "Replace / Adjust Photo"
+                          : "Select Photo from Library or Upload"}
                       </Button>
                     </div>
                   </div>
@@ -392,9 +408,7 @@ export function OfferingEditorSheet({
                       </span>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="font-bold text-sm truncate">
-                        {draft.name || "Offering Title"}
-                      </p>
+                      <p className="font-bold text-sm truncate">{draft.name || "Offering Title"}</p>
                       <p className="text-xs text-muted-foreground line-clamp-1">
                         {draft.description || "No description provided."}
                       </p>
@@ -529,7 +543,10 @@ export function OfferingEditorSheet({
                     );
                     if (unassigned.length === 0) return null;
                     return (
-                      <div key={group.id} className="space-y-1 pt-1 border-t first:border-t-0 first:pt-0">
+                      <div
+                        key={group.id}
+                        className="space-y-1 pt-1 border-t first:border-t-0 first:pt-0"
+                      >
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-semibold text-muted-foreground">
                             {group.label}

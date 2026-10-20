@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Plus, Trash2, ArrowUp, ArrowDown, Sparkles, Check } from "lucide-react";
+import { Plus, Trash2, ArrowUp, ArrowDown, Sparkles, Check, AlertCircle } from "lucide-react";
 import type { ModifierGroup, ModifierOption } from "@/lib/pewa/types";
-import { formatPrice } from "@/lib/pewa/store";
+import { formatPrice, validateModifierGroupConfig } from "@/lib/pewa/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,9 +125,7 @@ export function ModifierEditor({
   };
 
   const updateGroup = (groupId: string, updates: Partial<ModifierGroup>) => {
-    onChange(
-      modifiers.map((g) => (g.id === groupId ? { ...g, ...updates } : g)),
-    );
+    onChange(modifiers.map((g) => (g.id === groupId ? { ...g, ...updates } : g)));
   };
 
   const removeGroup = (groupId: string) => {
@@ -151,20 +149,13 @@ export function ModifierEditor({
         if (g.id !== groupId) return g;
         return {
           ...g,
-          options: [
-            ...g.options,
-            { id: uid("opt"), name: "", priceDelta: 0 },
-          ],
+          options: [...g.options, { id: uid("opt"), name: "", priceDelta: 0 }],
         };
       }),
     );
   };
 
-  const updateOption = (
-    groupId: string,
-    optionId: string,
-    updates: Partial<ModifierOption>,
-  ) => {
+  const updateOption = (groupId: string, optionId: string, updates: Partial<ModifierOption>) => {
     onChange(
       modifiers.map((g) => {
         if (g.id !== groupId) return g;
@@ -302,42 +293,140 @@ export function ModifierEditor({
                 </div>
 
                 {/* Group Behavior Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-xs bg-muted/15">
-                  <div className="flex items-center gap-1 rounded-lg border bg-background p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => updateGroup(group.id, { selectionType: "single" })}
-                      className={cn(
-                        "rounded-md px-2.5 py-1 font-medium transition-all text-xs",
-                        isSingle
-                          ? "bg-primary text-primary-foreground font-semibold shadow-2xs"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Choose 1 (Radio)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateGroup(group.id, { selectionType: "multiple" })}
-                      className={cn(
-                        "rounded-md px-2.5 py-1 font-medium transition-all text-xs",
-                        !isSingle
-                          ? "bg-primary text-primary-foreground font-semibold shadow-2xs"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Choose Any (Extras)
-                    </button>
+                <div className="space-y-2 border-b px-3 py-2.5 bg-muted/15">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1 rounded-lg border bg-background p-0.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateGroup(group.id, {
+                            selectionType: "single",
+                            minSelections: undefined,
+                            maxSelections: undefined,
+                          })
+                        }
+                        className={cn(
+                          "rounded-md px-2.5 py-1 font-medium transition-all text-xs",
+                          isSingle
+                            ? "bg-primary text-primary-foreground font-semibold shadow-2xs"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        Single Choice (Radio)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateGroup(group.id, {
+                            selectionType: "multiple",
+                            minSelections: group.required ? 1 : 0,
+                          })
+                        }
+                        className={cn(
+                          "rounded-md px-2.5 py-1 font-medium transition-all text-xs",
+                          !isSingle
+                            ? "bg-primary text-primary-foreground font-semibold shadow-2xs"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        Multiple Choice (Checkboxes)
+                      </button>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <span className="text-xs font-medium text-foreground">
+                        {group.required ? "Required" : "Optional"}
+                      </span>
+                      <Switch
+                        checked={Boolean(group.required)}
+                        onCheckedChange={(val) => {
+                          if (isSingle) {
+                            updateGroup(group.id, { required: val });
+                          } else {
+                            updateGroup(group.id, {
+                              required: val,
+                              minSelections: val ? Math.max(1, group.minSelections ?? 1) : 0,
+                            });
+                          }
+                        }}
+                        aria-label="Required choice"
+                      />
+                    </label>
                   </div>
 
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <span className="text-xs text-muted-foreground">Required choice:</span>
-                    <Switch
-                      checked={Boolean(group.required)}
-                      onCheckedChange={(val) => updateGroup(group.id, { required: val })}
-                      aria-label="Required choice"
-                    />
-                  </label>
+                  {/* Multiple Choice Boundaries */}
+                  {!isSingle && (
+                    <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-muted-foreground border-t border-border/50">
+                      {group.required ? (
+                        <div className="flex items-center gap-1.5">
+                          <Label className="text-[11px] font-semibold text-foreground">
+                            Min required:
+                          </Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, group.options.length)}
+                            value={group.minSelections ?? 1}
+                            onChange={(e) => {
+                              const val = Math.max(1, parseInt(e.target.value) || 1);
+                              updateGroup(group.id, { minSelections: val });
+                            }}
+                            className="h-7 w-16 text-xs text-center"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">Min: 0 (Optional)</span>
+                      )}
+
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-[11px] font-semibold text-foreground">
+                          Max limit:
+                        </Label>
+                        <Input
+                          type="number"
+                          min={group.required ? (group.minSelections ?? 1) : 1}
+                          max={Math.max(1, group.options.length)}
+                          placeholder="No limit"
+                          value={group.maxSelections ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value ? parseInt(e.target.value) : undefined;
+                            updateGroup(group.id, { maxSelections: val });
+                          }}
+                          className="h-7 w-20 text-xs text-center"
+                        />
+                        <span className="text-[10px] text-muted-foreground">
+                          (leave empty for unlimited)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rule Summary & Inline Validation Error */}
+                  {(() => {
+                    const groupErr = validateModifierGroupConfig(group);
+                    if (groupErr) {
+                      return (
+                        <div className="flex items-center gap-1.5 rounded-lg bg-destructive/10 border border-destructive/20 px-2.5 py-1 text-[11px] font-medium text-destructive">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          <span>{groupErr}</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-1 font-medium">
+                        <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                        {isSingle
+                          ? group.required
+                            ? "Single choice (Required): Customer must choose exactly 1 option."
+                            : "Single choice (Optional): Customer may choose 1 option or skip."
+                          : group.required
+                            ? `Multiple choice (Required): Customer must choose between ${group.minSelections ?? 1} and ${group.maxSelections ?? group.options.length} options.`
+                            : group.maxSelections
+                              ? `Multiple choice (Optional): Customer may choose up to ${group.maxSelections} options.`
+                              : "Multiple choice (Optional): Customer may choose any combination."}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Options List */}
@@ -347,9 +436,7 @@ export function ModifierEditor({
                       <div key={opt.id} className="flex items-center gap-2">
                         <Input
                           value={opt.name}
-                          onChange={(e) =>
-                            updateOption(group.id, opt.id, { name: e.target.value })
-                          }
+                          onChange={(e) => updateOption(group.id, opt.id, { name: e.target.value })}
                           placeholder="Option name (e.g. Oat Milk)"
                           className="h-9 flex-1 text-xs"
                         />

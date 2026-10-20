@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { MessageCircle, Minus, Plus, Check } from "lucide-react";
+import { MessageCircle, Minus, Plus, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import type { Offering, Venue } from "@/lib/pewa/types";
-import { formatPrice, usePewa } from "@/lib/pewa/store";
+import { formatPrice, usePewa, validateModifierSelection } from "@/lib/pewa/store";
 import { canAdmitOrder } from "@/lib/pewa/ordering";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,32 +28,25 @@ export function OfferingOrderForm({
   const isUnpublishedOrPreview =
     isPreview || (parentMenu ? parentMenu.status !== "published" : false);
 
-  // Single choice state: groupId -> optionId
-  const [selectedSingle, setSelectedSingle] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    for (const g of offering.modifiers) {
-      if ((g.selectionType ?? "single") === "single" && g.required && g.options.length > 0) {
-        const firstOpt = g.options[0];
-        if (firstOpt) {
-          init[g.id] = firstOpt.id;
-        }
-      }
-    }
-    return init;
-  });
+  // Single choice state: groupId -> optionId (never silently pre-selected)
+  const [selectedSingle, setSelectedSingle] = useState<Record<string, string>>({});
 
   // Multiple choice state: groupId -> optionId[]
   const [selectedMulti, setSelectedMulti] = useState<Record<string, string[]>>({});
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
 
-  const toggleMultiOption = (groupId: string, optionId: string) => {
+  const toggleMultiOption = (groupId: string, optionId: string, maxSelections?: number) => {
     setSelectedMulti((prev) => {
       const current = prev[groupId] || [];
-      const next = current.includes(optionId)
-        ? current.filter((id) => id !== optionId)
-        : [...current, optionId];
-      return { ...prev, [groupId]: next };
+      if (current.includes(optionId)) {
+        return { ...prev, [groupId]: current.filter((id) => id !== optionId) };
+      }
+      if (maxSelections !== undefined && current.length >= maxSelections) {
+        toast.error(`You may select at most ${maxSelections} options for this group.`);
+        return prev;
+      }
+      return { ...prev, [groupId]: [...current, optionId] };
     });
   };
 
@@ -91,15 +84,26 @@ export function OfferingOrderForm({
     }
   });
 
-  const missingRequired = offering.modifiers.some((group) => {
-    if (!group.required) return false;
+  // Reusable validation checks across all groups
+  const groupValidations = offering.modifiers.map((group) => {
     const isSingle = (group.selectionType ?? "single") === "single";
-    if (isSingle) {
-      return !selectedSingle[group.id];
-    } else {
-      return (selectedMulti[group.id] || []).length === 0;
-    }
+    const singleVal = selectedSingle[group.id];
+    const selectedIds: string[] = isSingle
+      ? singleVal
+        ? [singleVal]
+        : []
+      : selectedMulti[group.id] || [];
+    const error = validateModifierSelection(group, selectedIds);
+    return {
+      group,
+      selectedIds,
+      count: selectedIds.length,
+      error,
+    };
   });
+
+  const firstValidationError = groupValidations.find((v) => v.error !== null)?.error || null;
+  const isSelectionValid = !firstValidationError;
 
   const total = (offering.price + options.reduce((sum, o) => sum + o.priceDelta, 0)) * quantity;
 
@@ -107,24 +111,56 @@ export function OfferingOrderForm({
     <div className="space-y-4">
       {offering.modifiers.map((group) => {
         const isSingle = (group.selectionType ?? "single") === "single";
+        const validation = groupValidations.find((v) => v.group.id === group.id);
+        const selectedCount = validation ? validation.count : 0;
+        const groupError = validation?.error;
+        const isRequired = Boolean(group.required);
+        const minSelections = group.minSelections ?? (isRequired ? 1 : 0);
+        const maxSelections = group.maxSelections;
+
         return (
           <fieldset key={group.id} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <legend className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <legend className="text-sm font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
                 <span>{group.name}</span>
-                {group.required && (
+                {isRequired ? (
                   <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5 text-[10px] font-bold">
-                    Required
+                    {isSingle
+                      ? "Required · Choose 1"
+                      : maxSelections
+                        ? `Required · Choose ${minSelections}–${maxSelections}`
+                        : `Required · Choose at least ${minSelections}`}
+                  </span>
+                ) : (
+                  <span className="rounded bg-muted text-muted-foreground px-1.5 py-0.5 text-[10px] font-medium">
+                    {isSingle
+                      ? "Optional · Up to 1"
+                      : maxSelections
+                        ? `Optional · Up to ${maxSelections}`
+                        : "Optional · Choose any"}
                   </span>
                 )}
               </legend>
-              <span className="text-[11px] text-muted-foreground">
-                {isSingle ? "Choose 1" : "Choose any"}
+              <span
+                className={cn(
+                  "text-[11px] font-medium shrink-0",
+                  groupError ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground",
+                )}
+              >
+                {isSingle
+                  ? selectedCount === 1
+                    ? "✓ Selected"
+                    : isRequired
+                      ? "0/1 selected"
+                      : "None"
+                  : maxSelections
+                    ? `${selectedCount}/${maxSelections} selected`
+                    : `${selectedCount} selected`}
               </span>
             </div>
 
             <div className="divide-y rounded-xl border bg-card overflow-hidden">
-              {/* Optional single-choice: allow 'No selection' */}
+              {/* Optional single-choice: allow explicit 'No selection / Standard' */}
               {isSingle && !group.required && (
                 <label className="flex min-h-11 items-center gap-2.5 px-3.5 text-sm cursor-pointer hover:bg-muted/30">
                   <input
@@ -134,7 +170,9 @@ export function OfferingOrderForm({
                     onChange={() => setSelectedSingle({ ...selectedSingle, [group.id]: "" })}
                     className="accent-primary"
                   />
-                  <span className="flex-1 text-muted-foreground">Standard / No extra selection</span>
+                  <span className="flex-1 text-muted-foreground">
+                    Standard / No extra selection
+                  </span>
                 </label>
               )}
 
@@ -143,11 +181,18 @@ export function OfferingOrderForm({
                   ? selectedSingle[group.id] === opt.id
                   : (selectedMulti[group.id] || []).includes(opt.id);
 
+                const reachedMax =
+                  !isSingle &&
+                  !checked &&
+                  maxSelections !== undefined &&
+                  selectedCount >= maxSelections;
+
                 return (
                   <label
                     key={opt.id}
                     className={cn(
-                      "flex min-h-11 items-center gap-2.5 px-3.5 text-sm cursor-pointer transition-colors",
+                      "flex min-h-11 items-center gap-2.5 px-3.5 text-sm transition-colors",
+                      reachedMax ? "opacity-50 cursor-not-allowed bg-muted/20" : "cursor-pointer",
                       checked ? "bg-primary/5 font-medium" : "hover:bg-muted/30",
                     )}
                   >
@@ -155,16 +200,24 @@ export function OfferingOrderForm({
                       type={isSingle ? "radio" : "checkbox"}
                       name={group.id}
                       checked={checked}
+                      disabled={reachedMax}
                       onChange={() => {
                         if (isSingle) {
                           setSelectedSingle({ ...selectedSingle, [group.id]: opt.id });
                         } else {
-                          toggleMultiOption(group.id, opt.id);
+                          toggleMultiOption(group.id, opt.id, maxSelections);
                         }
                       }}
                       className="accent-primary"
                     />
-                    <span className="flex-1 text-foreground">{opt.name}</span>
+                    <span className="flex-1 text-foreground">
+                      {opt.name}
+                      {reachedMax && (
+                        <span className="text-[10px] text-muted-foreground ml-1.5 italic">
+                          (Max reached)
+                        </span>
+                      )}
+                    </span>
                     <span className="text-xs text-muted-foreground font-semibold">
                       {opt.priceDelta
                         ? `+${formatPrice(opt.priceDelta, venue.currency)}`
@@ -174,6 +227,13 @@ export function OfferingOrderForm({
                 );
               })}
             </div>
+
+            {groupError && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium px-1 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3 shrink-0" />
+                <span>{groupError}</span>
+              </p>
+            )}
           </fieldset>
         );
       })}
@@ -270,8 +330,12 @@ export function OfferingOrderForm({
       ) : (
         <Button
           className="h-12 w-full font-bold text-base shadow-sm"
-          disabled={missingRequired}
+          disabled={!isSelectionValid}
           onClick={() => {
+            if (!isSelectionValid) {
+              toast.error(firstValidationError || "Please make required selections");
+              return;
+            }
             const error = addCartLine(venue.id, {
               menuId,
               offeringId: offering.id,
@@ -290,8 +354,8 @@ export function OfferingOrderForm({
             onAdded();
           }}
         >
-          {missingRequired
-            ? "Please make required selections"
+          {!isSelectionValid
+            ? firstValidationError || "Please make required selections"
             : `Add to cart · ${formatPrice(total, venue.currency)}`}
         </Button>
       )}

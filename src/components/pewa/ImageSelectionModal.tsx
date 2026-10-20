@@ -284,7 +284,8 @@ export function ImageSelectionModal({
               {/* Photos Grid */}
               {filteredLibrary.length === 0 ? (
                 <div className="rounded-xl border border-dashed p-6 text-center text-xs text-muted-foreground">
-                  No photos found matching “{searchQuery}”. Try another keyword or browse all photos.
+                  No photos found matching “{searchQuery}”. Try another keyword or browse all
+                  photos.
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2 max-h-[46vh] overflow-y-auto p-1">

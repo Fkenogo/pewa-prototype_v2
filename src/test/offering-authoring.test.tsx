@@ -1,5 +1,37 @@
+import { useState } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { usePewa, formatPrice } from "@/lib/pewa/store";
+import { render, screen, fireEvent } from "@testing-library/react";
+import {
+  usePewa,
+  formatPrice,
+  validateModifierGroupConfig,
+  validateOfferingModifiersConfig,
+  validateModifierSelection,
+  validateAndRecalculateLineModifiers,
+} from "@/lib/pewa/store";
+import { ModifierEditor } from "@/components/pewa/ModifierEditor";
+import { OfferingOrderForm } from "@/components/pewa/OfferingOrderForm";
+
+function TestModifierEditorHarness({
+  initialModifiers = [],
+  onChange,
+}: {
+  initialModifiers?: ModifierGroup[];
+  onChange: (mods: ModifierGroup[]) => void;
+}) {
+  const [mods, setMods] = useState<ModifierGroup[]>(initialModifiers);
+  return (
+    <ModifierEditor
+      modifiers={mods}
+      onChange={(updated) => {
+        setMods(updated);
+        onChange(updated);
+      }}
+      currency="KES"
+    />
+  );
+}
+
 import {
   PROTOTYPE_IMAGE_LIBRARY,
   IMAGE_LIBRARY_CATEGORIES,
@@ -11,8 +43,8 @@ import {
   processImageUpload,
   getVenuePublishedMenus,
 } from "@/lib/pewa/taxonomy";
-import { lineTotal, validateCart } from "@/lib/pewa/ordering";
-import type { Offering, Menu, Section, ModifierGroup } from "@/lib/pewa/types";
+import { lineTotal, validateCart, cartTotal } from "@/lib/pewa/ordering";
+import type { Offering, Menu, Section, ModifierGroup, Venue } from "@/lib/pewa/types";
 
 describe("R1-C — Offering Authoring and Management", () => {
   beforeEach(() => {
@@ -66,7 +98,9 @@ describe("R1-C — Offering Authoring and Management", () => {
 
       // 3. Verify live menu snapshot contains the new item
       const publishedMenu = usePewa.getState().menus.find((m) => m.id === menu.id);
-      const snapshotSec = publishedMenu?.publishedSnapshot?.sections.find((s) => s.id === section.id);
+      const snapshotSec = publishedMenu?.publishedSnapshot?.sections.find(
+        (s) => s.id === section.id,
+      );
       const publishedItem = snapshotSec?.offerings.find((o) => o.name === "Cappuccino");
 
       expect(publishedItem).toBeDefined();
@@ -108,7 +142,6 @@ describe("R1-C — Offering Authoring and Management", () => {
 
       const existingFlat = section.offerings.find((o) => o.name === "Flat White");
       const flatWhite: Omit<Offering, "id"> & { id?: string } = {
-        id: existingFlat?.id,
         name: "Flat White",
         price: 350,
         description: "Ristretto espresso shots topped with silky micro-foam.",
@@ -116,6 +149,7 @@ describe("R1-C — Offering Authoring and Management", () => {
         emoji: "☕",
         tags: ["Hot"],
         modifiers: [sizeGroup, milkGroup],
+        ...(existingFlat ? { id: existingFlat.id } : {}),
       };
 
       usePewa.getState().upsertOffering(menu.id, section.id, flatWhite);
@@ -138,6 +172,7 @@ describe("R1-C — Offering Authoring and Management", () => {
         emoji: item!.emoji,
         basePrice: item!.price,
         quantity: 1,
+        note: "",
         options: [
           { groupId: sizeGroup.id, optionId: "opt_regular", name: "Regular", priceDelta: 0 },
           { groupId: milkGroup.id, optionId: "opt_whole", name: "Whole", priceDelta: 0 },
@@ -154,6 +189,7 @@ describe("R1-C — Offering Authoring and Management", () => {
         emoji: item!.emoji,
         basePrice: item!.price,
         quantity: 2,
+        note: "",
         options: [
           { groupId: sizeGroup.id, optionId: "opt_large", name: "Large", priceDelta: 80 },
           { groupId: milkGroup.id, optionId: "opt_oat", name: "Oat Milk", priceDelta: 50 },
@@ -247,10 +283,21 @@ describe("R1-C — Offering Authoring and Management", () => {
         emoji: burger.emoji,
         basePrice: burger.price,
         quantity: 1,
+        note: "",
         options: [
-          { groupId: extrasGroup.id, optionId: "opt_cheese", name: "Extra Cheddar", priceDelta: 60 },
+          {
+            groupId: extrasGroup.id,
+            optionId: "opt_cheese",
+            name: "Extra Cheddar",
+            priceDelta: 60,
+          },
           { groupId: extrasGroup.id, optionId: "opt_bacon", name: "Crispy Bacon", priceDelta: 100 },
-          { groupId: extrasGroup.id, optionId: "opt_sauce", name: "House Truffle Mayo", priceDelta: 40 },
+          {
+            groupId: extrasGroup.id,
+            optionId: "opt_sauce",
+            name: "House Truffle Mayo",
+            priceDelta: 40,
+          },
         ],
       };
 
@@ -272,7 +319,9 @@ describe("R1-C — Offering Authoring and Management", () => {
 
     it("keeps draft tag changes isolated from customer discovery until publication", () => {
       const state = usePewa.getState();
-      const menu = state.menus.find((m) => m.orgId === state.organisation?.id && m.status === "published");
+      const menu = state.menus.find(
+        (m) => m.orgId === state.organisation?.id && m.status === "published",
+      );
       expect(menu).toBeDefined();
       if (!menu) return;
 
@@ -293,7 +342,11 @@ describe("R1-C — Offering Authoring and Management", () => {
       });
 
       // Query live customer published menus
-      const liveMenus = getVenuePublishedMenus(venue, usePewa.getState().menus, usePewa.getState().venues);
+      const liveMenus = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
       const liveOff = liveMenus
         .flatMap((m) => m.sections)
         .flatMap((s) => s.offerings)
@@ -306,7 +359,11 @@ describe("R1-C — Offering Authoring and Management", () => {
       usePewa.getState().publishMenu(menu.id);
 
       // Now query live customer published menus again
-      const republishedLiveMenus = getVenuePublishedMenus(venue, usePewa.getState().menus, usePewa.getState().venues);
+      const republishedLiveMenus = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
       const republishedOff = republishedLiveMenus
         .flatMap((m) => m.sections)
         .flatMap((s) => s.offerings)
@@ -319,7 +376,9 @@ describe("R1-C — Offering Authoring and Management", () => {
   describe("Scenario F: Published offering revision", () => {
     it("keeps edited price and modifiers isolated until explicitly republished", () => {
       const state = usePewa.getState();
-      const menu = state.menus.find((m) => m.orgId === state.organisation?.id && m.status === "published");
+      const menu = state.menus.find(
+        (m) => m.orgId === state.organisation?.id && m.status === "published",
+      );
       expect(menu).toBeDefined();
       if (!menu) return;
 
@@ -342,14 +401,28 @@ describe("R1-C — Offering Authoring and Management", () => {
       });
 
       // Customer live view should still see originalPrice
-      const liveMenus = getVenuePublishedMenus(venue, usePewa.getState().menus, usePewa.getState().venues);
-      const liveOff = liveMenus.flatMap((m) => m.sections).flatMap((s) => s.offerings).find((o) => o.id === off.id);
+      const liveMenus = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      const liveOff = liveMenus
+        .flatMap((m) => m.sections)
+        .flatMap((s) => s.offerings)
+        .find((o) => o.id === off.id);
       expect(liveOff?.price).toBe(originalPrice);
 
       // Publishing updates live price
       usePewa.getState().publishMenu(menu.id);
-      const updatedLiveMenus = getVenuePublishedMenus(venue, usePewa.getState().menus, usePewa.getState().venues);
-      const updatedLiveOff = updatedLiveMenus.flatMap((m) => m.sections).flatMap((s) => s.offerings).find((o) => o.id === off.id);
+      const updatedLiveMenus = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      const updatedLiveOff = updatedLiveMenus
+        .flatMap((m) => m.sections)
+        .flatMap((s) => s.offerings)
+        .find((o) => o.id === off.id);
       expect(updatedLiveOff?.price).toBe(revisedPrice);
     });
   });
@@ -357,7 +430,9 @@ describe("R1-C — Offering Authoring and Management", () => {
   describe("Scenario G: Availability override", () => {
     it("marking an item sold out immediately updates published customer menu without full republishing", () => {
       const state = usePewa.getState();
-      const menu = state.menus.find((m) => m.orgId === state.organisation?.id && m.status === "published");
+      const menu = state.menus.find(
+        (m) => m.orgId === state.organisation?.id && m.status === "published",
+      );
       expect(menu).toBeDefined();
       if (!menu) return;
 
@@ -384,7 +459,11 @@ describe("R1-C — Offering Authoring and Management", () => {
       expect(draftOff?.available).toBe(false);
 
       // Check live published snapshot immediately
-      const liveMenus = getVenuePublishedMenus(venue, usePewa.getState().menus, usePewa.getState().venues);
+      const liveMenus = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
       const liveOff = liveMenus
         .flatMap((m) => m.sections)
         .flatMap((s) => s.offerings)
@@ -403,6 +482,7 @@ describe("R1-C — Offering Authoring and Management", () => {
             emoji: off.emoji,
             basePrice: off.price,
             quantity: 1,
+            note: "",
             options: [],
           },
         ],
@@ -516,6 +596,773 @@ describe("R1-C — Offering Authoring and Management", () => {
       const results = searchImageLibrary("croissant");
       expect(results.length).toBeGreaterThan(0);
       expect(results.some((img) => img.title.toLowerCase().includes("croissant"))).toBe(true);
+    });
+  });
+
+  describe("CORR-001: Modifier configuration, customer selection, and order validation alignment", () => {
+    describe("CORR-A & CORR-C: Merchant modifier configuration validation", () => {
+      it("rejects invalid merchant configurations (impossible min/max, empty names, duplicates)", () => {
+        // Empty group name
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "   ",
+            options: [{ id: "opt_1", name: "Small", priceDelta: 0 }],
+          }),
+        ).toContain("name is required");
+
+        // Group with 0 options
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Size",
+            options: [],
+          }),
+        ).toContain("must have at least one option");
+
+        // Empty option name
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Size",
+            options: [{ id: "opt_1", name: "", priceDelta: 0 }],
+          }),
+        ).toContain("cannot have an empty name");
+
+        // Duplicate option ID
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Size",
+            options: [
+              { id: "opt_dup", name: "Option 1", priceDelta: 0 },
+              { id: "opt_dup", name: "Option 2", priceDelta: 10 },
+            ],
+          }),
+        ).toContain("Duplicate option ID");
+
+        // Negative price delta
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Size",
+            options: [{ id: "opt_1", name: "Small", priceDelta: -20 }],
+          }),
+        ).toContain("invalid price delta");
+
+        // Single choice with invalid min/max
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Size",
+            selectionType: "single",
+            required: true,
+            minSelections: 2,
+            options: [{ id: "opt_1", name: "Regular", priceDelta: 0 }],
+          }),
+        ).toContain("minimum selections other than 1");
+
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Size",
+            selectionType: "single",
+            maxSelections: 2,
+            options: [{ id: "opt_1", name: "Regular", priceDelta: 0 }],
+          }),
+        ).toContain("maximum selections must be 1");
+
+        // Multiple choice: minSelections > options.length
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Toppings",
+            selectionType: "multiple",
+            required: true,
+            minSelections: 4,
+            options: [
+              { id: "opt_1", name: "Cheese", priceDelta: 50 },
+              { id: "opt_2", name: "Bacon", priceDelta: 80 },
+            ],
+          }),
+        ).toContain("exceeds total available options");
+
+        // Multiple choice: maxSelections > options.length
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Toppings",
+            selectionType: "multiple",
+            maxSelections: 5,
+            options: [
+              { id: "opt_1", name: "Cheese", priceDelta: 50 },
+              { id: "opt_2", name: "Bacon", priceDelta: 80 },
+            ],
+          }),
+        ).toContain("exceeds total available options");
+
+        // Multiple choice: maxSelections < minSelections
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_1",
+            name: "Toppings",
+            selectionType: "multiple",
+            required: true,
+            minSelections: 3,
+            maxSelections: 2,
+            options: [
+              { id: "opt_1", name: "Cheese", priceDelta: 50 },
+              { id: "opt_2", name: "Bacon", priceDelta: 80 },
+              { id: "opt_3", name: "Sauce", priceDelta: 30 },
+            ],
+          }),
+        ).toContain("cannot be less than minimum selections");
+
+        // Offering level duplicate group IDs
+        expect(
+          validateOfferingModifiersConfig([
+            {
+              id: "grp_dup",
+              name: "Size",
+              options: [{ id: "opt_1", name: "Small", priceDelta: 0 }],
+            },
+            {
+              id: "grp_dup",
+              name: "Another Size",
+              options: [{ id: "opt_2", name: "Regular", priceDelta: 0 }],
+            },
+          ]),
+        ).toContain("Duplicate modifier group ID");
+      });
+
+      it("accepts valid single-choice and multiple-choice configurations", () => {
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_size",
+            name: "Coffee Size",
+            selectionType: "single",
+            required: true,
+            options: [
+              { id: "opt_reg", name: "Regular", priceDelta: 0 },
+              { id: "opt_lrg", name: "Large", priceDelta: 50 },
+            ],
+          }),
+        ).toBeNull();
+
+        expect(
+          validateModifierGroupConfig({
+            id: "grp_extras",
+            name: "Extras",
+            selectionType: "multiple",
+            required: false,
+            maxSelections: 2,
+            options: [
+              { id: "opt_1", name: "Cheese", priceDelta: 50 },
+              { id: "opt_2", name: "Bacon", priceDelta: 80 },
+              { id: "opt_3", name: "Jalapenos", priceDelta: 40 },
+            ],
+          }),
+        ).toBeNull();
+      });
+    });
+
+    describe("CORR-B & CORR-C: Customer selection validation rules", () => {
+      const singleRequiredGroup: ModifierGroup = {
+        id: "grp_size",
+        name: "Size",
+        selectionType: "single",
+        required: true,
+        options: [
+          { id: "opt_sm", name: "Small", priceDelta: 0 },
+          { id: "opt_lg", name: "Large", priceDelta: 50 },
+        ],
+      };
+
+      const singleOptionalGroup: ModifierGroup = {
+        id: "grp_milk",
+        name: "Milk",
+        selectionType: "single",
+        required: false,
+        options: [
+          { id: "opt_oat", name: "Oat Milk", priceDelta: 50 },
+          { id: "opt_alm", name: "Almond Milk", priceDelta: 60 },
+        ],
+      };
+
+      const multiOptionalMax2Group: ModifierGroup = {
+        id: "grp_toppings",
+        name: "Toppings",
+        selectionType: "multiple",
+        required: false,
+        maxSelections: 2,
+        options: [
+          { id: "opt_top1", name: "Cheddar", priceDelta: 40 },
+          { id: "opt_top2", name: "Bacon", priceDelta: 80 },
+          { id: "opt_top3", name: "Pickles", priceDelta: 30 },
+        ],
+      };
+
+      const multiRequiredMin2Group: ModifierGroup = {
+        id: "grp_tacos",
+        name: "Taco Fillings",
+        selectionType: "multiple",
+        required: true,
+        minSelections: 2,
+        maxSelections: 3,
+        options: [
+          { id: "opt_f1", name: "Beef", priceDelta: 0 },
+          { id: "opt_f2", name: "Chicken", priceDelta: 0 },
+          { id: "opt_f3", name: "Pork", priceDelta: 0 },
+        ],
+      };
+
+      it("enforces required single-choice group: exactly one valid option", () => {
+        // Zero chosen -> reject
+        expect(validateModifierSelection(singleRequiredGroup, [])).toContain(
+          "Please select an option",
+        );
+
+        // Exactly one chosen -> valid
+        expect(validateModifierSelection(singleRequiredGroup, ["opt_sm"])).toBeNull();
+
+        // More than one chosen -> reject
+        expect(validateModifierSelection(singleRequiredGroup, ["opt_sm", "opt_lg"])).toContain(
+          "Only one option may be selected",
+        );
+      });
+
+      it("enforces optional single-choice group: zero or one valid option", () => {
+        // Zero chosen -> valid
+        expect(validateModifierSelection(singleOptionalGroup, [])).toBeNull();
+
+        // One chosen -> valid
+        expect(validateModifierSelection(singleOptionalGroup, ["opt_oat"])).toBeNull();
+
+        // More than one chosen -> reject
+        expect(validateModifierSelection(singleOptionalGroup, ["opt_oat", "opt_alm"])).toContain(
+          "Only one option may be selected",
+        );
+      });
+
+      it("enforces optional multi-choice group with max 2: zero, one, or two choices", () => {
+        // 0 selections -> valid
+        expect(validateModifierSelection(multiOptionalMax2Group, [])).toBeNull();
+
+        // 1 selection -> valid
+        expect(validateModifierSelection(multiOptionalMax2Group, ["opt_top1"])).toBeNull();
+
+        // 2 selections -> valid
+        expect(
+          validateModifierSelection(multiOptionalMax2Group, ["opt_top1", "opt_top2"]),
+        ).toBeNull();
+
+        // 3 selections (exceeds max 2) -> reject
+        expect(
+          validateModifierSelection(multiOptionalMax2Group, ["opt_top1", "opt_top2", "opt_top3"]),
+        ).toContain("You may select at most 2");
+      });
+
+      it("enforces required multi-choice group with min 2: cannot proceed with fewer than two", () => {
+        // 0 selections -> reject
+        expect(validateModifierSelection(multiRequiredMin2Group, [])).toContain(
+          "Please select at least 2",
+        );
+
+        // 1 selection -> reject
+        expect(validateModifierSelection(multiRequiredMin2Group, ["opt_f1"])).toContain(
+          "Please select at least 2",
+        );
+
+        // 2 selections -> valid
+        expect(validateModifierSelection(multiRequiredMin2Group, ["opt_f1", "opt_f2"])).toBeNull();
+
+        // 3 selections -> valid
+        expect(
+          validateModifierSelection(multiRequiredMin2Group, ["opt_f1", "opt_f2", "opt_f3"]),
+        ).toBeNull();
+      });
+
+      it("rejects duplicate and unknown option IDs", () => {
+        // Duplicate selection of same option ID
+        expect(
+          validateModifierSelection(multiOptionalMax2Group, ["opt_top1", "opt_top1"]),
+        ).toContain("Duplicate option selection");
+
+        // Unknown option ID
+        expect(validateModifierSelection(singleRequiredGroup, ["opt_unknown"])).toContain(
+          "Invalid or unknown option ID",
+        );
+      });
+    });
+
+    describe("CORR-C: Store-level admission, cart validation, and authoritative recalculation", () => {
+      it("rejects cart lines that violate published modifier rules at addCartLine and validateCart", () => {
+        const state = usePewa.getState();
+        const venue = state.venues.find((v) => v.id === "venue_ggc")!;
+        const publishedMenu = getVenuePublishedMenus(venue, state.menus, state.venues)[0]!;
+        const section = publishedMenu.sections[0]!;
+
+        // Add an offering with strict rules to the menu and publish
+        const testOffering: Offering = {
+          id: "off_combo",
+          name: "Burger Combo",
+          description: "Burger with required sides and max 2 drinks",
+          price: 800,
+          emoji: "🍔",
+          tags: ["Special"],
+          available: true,
+          modifiers: [
+            {
+              id: "grp_side",
+              name: "Side Choice",
+              selectionType: "single",
+              required: true,
+              options: [
+                { id: "opt_fries", name: "French Fries", priceDelta: 0 },
+                { id: "opt_salad", name: "Garden Salad", priceDelta: 50 },
+              ],
+            },
+            {
+              id: "grp_sauces",
+              name: "Extra Sauces",
+              selectionType: "multiple",
+              required: false,
+              maxSelections: 2,
+              options: [
+                { id: "opt_bbq", name: "BBQ Sauce", priceDelta: 30 },
+                { id: "opt_garlic", name: "Garlic Mayo", priceDelta: 30 },
+                { id: "opt_chili", name: "Chili Dip", priceDelta: 30 },
+              ],
+            },
+          ],
+        };
+
+        usePewa.getState().upsertOffering(publishedMenu.id, section.id, testOffering);
+        usePewa.getState().publishMenu(publishedMenu.id);
+
+        // 1. Missing required choice -> rejected by addCartLine
+        const errMissing = usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: testOffering.id,
+          name: testOffering.name,
+          emoji: testOffering.emoji,
+          basePrice: testOffering.price,
+          quantity: 1,
+          note: "",
+          options: [], // omitted required Side Choice
+        });
+        expect(errMissing).toContain("Side Choice");
+
+        // 2. Excessive choices (3 sauces when max is 2) -> rejected
+        const errExcess = usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: testOffering.id,
+          name: testOffering.name,
+          emoji: testOffering.emoji,
+          basePrice: testOffering.price,
+          quantity: 1,
+          note: "",
+          options: [
+            { groupId: "grp_side", optionId: "opt_fries", name: "French Fries", priceDelta: 0 },
+            { groupId: "grp_sauces", optionId: "opt_bbq", name: "BBQ Sauce", priceDelta: 30 },
+            { groupId: "grp_sauces", optionId: "opt_garlic", name: "Garlic Mayo", priceDelta: 30 },
+            { groupId: "grp_sauces", optionId: "opt_chili", name: "Chili Dip", priceDelta: 30 },
+          ],
+        });
+        expect(errExcess).toContain("You may select at most 2");
+
+        // 3. Unknown foreign groupId -> rejected
+        const errForeign = usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: testOffering.id,
+          name: testOffering.name,
+          emoji: testOffering.emoji,
+          basePrice: testOffering.price,
+          quantity: 1,
+          note: "",
+          options: [
+            { groupId: "grp_side", optionId: "opt_fries", name: "French Fries", priceDelta: 0 },
+            { groupId: "grp_hacked", optionId: "opt_fake", name: "Fake", priceDelta: 0 },
+          ],
+        });
+        expect(errForeign).toContain("unknown modifier group");
+
+        // 4. Unknown optionId -> rejected
+        const errUnknownOpt = usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: testOffering.id,
+          name: testOffering.name,
+          emoji: testOffering.emoji,
+          basePrice: testOffering.price,
+          quantity: 1,
+          note: "",
+          options: [
+            {
+              groupId: "grp_side",
+              optionId: "opt_nonexistent",
+              name: "Ghost Fries",
+              priceDelta: 0,
+            },
+          ],
+        });
+        expect(errUnknownOpt).toContain("unknown or removed option");
+      });
+
+      it("recalculates price adjustments authoritatively from published offering and rejects tampered values", () => {
+        const state = usePewa.getState();
+        const venue = state.venues.find((v) => v.id === "venue_ggc")!;
+        const publishedMenu = getVenuePublishedMenus(venue, state.menus, state.venues)[0]!;
+        const section = publishedMenu.sections[0]!;
+
+        const pricedOffering: Offering = {
+          id: "off_latte_special",
+          name: "Special Latte",
+          description: "Authoritative price test",
+          price: 400,
+          emoji: "☕",
+          tags: [],
+          available: true,
+          modifiers: [
+            {
+              id: "grp_syrup",
+              name: "Syrup",
+              selectionType: "single",
+              required: true,
+              options: [{ id: "opt_vanilla", name: "Vanilla Syrup", priceDelta: 60 }],
+            },
+          ],
+        };
+
+        usePewa.getState().upsertOffering(publishedMenu.id, section.id, pricedOffering);
+        usePewa.getState().publishMenu(publishedMenu.id);
+
+        usePewa.getState().clearCart();
+
+        // Valid cart addition with accurate published values
+        const addErr = usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: pricedOffering.id,
+          name: pricedOffering.name,
+          emoji: pricedOffering.emoji,
+          basePrice: pricedOffering.price,
+          quantity: 2,
+          note: "Hot",
+          options: [
+            {
+              groupId: "grp_syrup",
+              optionId: "opt_vanilla",
+              name: "Vanilla Syrup",
+              priceDelta: 60,
+            },
+          ],
+        });
+        expect(addErr).toBeNull();
+
+        // Verify cart line total: (400 + 60) * 2 = 920
+        const currentCart = usePewa.getState().cart;
+        expect(currentCart).not.toBeNull();
+        expect(cartTotal(currentCart!.lines)).toBe(920);
+
+        // Submit order
+        const orderResult = usePewa.getState().submitOrder({
+          guestName: "Alice Mwangi",
+          guestContact: "+254712345678",
+          service: "Dine-in",
+          note: "Table 4",
+        });
+        expect(orderResult.id).toBeDefined();
+
+        const submittedOrder = usePewa.getState().orders.find((o) => o.id === orderResult.id)!;
+        expect(submittedOrder.total).toBe(920);
+        expect(submittedOrder.lines[0]?.options[0]?.priceDelta).toBe(60);
+      });
+
+      it("preserves draft-isolation: unpublished modifier edits do not affect live customer order admission", () => {
+        const state = usePewa.getState();
+        const venue = state.venues.find((v) => v.id === "venue_ggc")!;
+        const publishedMenu = getVenuePublishedMenus(venue, state.menus, state.venues)[0]!;
+        const section = publishedMenu.sections[0]!;
+
+        const draftIsolationOffering: Offering = {
+          id: "off_matcha",
+          name: "Matcha Latte",
+          description: "Live snapshot test",
+          price: 500,
+          emoji: "🍵",
+          tags: [],
+          available: true,
+          modifiers: [
+            {
+              id: "grp_sweetness",
+              name: "Sweetness",
+              selectionType: "single",
+              required: true,
+              options: [
+                { id: "opt_standard", name: "Standard Sweet", priceDelta: 0 },
+                { id: "opt_honey", name: "Honey Infusion", priceDelta: 40 },
+              ],
+            },
+          ],
+        };
+
+        usePewa.getState().upsertOffering(publishedMenu.id, section.id, draftIsolationOffering);
+        usePewa.getState().publishMenu(publishedMenu.id);
+
+        // Now merchant alters the draft without publishing: changes priceDelta from 40 to 120
+        const draftModifiedOffering: Offering = {
+          ...draftIsolationOffering,
+          modifiers: [
+            {
+              id: "grp_sweetness",
+              name: "Sweetness",
+              selectionType: "single",
+              required: true,
+              options: [
+                { id: "opt_standard", name: "Standard Sweet", priceDelta: 0 },
+                { id: "opt_honey", name: "Honey Infusion", priceDelta: 120 }, // Unpublished draft change!
+              ],
+            },
+          ],
+        };
+        usePewa.getState().upsertOffering(publishedMenu.id, section.id, draftModifiedOffering);
+
+        // The effective published menu snapshot MUST still have Honey Infusion at +40!
+        const liveVenueMenus = getVenuePublishedMenus(
+          venue,
+          usePewa.getState().menus,
+          usePewa.getState().venues,
+        );
+        const liveMenu = liveVenueMenus.find((m) => m.id === publishedMenu.id)!;
+        const liveOffering = liveMenu.sections[0]!.offerings.find(
+          (o) => o.id === draftIsolationOffering.id,
+        )!;
+        expect(liveOffering.modifiers[0]?.options[1]?.priceDelta).toBe(40);
+
+        // Customer orders against the live published version (+40)
+        usePewa.getState().clearCart();
+        const addResult = usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: draftIsolationOffering.id,
+          name: draftIsolationOffering.name,
+          emoji: draftIsolationOffering.emoji,
+          basePrice: 500,
+          quantity: 1,
+          note: "",
+          options: [
+            {
+              groupId: "grp_sweetness",
+              optionId: "opt_honey",
+              name: "Honey Infusion",
+              priceDelta: 40,
+            },
+          ],
+        });
+        expect(addResult).toBeNull();
+
+        const submitResult = usePewa.getState().submitOrder({
+          guestName: "Brian Ochieng",
+          guestContact: "+254722112233",
+          service: "Dine-in",
+          note: "",
+        });
+        expect(submitResult.id).toBeDefined();
+
+        const order = usePewa.getState().orders.find((o) => o.id === submitResult.id)!;
+        expect(order.total).toBe(540); // 500 + 40
+      });
+
+      it("ensures existing submitted orders retain their submitted snapshots even after menu changes and republication", () => {
+        const state = usePewa.getState();
+        const venue = state.venues.find((v) => v.id === "venue_ggc")!;
+        const publishedMenu = getVenuePublishedMenus(venue, state.menus, state.venues)[0]!;
+        const section = publishedMenu.sections[0]!;
+
+        const orderSnapOffering: Offering = {
+          id: "off_smoothie",
+          name: "Berry Smoothie",
+          description: "Snapshot retention test",
+          price: 450,
+          emoji: "🥤",
+          tags: [],
+          available: true,
+          modifiers: [
+            {
+              id: "grp_protein",
+              name: "Protein Boost",
+              selectionType: "single",
+              required: false,
+              options: [{ id: "opt_whey", name: "Whey Protein", priceDelta: 100 }],
+            },
+          ],
+        };
+
+        usePewa.getState().upsertOffering(publishedMenu.id, section.id, orderSnapOffering);
+        usePewa.getState().publishMenu(publishedMenu.id);
+
+        usePewa.getState().clearCart();
+        usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: orderSnapOffering.id,
+          name: orderSnapOffering.name,
+          emoji: orderSnapOffering.emoji,
+          basePrice: 450,
+          quantity: 1,
+          note: "",
+          options: [
+            { groupId: "grp_protein", optionId: "opt_whey", name: "Whey Protein", priceDelta: 100 },
+          ],
+        });
+
+        const submitRes = usePewa.getState().submitOrder({
+          guestName: "David Kimani",
+          guestContact: "+254733445566",
+          service: "Dine-in",
+          note: "",
+        });
+        const orderId = submitRes.id!;
+        const originalTotal = usePewa.getState().orders.find((o) => o.id === orderId)!.total;
+        expect(originalTotal).toBe(550);
+
+        // Merchant later changes base price to 600, protein to 150, and republishes
+        const updatedOffering: Offering = {
+          ...orderSnapOffering,
+          price: 600,
+          modifiers: [
+            {
+              id: "grp_protein",
+              name: "Protein Boost",
+              selectionType: "single",
+              required: false,
+              options: [{ id: "opt_whey", name: "Whey Protein", priceDelta: 150 }],
+            },
+          ],
+        };
+        usePewa.getState().upsertOffering(publishedMenu.id, section.id, updatedOffering);
+        usePewa.getState().publishMenu(publishedMenu.id);
+
+        // Previous submitted order MUST retain its exact original 550 total and 100 protein delta
+        const preservedOrder = usePewa.getState().orders.find((o) => o.id === orderId)!;
+        expect(preservedOrder.total).toBe(550);
+        expect(preservedOrder.lines[0]?.basePrice).toBe(450);
+        expect(preservedOrder.lines[0]?.options[0]?.priceDelta).toBe(100);
+      });
+    });
+
+    describe("CORR-D: Interactive DOM walkthrough of merchant-to-customer modifier journey", () => {
+      it("renders merchant ModifierEditor, configures single & multiple choice groups with min/max, then renders OfferingOrderForm and exercises customer choices", () => {
+        // 1. Merchant authoring step via ModifierEditor using stateful harness
+        let latestAuthored: ModifierGroup[] = [];
+        const handleAuthoredChange = (mods: ModifierGroup[]) => {
+          latestAuthored = mods;
+        };
+
+        const { unmount: unmountEditor } = render(
+          <TestModifierEditorHarness onChange={handleAuthoredChange} />,
+        );
+
+        // Tap preset button "Coffee Size"
+        const sizePresetBtn = screen.getByRole("button", { name: /coffee size/i });
+        fireEvent.click(sizePresetBtn);
+
+        expect(latestAuthored.length).toBe(1);
+        expect(latestAuthored[0]?.name).toBe("Size");
+        expect(latestAuthored[0]?.selectionType).toBe("single");
+        expect(latestAuthored[0]?.required).toBe(true);
+
+        // Tap preset button "Extras & Add-ons"
+        const extrasPresetBtn = screen.getByRole("button", { name: /extras & add-ons/i });
+        fireEvent.click(extrasPresetBtn);
+
+        expect(latestAuthored.length).toBe(2);
+        expect(latestAuthored[1]?.name).toBe("Extras");
+        expect(latestAuthored[1]?.selectionType).toBe("multiple");
+
+        // Set max limit on Extras to 2
+        const configuredModifiers = latestAuthored.map((g) =>
+          g.id === latestAuthored[1]?.id ? { ...g, maxSelections: 2 } : g,
+        );
+
+        // Verify that authored modifiers pass configuration validation
+        expect(validateOfferingModifiersConfig(configuredModifiers)).toBeNull();
+        unmountEditor();
+
+        // 2. Customer ordering experience step via OfferingOrderForm
+        const venue = usePewa.getState().venues.find((v) => v.id === "venue_ggc")!;
+        const menu = getVenuePublishedMenus(
+          venue,
+          usePewa.getState().menus,
+          usePewa.getState().venues,
+        )[0]!;
+
+        const customerOffering: Offering = {
+          id: "off_dom_coffee",
+          name: "Artisan Pour-Over",
+          description: "Freshly brewed single origin",
+          price: 300,
+          emoji: "☕",
+          tags: ["Hot"],
+          available: true,
+          modifiers: configuredModifiers,
+        };
+
+        // Publish offering to live menu so addCartLine can admit it
+        usePewa.getState().upsertOffering(menu.id, menu.sections[0]!.id, customerOffering);
+        usePewa.getState().publishMenu(menu.id);
+        usePewa.getState().clearCart();
+
+        let addedCalled = false;
+        const handleAdded = () => {
+          addedCalled = true;
+        };
+
+        const { unmount: unmountForm } = render(
+          <OfferingOrderForm
+            offering={customerOffering}
+            venue={venue}
+            menuId={menu.id}
+            onAdded={handleAdded}
+          />,
+        );
+
+        // Initially: Size is required single-choice and not yet selected.
+        // The Add to Cart button should be disabled with a prompt to select an option for Size
+        const submitBtn = screen.getByRole("button", { name: /size/i });
+        expect(submitBtn).toBeDisabled();
+
+        // Select "Regular / Small" size (radio button)
+        const regularRadio = screen.getByLabelText(/regular \/ small/i);
+        fireEvent.click(regularRadio);
+
+        // Now Size is selected! The button should now be enabled: "Add to cart · KES 300"
+        expect(screen.getByRole("button", { name: /add to cart/i })).not.toBeDisabled();
+
+        // Extras has maxSelections = 2.
+        // Check first extra: "Cheddar Cheese Slice"
+        const cheddarCheckbox = screen.getByLabelText(/cheddar cheese slice/i);
+        fireEvent.click(cheddarCheckbox);
+
+        // Check second extra: "Crispy Beef Bacon"
+        const baconCheckbox = screen.getByLabelText(/crispy beef bacon/i);
+        fireEvent.click(baconCheckbox);
+
+        // With 2 extras selected (at max), the remaining unchecked extras should be disabled
+        const jalapenoCheckbox = screen.getByLabelText(/jalapeño peppers/i);
+        expect(jalapenoCheckbox).toBeDisabled();
+
+        // Click "Add to cart"
+        const addToCartBtn = screen.getByRole("button", { name: /add to cart/i });
+        fireEvent.click(addToCartBtn);
+
+        expect(addedCalled).toBe(true);
+
+        // Verify cart state
+        const cart = usePewa.getState().cart;
+        expect(cart).not.toBeNull();
+        expect(cart?.lines.length).toBe(1);
+        expect(cart?.lines[0]?.options.length).toBe(3); // 1 size + 2 extras
+
+        unmountForm();
+      });
     });
   });
 });
