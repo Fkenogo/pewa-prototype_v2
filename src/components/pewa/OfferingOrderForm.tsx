@@ -11,16 +11,21 @@ export function OfferingOrderForm({
   offering,
   venue,
   menuId,
+  isPreview = false,
   onAdded,
   onOpenContact,
 }: {
   offering: Offering;
   venue: Venue;
   menuId: string;
+  isPreview?: boolean;
   onAdded: () => void;
   onOpenContact?: () => void;
 }) {
-  const { addCartLine, orderPolicy } = usePewa();
+  const { menus, addCartLine, orderPolicy } = usePewa();
+  const parentMenu = menus.find((m) => m.id === menuId);
+  const isUnpublishedOrPreview =
+    isPreview || (parentMenu ? parentMenu.status !== "published" : false);
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
@@ -98,7 +103,21 @@ export function OfferingOrderForm({
         Item notes
         <Textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
       </label>
-      {!canAdmitOrder(orderPolicy) ? (
+      {isUnpublishedOrPreview ? (
+        <div className="space-y-2">
+          <p className="rounded-lg bg-amber-500/15 p-2.5 text-center text-xs font-semibold text-amber-900 dark:text-amber-200">
+            Preview Mode: Structured ordering is disabled for unpublished drafts.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled
+            className="h-12 w-full opacity-60 cursor-not-allowed"
+          >
+            Ordering disabled in draft preview
+          </Button>
+        </div>
+      ) : !canAdmitOrder(orderPolicy) ? (
         <div className="space-y-2">
           <p className="rounded-lg bg-muted p-2.5 text-center text-xs text-muted-foreground">
             Structured requests are paused for this business. You can contact them directly to

@@ -81,7 +81,9 @@ describe("Guest ordering rules", () => {
     expect(usePewa.getState().acceptOrder("order_seed")).toBe(true);
     expect(usePewa.getState().orderPolicy.overdraftUsed).toBe(1);
     usePewa.getState().loadScenario("admitted-pending");
-    usePewa.setState({ orderPolicy: { included: 0, topUp: 0, overdraftUsed: 10, expired: false } });
+    usePewa.setState((s) => ({
+      orderPolicy: { ...s.orderPolicy, included: 0, topUp: 0, overdraftUsed: 10, expired: false },
+    }));
     expect(usePewa.getState().acceptOrder("order_seed")).toBe(false);
     expect(usePewa.getState().orderPolicy.overdraftUsed).toBe(10);
   });

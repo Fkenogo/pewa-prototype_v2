@@ -1,9 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Heart, KeyRound, Lock, MapPin, MessageCircle, ShoppingBag, Sparkles } from "lucide-react";
+import {
+  Eye,
+  Heart,
+  KeyRound,
+  Lock,
+  MapPin,
+  MessageCircle,
+  ShoppingBag,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
-import { formatPrice, usePewa } from "@/lib/pewa/store";
-import type { Offering } from "@/lib/pewa/types";
+import { canAuthorMenus, formatPrice, getLiveMenu, usePewa } from "@/lib/pewa/store";
+import type { Menu, Offering } from "@/lib/pewa/types";
 import { ContactDrawer } from "@/components/pewa/ContactDrawer";
 import {
   Drawer,
@@ -20,12 +29,16 @@ import { OfferingOrderForm } from "@/components/pewa/OfferingOrderForm";
 import { canAdmitOrder, cartTotal } from "@/lib/pewa/ordering";
 import {
   isMenuEligibleForVenue,
+  getVenuePublishedMenus,
   getImageSource,
   isDietaryClaimTag,
   PEWA_TAG_DISCLAIMER,
 } from "@/lib/pewa/taxonomy";
 
 export const Route = createFileRoute("/m/$slug")({
+  validateSearch: (search: Record<string, unknown>): { preview?: string | undefined } => ({
+    preview: typeof search["preview"] === "string" ? search["preview"] : undefined,
+  }),
   head: ({ params }) => {
     const name = params.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
     return {
@@ -44,7 +57,11 @@ export const Route = createFileRoute("/m/$slug")({
 
 function PublicMenu() {
   const { slug } = Route.useParams();
+  const search = Route.useSearch();
+  const previewMenuId = search.preview;
   const {
+    role,
+    organisation,
     venues,
     menus,
     visitVenue,
@@ -57,8 +74,32 @@ function PublicMenu() {
     clearGuestSession,
   } = usePewa();
   const venue = venues.find((v) => v.slug === slug);
-  const live = venue
-    ? menus.filter((m) => isMenuEligibleForVenue(m, venue, venues) && m.status === "published")
+
+  // CORR-A: Controlled draft preview
+  // Preview access requires an explicitly authorised simulated merchant role with appropriate organisation/venue scope.
+  // The preview URL alone (?preview=...) must not grant access to private or unpublished content for unauthorised users.
+  const isAuthorisedMerchant =
+    canAuthorMenus(role) && !!organisation && !!venue && organisation.id === venue.orgId;
+
+  // Find preview menu ONLY if authorised and strictly eligible for this venue (no organisation-only cross-venue fallback)
+  const previewMenu =
+    previewMenuId && isAuthorisedMerchant && venue
+      ? menus.find(
+          (m) =>
+            m.id === previewMenuId &&
+            m.orgId === organisation.id &&
+            isMenuEligibleForVenue(m, venue, venues),
+        )
+      : undefined;
+
+  const isPreviewRequested = Boolean(previewMenuId);
+  const isPreviewMode = Boolean(previewMenu);
+  const isPreviewDenied = isPreviewRequested && !isPreviewMode;
+
+  const live: Menu[] = venue
+    ? previewMenu
+      ? [previewMenu]
+      : getVenuePublishedMenus(venue, menus, venues, { includeProtected: true })
     : [];
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
@@ -87,6 +128,41 @@ function PublicMenu() {
 
   return (
     <main className="mx-auto min-h-screen max-w-lg pb-44">
+      {isPreviewMode && previewMenu && (
+        <aside
+          role="status"
+          aria-label="Menu preview mode"
+          className="sticky top-0 z-50 flex items-center justify-between gap-2 bg-amber-500 px-4 py-2.5 text-xs font-semibold text-amber-950 shadow-md"
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Eye className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              Merchant Preview ({previewMenu.status.toUpperCase()}): “{previewMenu.name}” ·{" "}
+              {venue.name} ({role.toUpperCase()})
+            </span>
+          </div>
+          <Link
+            to="/admin/menus/$menuId"
+            params={{ menuId: previewMenu.id }}
+            className="shrink-0 rounded bg-amber-950 px-2.5 py-1 text-[11px] font-bold text-amber-50 hover:bg-black transition-colors"
+          >
+            Back to editor
+          </Link>
+        </aside>
+      )}
+      {isPreviewDenied && (
+        <aside
+          role="status"
+          aria-label="Preview access denied"
+          className="bg-muted border-b px-4 py-2 text-xs text-muted-foreground flex items-center justify-between"
+        >
+          <span>
+            Preview link unavailable: requires merchant authorisation and venue assignment for{" "}
+            {venue.name}.
+          </span>
+          <span className="font-medium text-foreground">Showing public menu</span>
+        </aside>
+      )}
       <header className="bg-primary px-4 pb-6 pt-16 text-primary-foreground">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-foreground font-display text-3xl text-primary">
           {venue.name[0]}
@@ -424,6 +500,7 @@ function PublicMenu() {
                     offering={detail}
                     venue={venue}
                     menuId={menu.id}
+                    isPreview={isPreviewMode || menu.status !== "published"}
                     onAdded={() => setDetail(null)}
                     onOpenContact={() => setContact(true)}
                   />

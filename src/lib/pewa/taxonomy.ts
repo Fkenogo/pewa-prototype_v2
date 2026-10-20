@@ -1,7 +1,7 @@
 // src/lib/pewa/taxonomy.ts
 // R1-A: Bounded Menu Taxonomy, Eligibility, and Safeguards Engine for PEWA Prototype
 
-import type { Menu, Offering, Venue } from "./types";
+import type { Menu, Offering, Venue, Organisation } from "./types";
 
 export interface BusinessCategoryDefinition {
   id: string;
@@ -387,11 +387,59 @@ export function isMenuEligibleForVenue(menu: Menu, venue: Venue, allVenues?: Ven
 }
 
 /**
+ * Returns the effective customer-facing live menu representation.
+ * If a published menu has a publishedSnapshot, the snapshot is returned
+ * so that uncommitted draft changes (including venue assignment, protection,
+ * sections, offerings, and prices) are isolated from customers until publication.
+ */
+export function getLiveMenu(menu: Menu): Menu {
+  if (menu.status !== "published" || !menu.publishedSnapshot) {
+    return menu;
+  }
+  return {
+    ...menu,
+    name: menu.publishedSnapshot.name,
+    description: menu.publishedSnapshot.description,
+    coverImage: menu.publishedSnapshot.coverImage,
+    venueId: menu.publishedSnapshot.venueId,
+    venueIds: menu.publishedSnapshot.venueIds,
+    isProtected: menu.publishedSnapshot.isProtected,
+    sections: menu.publishedSnapshot.sections,
+    publishedAt: menu.publishedSnapshot.publishedAt,
+  };
+}
+
+/**
+ * Returns all published menus eligible for a specific venue, evaluated against
+ * their effective published state (including published venue assignments and protection).
+ *
+ * Requirements (CORR-D):
+ * 1. Determines whether the menu has a published status.
+ * 2. Resolves its effective published snapshot.
+ * 3. Evaluates venue eligibility and public/protected visibility against that effective published state.
+ */
+export function getVenuePublishedMenus(
+  venue: Venue,
+  menus: Menu[],
+  allVenues?: Venue[],
+  options?: { includeProtected?: boolean },
+): Menu[] {
+  const includeProtected = options?.includeProtected ?? true;
+  return menus
+    .filter((m) => m.status === "published")
+    .map(getLiveMenu)
+    .filter((liveMenu) => {
+      if (!includeProtected && liveMenu.isProtected) return false;
+      return isMenuEligibleForVenue(liveMenu, venue, allVenues);
+    });
+}
+
+/**
  * Returns whether an offering image originates from the curated prototype library or merchant upload.
  */
 export function getImageSource(offering: {
-  image?: string;
-  imageSource?: "library" | "upload";
+  image?: string | undefined;
+  imageSource?: "library" | "upload" | undefined;
 }): "library" | "upload" | undefined {
   if (!offering.image) return undefined;
   if (offering.imageSource) return offering.imageSource;
@@ -493,4 +541,111 @@ export async function processImageUpload(file: File): Promise<{
     };
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * Returns contextual suggested menu names for convenient 1-tap naming in Step 2.
+ * Merchants remain free to edit or write arbitrary names in any language.
+ */
+export function getSuggestedMenuNamesForCategory(categoryContext?: string): string[] {
+  const norm = (categoryContext || "").toLowerCase();
+  if (norm.includes("café") || norm.includes("cafe")) {
+    return [
+      "All-Day Menu",
+      "Breakfast & Brunch",
+      "Breakfast & Morning",
+      "All-Day Café Menu",
+      "Specialty Coffee & Drinks",
+      "Pastries & Bakes",
+      "Lunch & Sandwiches",
+      "Seasonal Specials",
+    ];
+  }
+  if (norm.includes("hotel") || norm.includes("hospitality")) {
+    return [
+      "In-Room Dining",
+      "Breakfast Menu",
+      "Terrace Bistro & Dining",
+      "Rooftop Lounge & Cocktails",
+      "In-Room Dining (Guests Only)",
+      "Breakfast Buffet & A La Carte",
+      "Poolside & Light Bites",
+      "Late-Night Room Service",
+    ];
+  }
+  if (norm.includes("bakery")) {
+    return [
+      "Fresh Bakes & Pastries",
+      "Artisan Breads & Loaves",
+      "Viennoiserie & Morning Pastries",
+      "Savory Bakes & Sandwiches",
+      "Cakes & Celebration Treats",
+      "Coffee & Warm Drinks",
+    ];
+  }
+  if (norm.includes("restaurant") || norm.includes("bistro")) {
+    return [
+      "Dinner Menu",
+      "Chef's Tasting",
+      "A La Carte Dining",
+      "Lunch Menu",
+      "Dinner Specials",
+      "Wine & Beverage List",
+      "Desserts & Digestifs",
+      "Chef's Tasting Menu",
+    ];
+  }
+  if (norm.includes("delivery") || norm.includes("cloud")) {
+    return [
+      "Express Delivery Menu",
+      "Combo Deals & Value Packs",
+      "Late Night Cravings",
+      "Sides & Beverages",
+    ];
+  }
+  return [
+    "All-Day Menu",
+    "Breakfast",
+    "Lunch",
+    "Dinner",
+    "Drinks & Beverages",
+    "Desserts",
+    "Specials",
+  ];
+}
+
+/**
+ * Derives the brand and business context for a venue to display in Step 1.
+ */
+export function getVenueBrandContext(
+  venue: Venue,
+  org?: Organisation | null,
+): {
+  brandName: string;
+  category: string;
+  services: string[];
+  isMultiVenue: boolean;
+  isMultiBrand: boolean;
+  displayLabel: string;
+} {
+  const brandName = venue.name;
+  const category =
+    venue.businessCategory || venue.category || org?.businessType || org?.category || "Business";
+  const services = venue.services || [];
+  const isMultiBrand = !!(
+    org?.name?.toLowerCase().includes("group") ||
+    org?.name?.toLowerCase().includes("holdings") ||
+    org?.businessType?.toLowerCase().includes("multi-brand")
+  );
+  const isMultiVenue = isMultiBrand || !!org?.businessType?.toLowerCase().includes("multi-venue");
+  const displayLabel = `${venue.name}${org?.name && org.name !== venue.name ? ` (${org.name})` : ""}`;
+
+  return {
+    brandName,
+    category,
+    services,
+    isMultiVenue,
+    isMultiBrand,
+    displayLabel,
+  };
 }

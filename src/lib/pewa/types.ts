@@ -25,10 +25,10 @@ export interface Organisation {
   id: string;
   name: string;
   businessType: string;
-  category?: string;
+  category?: string | undefined;
   currency: string;
-  status?: OrgStatus;
-  statusNote?: string;
+  status?: OrgStatus | undefined;
+  statusNote?: string | undefined;
 }
 
 export interface Venue {
@@ -43,7 +43,8 @@ export interface Venue {
   contact: { phone: string; whatsapp: string; email: string };
   tagline: string;
   currency: string;
-  category?: string;
+  category?: string | undefined;
+  businessCategory?: string | undefined;
 }
 
 export interface ModifierGroup {
@@ -61,30 +62,44 @@ export interface Offering {
   available: boolean;
   modifiers: ModifierGroup[];
   emoji: string;
-  specialBadge?: string;
-  image?: string;
-  imageSource?: "library" | "upload";
+  specialBadge?: string | undefined;
+  image?: string | undefined;
+  imageSource?: "library" | "upload" | undefined;
 }
 
 export interface Section {
   id: string;
   name: string;
-  description?: string;
-  categoryTag?: string;
+  description?: string | undefined;
+  categoryTag?: string | undefined;
   offerings: Offering[];
+}
+
+export interface MenuPublishedSnapshot {
+  name: string;
+  description?: string | undefined;
+  coverImage?: string | undefined;
+  venueId?: string | undefined;
+  venueIds?: string[] | undefined;
+  isProtected?: boolean | undefined;
+  sections: Section[];
+  publishedAt: string;
 }
 
 export interface Menu {
   id: string;
   orgId: string;
-  venueId?: string;
-  venueIds?: string[];
+  venueId?: string | undefined;
+  venueIds?: string[] | undefined;
   name: string;
+  description?: string | undefined;
+  coverImage?: string | undefined;
   status: MenuStatus;
   sections: Section[];
   updatedAt: string;
-  publishedAt?: string;
-  isProtected?: boolean;
+  publishedAt?: string | undefined;
+  isProtected?: boolean | undefined;
+  publishedSnapshot?: MenuPublishedSnapshot | undefined;
 }
 
 export interface ActivityEvent {
