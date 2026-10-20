@@ -1,12 +1,24 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Heart, MapPin, Search, ArrowRight, Sparkles, Tag as TagIcon } from "lucide-react";
-import { usePewa } from "@/lib/pewa/store";
-import type { Venue } from "@/lib/pewa/types";
+import { formatPrice, usePewa } from "@/lib/pewa/store";
+import type { Offering, Venue } from "@/lib/pewa/types";
+import { isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
 import { Button } from "@/components/ui/button";
 import { CustomerNav } from "./CustomerNav";
 import { cn } from "@/lib/utils";
 import breakfast from "@/assets/cafe-breakfast.jpg";
+
+export interface QualifyingOfferingMatch {
+  offering: Offering;
+  menuName: string;
+  sectionName: string;
+}
+
+export interface VenueSearchResult {
+  venue: Venue;
+  matchingOfferings: QualifyingOfferingMatch[];
+}
 
 export function Discovery({ directory = false }: { directory?: boolean }) {
   const { venues, menus, recents, favourites, campaigns, recordPromotionClick } = usePewa();
@@ -17,11 +29,19 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
   const [area, setArea] = useState("");
   const [savedOnly, setSavedOnly] = useState(false);
 
-  // Protected menus (like in-room dining) are hidden from public directory and organic search
-  const published = menus.filter((m) => m.status === "published" && !m.isProtected);
-  const live = venues.filter((v) => published.some((m) => m.orgId === v.orgId));
+  // Eligible public menus for each venue (published and not protected)
+  const getVenuePublicMenus = (v: Venue) =>
+    menus.filter(
+      (m) => m.status === "published" && !m.isProtected && isMenuEligibleForVenue(m, v, venues),
+    );
+
+  const live = venues.filter((v) => getVenuePublicMenus(v).length > 0);
   const businessCategories = [...new Set(live.map((v) => v.category).filter(Boolean))] as string[];
-  const sections = [...new Set(published.flatMap((m) => m.sections.map((s) => s.name)))];
+  const sections = [
+    ...new Set(
+      live.flatMap((v) => getVenuePublicMenus(v).flatMap((m) => m.sections.map((s) => s.name))),
+    ),
+  ];
   const services = [...new Set(live.flatMap((v) => v.services))];
   const areas = [...new Set(live.map((v) => (v.deliveryOnly ? v.serviceArea : v.address)))].filter(
     Boolean,
@@ -36,46 +56,88 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     "Popular",
   ];
 
-  const results = live.filter((v) => {
-    const mine = published.filter((m) => m.orgId === v.orgId);
-    const text = [
-      v.name,
-      v.tagline,
-      v.category || "",
-      v.address,
-      v.serviceArea,
-      ...v.services,
-      ...mine.flatMap((m) =>
-        m.sections.flatMap((s) => [
-          s.name,
-          ...s.offerings.flatMap((o) => [o.name, o.description, ...(o.tags || [])]),
-        ]),
-      ),
-    ]
+  const query = q.trim().toLowerCase();
+  const queryTokens = query.split(/\s+/).filter(Boolean);
+
+  const results: VenueSearchResult[] = live.flatMap((v) => {
+    // 1. Venue-level filters
+    if (savedOnly && !favourites.includes(v.id)) return [];
+    if (service && !v.services.includes(service)) return [];
+    if (area && (v.deliveryOnly ? v.serviceArea : v.address) !== area) return [];
+
+    const isBusinessCategory = category && businessCategories.includes(category);
+    const isSectionCategory = category && !isBusinessCategory;
+
+    if (isBusinessCategory && v.category?.toLowerCase() !== category.toLowerCase()) {
+      return [];
+    }
+
+    const venueText = [v.name, v.tagline, v.category || "", v.address, v.serviceArea, ...v.services]
       .join(" ")
-      .toLocaleLowerCase();
+      .toLowerCase();
 
-    const matchesCategory =
-      !category ||
-      (v.category && v.category.toLowerCase() === category.toLowerCase()) ||
-      mine.some((m) => m.sections.some((s) => s.name.toLowerCase() === category.toLowerCase()));
+    const venueMatchesQuery =
+      queryTokens.length > 0 && queryTokens.every((tok) => venueText.includes(tok));
 
-    const matchesTag =
-      !tagFilter ||
-      mine.some((m) =>
-        m.sections.some((s) =>
-          s.offerings.some((o) => o.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase())),
-        ),
-      );
+    // 2. Offering-level analysis across eligible public menus
+    const venueMenus = getVenuePublicMenus(v);
+    const qualifyingOfferings: QualifyingOfferingMatch[] = [];
 
-    return (
-      text.includes(q.trim().toLocaleLowerCase()) &&
-      (!service || v.services.includes(service)) &&
-      matchesCategory &&
-      matchesTag &&
-      (!area || (v.deliveryOnly ? v.serviceArea : v.address) === area) &&
-      (!savedOnly || favourites.includes(v.id))
-    );
+    for (const m of venueMenus) {
+      for (const s of m.sections) {
+        if (isSectionCategory && s.name.toLowerCase() !== category.toLowerCase()) {
+          continue;
+        }
+        for (const o of s.offerings) {
+          // Protected, unpublished, hidden, or sold-out offerings do not satisfy search criteria
+          if (!o.available) continue;
+
+          // Check tag filter
+          if (tagFilter && !o.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase())) {
+            continue;
+          }
+
+          // Check offering query match
+          const offText = [o.name, o.description, s.name, ...(o.tags || []), o.specialBadge || ""]
+            .join(" ")
+            .toLowerCase();
+
+          const offMatchesQuery =
+            queryTokens.length === 0 || queryTokens.every((tok) => offText.includes(tok));
+
+          if (offMatchesQuery) {
+            qualifyingOfferings.push({
+              offering: o,
+              menuName: m.name,
+              sectionName: s.name,
+            });
+          }
+        }
+      }
+    }
+
+    // 3. Determine if the business qualifies:
+    // If a tag filter is active, at least one offering MUST match the tag filter
+    if (tagFilter && qualifyingOfferings.length === 0) {
+      return [];
+    }
+
+    // If a section category was selected, at least one offering MUST be in that section
+    if (isSectionCategory && qualifyingOfferings.length === 0) {
+      return [];
+    }
+
+    // If a search query is active:
+    if (queryTokens.length > 0) {
+      const hasQualifyingItem = qualifyingOfferings.length > 0;
+      const directVenueMatch = venueMatchesQuery && (!tagFilter || qualifyingOfferings.length > 0);
+
+      if (!hasQualifyingItem && !directVenueMatch) {
+        return [];
+      }
+    }
+
+    return [{ venue: v, matchingOfferings: qualifyingOfferings }];
   });
 
   const recentVenues = recents.flatMap((id) => {
@@ -303,8 +365,8 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
           </Button>
         </div>
         <div className="space-y-3">
-          {results.map((v) => (
-            <VenueCard key={v.id} venue={v} />
+          {results.map(({ venue, matchingOfferings }) => (
+            <VenueCard key={venue.id} venue={venue} matchingOfferings={matchingOfferings} />
           ))}
         </div>
         {!results.length && (
@@ -347,11 +409,17 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
   );
 }
 
-function VenueCard({ venue }: { venue: Venue }) {
-  const { favourites, toggleFavourite, menus } = usePewa();
+function VenueCard({
+  venue,
+  matchingOfferings = [],
+}: {
+  venue: Venue;
+  matchingOfferings?: QualifyingOfferingMatch[];
+}) {
+  const { favourites, toggleFavourite, menus, venues } = usePewa();
   const saved = favourites.includes(venue.id);
   const venueMenu = menus.find(
-    (m) => m.orgId === venue.orgId && m.status === "published" && !m.isProtected,
+    (m) => m.status === "published" && !m.isProtected && isMenuEligibleForVenue(m, venue, venues),
   );
   const previewImage = venueMenu?.sections.flatMap((s) => s.offerings).find((o) => o.image)?.image;
 
@@ -394,6 +462,47 @@ function VenueCard({ venue }: { venue: Venue }) {
             {venue.deliveryOnly ? `Delivers to ${venue.serviceArea}` : venue.address}
           </p>
           <p className="mt-2 text-xs font-medium text-primary">{venue.services.join(" · ")}</p>
+
+          {/* Contextual Matching Offerings (explains why business was returned for query/tags) */}
+          {matchingOfferings.length > 0 && (
+            <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs">
+              <div className="flex items-center gap-1.5 font-semibold text-primary">
+                <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {matchingOfferings.length} matching item{matchingOfferings.length > 1 ? "s" : ""}:
+                </span>
+              </div>
+              <div className="mt-1.5 space-y-1">
+                {matchingOfferings.slice(0, 2).map(({ offering, sectionName }) => (
+                  <div
+                    key={offering.id}
+                    className="flex items-baseline justify-between gap-2 text-foreground"
+                  >
+                    <div className="min-w-0 flex-1 truncate">
+                      <span className="font-medium">{offering.name}</span>
+                      <span className="ml-1 text-[11px] text-muted-foreground">
+                        ({sectionName})
+                      </span>
+                      {offering.tags?.length > 0 && (
+                        <span className="ml-1.5 text-[10px] text-primary/80">
+                          · {offering.tags.slice(0, 2).join(", ")}
+                        </span>
+                      )}
+                    </div>
+                    <span className="shrink-0 font-semibold text-xs">
+                      {formatPrice(offering.price, venue.currency)}
+                    </span>
+                  </div>
+                ))}
+                {matchingOfferings.length > 2 && (
+                  <p className="text-[10px] text-muted-foreground">
+                    +{matchingOfferings.length - 2} more item
+                    {matchingOfferings.length - 2 > 1 ? "s" : ""} on menu
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </Link>
       <Button

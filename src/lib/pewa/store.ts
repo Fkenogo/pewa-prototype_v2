@@ -61,7 +61,7 @@ type Actions = {
   removeOffering: (menuId: string, sectionId: string, offeringId: string) => void;
   toggleAvailability: (menuId: string, sectionId: string, offeringId: string) => void;
   setMenuStatus: (menuId: string, status: MenuStatus) => void;
-  addMenu: (name: string) => string;
+  addMenu: (name: string, venueId?: string) => string;
   log: (e: Omit<ActivityEvent, "id" | "at" | "role">) => void;
   visitVenue: (id: string) => void;
   toggleFavourite: (id: string) => void;
@@ -415,6 +415,7 @@ export const usePewa = create<PewaState & Actions>()(
           })),
         completeOnboarding: (i) => {
           const orgId = uid("org");
+          const venueId = uid("venue");
           const menuId = uid("menu");
           let slug = slugify(i.venueName || i.orgName);
           if (get().venues.some((v) => v.slug === slug))
@@ -429,7 +430,7 @@ export const usePewa = create<PewaState & Actions>()(
             },
             venues: [
               {
-                id: uid("venue"),
+                id: venueId,
                 orgId,
                 name: i.venueName,
                 slug,
@@ -448,6 +449,7 @@ export const usePewa = create<PewaState & Actions>()(
               {
                 id: menuId,
                 orgId,
+                venueId,
                 name: i.menuName,
                 status: "draft",
                 sections: [],
@@ -461,14 +463,23 @@ export const usePewa = create<PewaState & Actions>()(
           get().log({ kind: "menu.created", message: `Draft menu “${i.menuName}” created` });
           return menuId;
         },
-        addMenu: (name) => {
+        addMenu: (name, venueId) => {
           const org = get().organisation;
           const id = uid("menu");
           if (!org) return id;
+          const targetVenueId = venueId || get().venues.find((v) => v.orgId === org.id)?.id;
           set((s) => ({
             menus: [
               ...s.menus,
-              { id, orgId: org.id, name, status: "draft", sections: [], updatedAt: now() },
+              {
+                id,
+                orgId: org.id,
+                venueId: targetVenueId,
+                name,
+                status: "draft",
+                sections: [],
+                updatedAt: now(),
+              },
             ],
           }));
           get().log({ kind: "menu.created", message: `Draft menu “${name}” created` });
@@ -644,16 +655,22 @@ export const usePewa = create<PewaState & Actions>()(
             ...v,
             category: v.category || current.venues.find((cv) => cv.id === v.id)?.category || "Café",
           })),
-          menus: (p.menus || current.menus).map((m) => ({
-            ...m,
-            sections: (m.sections || []).map((sec) => ({
-              ...sec,
-              offerings: (sec.offerings || []).map((off) => ({
-                ...off,
-                tags: Array.isArray(off.tags) ? off.tags : [],
+          menus: (p.menus || current.menus).map((m) => {
+            const currentMenu = current.menus.find((cm) => cm.id === m.id);
+            return {
+              ...m,
+              venueId: m.venueId || currentMenu?.venueId,
+              venueIds: m.venueIds || currentMenu?.venueIds,
+              sections: (m.sections || []).map((sec) => ({
+                ...sec,
+                offerings: (sec.offerings || []).map((off) => ({
+                  ...off,
+                  tags: Array.isArray(off.tags) ? off.tags : [],
+                  imageSource: off.imageSource || (off.image ? "library" : undefined),
+                })),
               })),
-            })),
-          })),
+            };
+          }),
         };
       },
     },

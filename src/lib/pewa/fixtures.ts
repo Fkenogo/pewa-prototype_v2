@@ -107,6 +107,7 @@ const greenGardenVenue: Venue = {
 const greenGardenMenu = (soldOut: boolean): Menu => ({
   id: "menu_ggc_allday",
   orgId: "org_ggc",
+  venueId: "venue_ggc",
   name: "All-Day Menu",
   status: "published",
   updatedAt: "2026-10-19T08:00:00.000Z",
@@ -125,6 +126,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           available: true,
           emoji: "☕",
           image: PROTOTYPE_IMAGE_LIBRARY[0].url,
+          imageSource: "library",
           modifiers: [
             {
               id: "mod_milk",
@@ -151,6 +153,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           available: !soldOut,
           emoji: "🧊",
           image: PROTOTYPE_IMAGE_LIBRARY[1].url,
+          imageSource: "library",
           modifiers: [],
         },
       ],
@@ -168,6 +171,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           available: true,
           emoji: "🥑",
           image: PROTOTYPE_IMAGE_LIBRARY[2].url,
+          imageSource: "library",
           modifiers: [
             {
               id: "mod_egg",
@@ -185,6 +189,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           available: true,
           emoji: "🍩",
           image: PROTOTYPE_IMAGE_LIBRARY[9].url,
+          imageSource: "library",
           modifiers: [],
         },
       ],
@@ -214,6 +219,7 @@ const hotelVenue: Venue = {
 const hotelPublicMenu: Menu = {
   id: "menu_horizon_lounge",
   orgId: "org_horizon",
+  venueId: "venue_horizon",
   name: "Terrace Bistro & Lounge",
   status: "published",
   isProtected: false,
@@ -234,6 +240,7 @@ const hotelPublicMenu: Menu = {
           available: true,
           emoji: "🥩",
           image: PROTOTYPE_IMAGE_LIBRARY[6].url,
+          imageSource: "library",
           modifiers: [],
         },
         {
@@ -245,6 +252,7 @@ const hotelPublicMenu: Menu = {
           available: true,
           emoji: "🍲",
           image: PROTOTYPE_IMAGE_LIBRARY[7].url,
+          imageSource: "library",
           modifiers: [],
         },
       ],
@@ -255,6 +263,7 @@ const hotelPublicMenu: Menu = {
 const hotelProtectedMenu: Menu = {
   id: "menu_horizon_room",
   orgId: "org_horizon",
+  venueId: "venue_horizon",
   name: "In-Room Dining (Guests Only)",
   status: "published",
   isProtected: true,
@@ -312,6 +321,7 @@ const cloudBurgerVenue: Venue = {
 const cloudBurgerMenu: Menu = {
   id: "menu_cloudburger_delivery",
   orgId: "org_cloudburger",
+  venueId: "venue_cloudburger",
   name: "Delivery Menu",
   status: "published",
   isProtected: false,
@@ -332,6 +342,7 @@ const cloudBurgerMenu: Menu = {
           available: true,
           emoji: "🍔",
           image: PROTOTYPE_IMAGE_LIBRARY[5].url,
+          imageSource: "library",
           modifiers: [],
         },
       ],
@@ -380,6 +391,7 @@ const gelatoLabVenue: Venue = {
 const solBakeryMenu: Menu = {
   id: "menu_sol_bakery",
   orgId: "org_multi_brand",
+  venueId: "venue_sol",
   name: "Artisan Bakery & Pastry Menu",
   status: "published",
   isProtected: false,
@@ -399,6 +411,7 @@ const solBakeryMenu: Menu = {
           available: true,
           emoji: "🥖",
           image: PROTOTYPE_IMAGE_LIBRARY[4].url,
+          imageSource: "library",
           modifiers: [],
         },
       ],
@@ -416,6 +429,7 @@ const solBakeryMenu: Menu = {
           available: true,
           emoji: "🥐",
           image: PROTOTYPE_IMAGE_LIBRARY[3].url,
+          imageSource: "library",
           modifiers: [],
         },
       ],
@@ -426,6 +440,7 @@ const solBakeryMenu: Menu = {
 const gelatoLabMenu: Menu = {
   id: "menu_gelato_lab",
   orgId: "org_multi_brand",
+  venueId: "venue_gelato",
   name: "Gelato & Sorbet Menu",
   status: "published",
   isProtected: false,
@@ -445,6 +460,7 @@ const gelatoLabMenu: Menu = {
           available: true,
           emoji: "🍨",
           image: PROTOTYPE_IMAGE_LIBRARY[8].url,
+          imageSource: "library",
           modifiers: [],
         },
       ],

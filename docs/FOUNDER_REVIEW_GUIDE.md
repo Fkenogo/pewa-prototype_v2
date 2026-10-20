@@ -137,3 +137,44 @@
      - Test the **Quick Tag Pills** (`All`, `Vegetarian`, `Vegan`, `Gluten-Free`, `Halal`, `Chef's Special`, `Popular`): one tap filters venues immediately to those with published matching dishes.
      - In `/directory`, open the **Category** dropdown: notice the clean optgroup separation between **Business Categories** (Cafés, Bakeries, Restaurants, Hotels) and **Menu Sections** (Coffee, Breakfast, Bistro Plates).
      - Verify publication isolation: in scenario `hotel`, public search matches `Terrace Bistro` dishes, but protected `In-Room Dining` dishes are strictly excluded from organic public directory results.
+
+---
+
+### Slice R1-A Corrections Walkthrough (CORR-A through CORR-E)
+
+1. **CORR-A: Multi-Venue Menu Eligibility & Isolation**:
+   - Load scenario **Multi-brand business** (`multi-brand`).
+   - Three venues exist under Horizon Hospitality Group: Green Garden Café, Sol Artisan Bakery, and Gelato Craft Lab.
+   - Visit `/m/sol-artisan-bakery`: verify that ONLY the Artisan Bakery menu appears. It no longer leaks the Café or Gelato menus.
+   - Visit `/m/green-garden-cafe`: verify that ONLY the All-Day Café menu appears.
+   - In `/directory`, search "sourdough": only Sol Artisan Bakery matches; Green Garden Café is not falsely returned despite sharing the same parent organization.
+
+2. **CORR-B: Coherent Offering-Level Matching & Result Explanations**:
+   - In `/directory`, test combined search: search `vegan burger` or select tag `Vegan` + search `burger`:
+     - A venue having a beef burger and an unrelated garden salad does NOT match. Only a venue with a single coherent offering that is both a burger and vegan will match.
+   - Notice the **Result Explanation Snippet** on each returned VenueCard:
+     - Whenever a search query or tag filter is active, the card displays: `Matching item(s): "Wild Mushroom Risotto" (Vegetarian, Signature) · KES 1,650`, clearly explaining why the venue was surfaced.
+   - Test protected menu isolation: search `Midnight Truffle Burger` or `Horizon Continental In-Bed`: 0 results appear, verifying protected in-room offerings never leak to public directory.
+
+3. **CORR-C: Tag Semantics, Provenance & Disclaimers**:
+   - In `/admin/menus/menu_ggc_allday`, open the item editor:
+     - Suggested tags are structured into 3 distinct groups:
+       1. **Dietary & Consequential Claims** (Vegetarian, Vegan, Gluten-Free, Halal, etc.) with italic disclaimer: *"Merchant-asserted · Not certified by PEWA"*.
+       2. **Promotional Highlights** (Chef's Special, Popular, Signature, etc.).
+       3. **Preparation & Style Attributes** (Single Origin, Wood-Fired, Organic, etc.).
+   - Visit `/m/grand-horizon-hotel` and tap `Wild Mushroom Risotto`:
+     - Item detail drawer shows highlighted dietary tags and the disclaimer: *"Dietary and attribute declarations are merchant-provided and have not been independently verified by PEWA."*
+
+4. **CORR-D: Media Safeguards & Image Provenance**:
+   - In the item editor, attach an image from the **Curated Prototype Library**:
+     - On customer menu `/m/green-garden-cafe`, tap `Flat White`: detail drawer shows `Representative photo` badge.
+   - Attach an image via **Upload**:
+     - Image is scaled on client-side canvas (max 800px, JPEG 0.82) to keep local storage lightweight and avoid unbounded base64 state.
+     - Detail drawer displays `Merchant photo` badge.
+     - Test uploading a `.txt` file or file >5MB: graceful toast error notification appears without crashing.
+     - Tap `×` on the image preview in the editor: cleanly clears photo and restores emoji icon.
+
+5. **CORR-E: Traceability & Test Results**:
+   - Automated test suite runs 94 tests across 6 suites (all passing).
+   - Dedicated regression tests in `src/test/taxonomy.test.ts` verify multi-venue isolation, coherent combined queries, protected menu isolation, tag grouping, and image downsampling.
+

@@ -63,6 +63,7 @@ export interface Offering {
   emoji: string;
   specialBadge?: string;
   image?: string;
+  imageSource?: "library" | "upload";
 }
 
 export interface Section {
@@ -77,6 +78,7 @@ export interface Menu {
   id: string;
   orgId: string;
   venueId?: string;
+  venueIds?: string[];
   name: string;
   status: MenuStatus;
   sections: Section[];
