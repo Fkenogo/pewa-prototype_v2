@@ -10,6 +10,8 @@ export const Route = createFileRoute("/admin")({
       { name: "description", content: "Manage your menus, items and availability from your phone." },
       { property: "og:title", content: "Business workspace — PEWA" },
       { property: "og:description", content: "Manage menus, items and availability from your phone." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: AdminLayout,

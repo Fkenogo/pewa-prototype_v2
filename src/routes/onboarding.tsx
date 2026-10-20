@@ -14,6 +14,8 @@ export const Route = createFileRoute("/onboarding")({
       { name: "description", content: "Create your business and first menu on PEWA in four short steps." },
       { property: "og:title", content: "Set up your business — PEWA" },
       { property: "og:description", content: "Create your business and first menu in four short steps." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Onboarding,
