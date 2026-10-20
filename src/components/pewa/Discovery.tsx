@@ -1,6 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Heart, MapPin, Search, ArrowRight, Sparkles, Tag as TagIcon } from "lucide-react";
+import {
+  Heart,
+  MapPin,
+  Search,
+  ArrowRight,
+  Sparkles,
+  Tag as TagIcon,
+  Building2,
+} from "lucide-react";
 import { formatPrice, usePewa } from "@/lib/pewa/store";
 import type { Offering, Venue } from "@/lib/pewa/types";
 import { isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
@@ -18,6 +26,7 @@ export interface QualifyingOfferingMatch {
 export interface VenueSearchResult {
   venue: Venue;
   matchingOfferings: QualifyingOfferingMatch[];
+  isVenueMatch: boolean;
 }
 
 export function Discovery({ directory = false }: { directory?: boolean }) {
@@ -128,6 +137,7 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     }
 
     // If a search query is active:
+    const isVenueMatch = Boolean(queryTokens.length > 0 && venueMatchesQuery);
     if (queryTokens.length > 0) {
       const hasQualifyingItem = qualifyingOfferings.length > 0;
       const directVenueMatch = venueMatchesQuery && (!tagFilter || qualifyingOfferings.length > 0);
@@ -137,7 +147,7 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
       }
     }
 
-    return [{ venue: v, matchingOfferings: qualifyingOfferings }];
+    return [{ venue: v, matchingOfferings: qualifyingOfferings, isVenueMatch }];
   });
 
   const recentVenues = recents.flatMap((id) => {
@@ -365,8 +375,14 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
           </Button>
         </div>
         <div className="space-y-3">
-          {results.map(({ venue, matchingOfferings }) => (
-            <VenueCard key={venue.id} venue={venue} matchingOfferings={matchingOfferings} />
+          {results.map(({ venue, matchingOfferings, isVenueMatch }) => (
+            <VenueCard
+              key={venue.id}
+              venue={venue}
+              matchingOfferings={matchingOfferings}
+              isVenueMatch={isVenueMatch}
+              searchQuery={q}
+            />
           ))}
         </div>
         {!results.length && (
@@ -412,9 +428,13 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
 function VenueCard({
   venue,
   matchingOfferings = [],
+  isVenueMatch = false,
+  searchQuery = "",
 }: {
   venue: Venue;
   matchingOfferings?: QualifyingOfferingMatch[];
+  isVenueMatch?: boolean;
+  searchQuery?: string;
 }) {
   const { favourites, toggleFavourite, menus, venues } = usePewa();
   const saved = favourites.includes(venue.id);
@@ -463,13 +483,15 @@ function VenueCard({
           </p>
           <p className="mt-2 text-xs font-medium text-primary">{venue.services.join(" · ")}</p>
 
-          {/* Contextual Matching Offerings (explains why business was returned for query/tags) */}
-          {matchingOfferings.length > 0 && (
+          {/* Contextual Matching Offerings or Business Match Explanation */}
+          {matchingOfferings.length > 0 ? (
             <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs">
               <div className="flex items-center gap-1.5 font-semibold text-primary">
                 <Sparkles className="h-3.5 w-3.5 shrink-0" />
                 <span>
-                  {matchingOfferings.length} matching item{matchingOfferings.length > 1 ? "s" : ""}:
+                  {isVenueMatch
+                    ? `Matched business & ${matchingOfferings.length} menu item${matchingOfferings.length > 1 ? "s" : ""}:`
+                    : `${matchingOfferings.length} matching item${matchingOfferings.length > 1 ? "s" : ""}:`}
                 </span>
               </div>
               <div className="mt-1.5 space-y-1">
@@ -502,7 +524,17 @@ function VenueCard({
                 )}
               </div>
             </div>
-          )}
+          ) : isVenueMatch ? (
+            <div className="mt-3 rounded-lg border border-border bg-muted/40 p-2.5 text-xs">
+              <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                <Building2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span>Matched business: {venue.name}</span>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                No individual menu items matched "{searchQuery.trim()}". Tap to view full menu.
+              </p>
+            </div>
+          ) : null}
         </div>
       </Link>
       <Button

@@ -419,20 +419,30 @@ export async function processImageUpload(file: File): Promise<{
 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Failed to read the selected file."));
+    reader.onerror = () =>
+      reject(
+        new Error("Failed to read the selected file. Previously selected image is preserved."),
+      );
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
       if (!dataUrl) {
-        return reject(new Error("Failed to process image data."));
+        return reject(
+          new Error("Failed to process image data. Previously selected image is preserved."),
+        );
       }
 
       // Check if window and Image exist (browser environment)
       if (typeof window === "undefined" || typeof Image === "undefined") {
-        return resolve({ dataUrl, source: "upload" });
+        return reject(
+          new Error(
+            "Image processing requires a browser environment. Previously selected image is preserved.",
+          ),
+        );
       }
 
       const img = new Image();
-      img.onerror = () => reject(new Error("Unable to decode image file."));
+      img.onerror = () =>
+        reject(new Error("Unable to decode image file. Previously selected image is preserved."));
       img.onload = () => {
         try {
           const maxDim = 800;
@@ -454,14 +464,29 @@ export async function processImageUpload(file: File): Promise<{
           canvas.height = height;
           const ctx = canvas.getContext("2d");
           if (!ctx) {
-            return resolve({ dataUrl, source: "upload" });
+            return reject(
+              new Error(
+                "Unable to compress image: 2D canvas context is unavailable. Previously selected image is preserved.",
+              ),
+            );
           }
           ctx.drawImage(img, 0, 0, width, height);
           const compressed = canvas.toDataURL("image/jpeg", 0.82);
+          if (!compressed || !compressed.startsWith("data:image/")) {
+            return reject(
+              new Error(
+                "Image compression output was invalid. Previously selected image is preserved.",
+              ),
+            );
+          }
           resolve({ dataUrl: compressed, source: "upload" });
-        } catch {
-          // If canvas scaling encounters security or memory issues, gracefully fallback to raw dataUrl
-          resolve({ dataUrl, source: "upload" });
+        } catch (err: unknown) {
+          const detail = err instanceof Error ? err.message : "Compression failed";
+          reject(
+            new Error(
+              `Unable to compress image (${detail}). Previously selected image is preserved.`,
+            ),
+          );
         }
       };
       img.src = dataUrl;

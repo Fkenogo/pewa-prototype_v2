@@ -38,6 +38,7 @@ import {
   PEWA_TAG_DISCLAIMER,
   PROTOTYPE_IMAGE_LIBRARY,
 } from "@/lib/pewa/taxonomy";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/menus/$menuId")({
   head: () =>
@@ -48,7 +49,12 @@ export const Route = createFileRoute("/admin/menus/$menuId")({
   component: MenuEditor,
 });
 
-type Draft = Omit<Offering, "id" | "modifiers"> & { id?: string; modifiersText: string };
+type Draft = Omit<Offering, "id" | "modifiers" | "image" | "imageSource"> & {
+  id?: string;
+  modifiersText: string;
+  image?: string | undefined;
+  imageSource?: "library" | "upload" | undefined;
+};
 
 const emptyDraft: Draft = {
   name: "",
@@ -58,7 +64,6 @@ const emptyDraft: Draft = {
   available: true,
   emoji: "🍽️",
   modifiersText: "",
-  image: undefined,
 };
 
 const modsToText = (m: ModifierGroup[]) =>
@@ -118,7 +123,8 @@ function MenuEditor() {
     );
 
   const itemCount = menu.sections.reduce((n, x) => n + x.offerings.length, 0);
-  const categoryContext = venue?.category || s.organisation?.category || venue?.businessType || "";
+  const categoryContext =
+    venue?.category || s.organisation?.category || s.organisation?.businessType || "";
   const recommendedSections = getRecommendedSectionsForCategory(categoryContext);
   const recommendedTags = getRecommendedTagsForCategory(categoryContext);
   const groupedTagSuggestions = getGroupedTagSuggestionsForCategory(categoryContext);

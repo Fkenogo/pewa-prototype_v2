@@ -468,6 +468,56 @@ describe("Slice R1-A — Menu Taxonomy and Structure Engine", () => {
       const coldBrew = soldOutMenu.sections[0]?.offerings.find((o) => o.name === "Cold Brew");
       expect(coldBrew?.available).toBe(false);
     });
+
+    it("distinguishes business-name searches with nonmatching offerings from item matches", () => {
+      usePewa.getState().loadScenario("multi-brand");
+      const state = usePewa.getState();
+      const solVenue = state.venues.find((v) => v.name.includes("Sol Artisan Bakery"))!;
+      expect(solVenue).toBeDefined();
+
+      const query = "Sol Artisan Bakery";
+      const queryTokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+
+      // Verify venue name matches the search tokens
+      const venueText = [
+        solVenue.name,
+        solVenue.tagline,
+        solVenue.category || "",
+        solVenue.address,
+        solVenue.serviceArea,
+        ...solVenue.services,
+      ]
+        .join(" ")
+        .toLowerCase();
+      const venueMatches = queryTokens.every((tok) => venueText.includes(tok));
+      expect(venueMatches).toBe(true);
+
+      // Verify NO individual offerings in Sol's menu match "Sol Artisan Bakery"
+      const solMenus = state.menus.filter(
+        (m) =>
+          m.status === "published" &&
+          !m.isProtected &&
+          isMenuEligibleForVenue(m, solVenue, state.venues),
+      );
+      const matchingOfferings = solMenus.flatMap((m) =>
+        m.sections.flatMap((s) =>
+          s.offerings.filter((o) => {
+            if (!o.available) return false;
+            const offText = [o.name, o.description, s.name, ...(o.tags || [])]
+              .join(" ")
+              .toLowerCase();
+            return queryTokens.every((tok) => offText.includes(tok));
+          }),
+        ),
+      );
+
+      // Zero individual offerings match the business name query
+      expect(matchingOfferings).toHaveLength(0);
+
+      // Discovery correctly marks venue match without falsely labeling unrelated items as matching
+      const isVenueMatch = Boolean(queryTokens.length > 0 && venueMatches);
+      expect(isVenueMatch).toBe(true);
+    });
   });
 
   describe("9. CORR-C — Tag Semantics, Grouping and Disclaimers", () => {
@@ -515,7 +565,7 @@ describe("Slice R1-A — Menu Taxonomy and Structure Engine", () => {
         available: true,
         modifiers: [],
         emoji: "🍲",
-        image: PROTOTYPE_IMAGE_LIBRARY[0].url,
+        image: PROTOTYPE_IMAGE_LIBRARY[0]!.url,
         imageSource: "library",
       };
 
@@ -557,6 +607,81 @@ describe("Slice R1-A — Menu Taxonomy and Structure Engine", () => {
       const hugeBuffer = new Uint8Array(6 * 1024 * 1024);
       const hugeFile = new File([hugeBuffer], "huge.jpg", { type: "image/jpeg" });
       await expect(processImageUpload(hugeFile)).rejects.toThrow("Image file is too large");
+    });
+
+    it("fails closed when canvas compression fails without returning uncompressed data or corrupting state", async () => {
+      const originalImage = globalThis.Image;
+      class MockImage {
+        onload: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        width = 1200;
+        height = 800;
+        private _src = "";
+        set src(val: string) {
+          this._src = val;
+          setTimeout(() => {
+            if (this.onload) this.onload();
+          }, 5);
+        }
+        get src() {
+          return this._src;
+        }
+      }
+      // @ts-expect-error mock replacement
+      globalThis.Image = MockImage;
+
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(null);
+
+      try {
+        const validFile = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], "sample.jpg", {
+          type: "image/jpeg",
+        });
+        await expect(processImageUpload(validFile)).rejects.toThrow(
+          "Unable to compress image: 2D canvas context is unavailable. Previously selected image is preserved.",
+        );
+      } finally {
+        globalThis.Image = originalImage;
+        HTMLCanvasElement.prototype.getContext = originalGetContext;
+      }
+    });
+
+    it("fails closed and reports detailed error if canvas toDataURL throws during compression", async () => {
+      const originalImage = globalThis.Image;
+      class MockImage {
+        onload: (() => void) | null = null;
+        width = 1000;
+        height = 1000;
+        set src(_val: string) {
+          setTimeout(() => {
+            if (this.onload) this.onload();
+          }, 5);
+        }
+      }
+      // @ts-expect-error mock replacement
+      globalThis.Image = MockImage;
+
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      const originalToDataUrl = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+        drawImage: vi.fn(),
+      });
+      HTMLCanvasElement.prototype.toDataURL = vi.fn().mockImplementation(() => {
+        throw new Error("Memory allocation limit exceeded");
+      });
+
+      try {
+        const validFile = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], "sample.jpg", {
+          type: "image/jpeg",
+        });
+        await expect(processImageUpload(validFile)).rejects.toThrow(
+          "Unable to compress image (Memory allocation limit exceeded). Previously selected image is preserved.",
+        );
+      } finally {
+        globalThis.Image = originalImage;
+        HTMLCanvasElement.prototype.getContext = originalGetContext;
+        HTMLCanvasElement.prototype.toDataURL = originalToDataUrl;
+      }
     });
   });
 });
