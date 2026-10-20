@@ -88,4 +88,57 @@ export interface PewaState {
   venues: Venue[];
   menus: Menu[];
   activity: ActivityEvent[];
+  favourites: string[];
+  recents: string[];
+  cart: GuestCart | null;
+  orders: OrderRequest[];
+  orderSequence: number;
+  orderPolicy: OrderPolicy;
+}
+
+export interface CartLine {
+  id: string;
+  menuId: string;
+  offeringId: string;
+  name: string;
+  emoji: string;
+  basePrice: number;
+  options: { groupId: string; optionId: string; name: string; priceDelta: number }[];
+  quantity: number;
+  note: string;
+}
+
+export interface GuestCart {
+  venueId: string;
+  lines: CartLine[];
+}
+
+export type OrderStatus = "pending" | "accepted" | "declined" | "ready" | "withdrawn";
+
+export interface OrderRequest {
+  id: string;
+  reference: string;
+  venueId: string;
+  orgId: string;
+  venueName: string;
+  currency: string;
+  lines: CartLine[];
+  total: number;
+  guestName: string;
+  guestContact: string;
+  service: string;
+  note: string;
+  status: OrderStatus;
+  submittedAt: string;
+  acceptedAt?: string;
+  resolvedAt?: string;
+  declineReason?: string;
+  unitConsumed: boolean;
+}
+
+export interface OrderPolicy {
+  included: number;
+  topUp: number;
+  overdraftUsed: number;
+  expired: boolean;
 }

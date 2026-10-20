@@ -10,6 +10,8 @@ export const Route = createFileRoute("/admin")({
       { name: "description", content: "Manage your menus, items and availability from your phone." },
       { property: "og:title", content: "Business workspace — PEWA" },
       { property: "og:description", content: "Manage menus, items and availability from your phone." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: AdminLayout,
@@ -18,7 +20,7 @@ export const Route = createFileRoute("/admin")({
 const NAV = [
   { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
   { label: "Menus", icon: BookOpen, to: "/admin", ready: true },
-  { label: "Orders", icon: ClipboardList, ready: false },
+  { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: true },
   { label: "Activity", icon: Activity, ready: false },
   { label: "More", icon: MoreHorizontal, ready: false },
 ];
@@ -85,7 +87,7 @@ function NavItem({ label, icon: Icon, to, ready, desktop }: { label: string; ico
       </span>
     );
   return (
-    <Link to="/admin" className={`${cls} text-primary`}>
+    <Link to={label === "Orders" ? "/admin/orders" : "/admin"} className={`${cls} text-primary`}>
       <Icon className="h-5 w-5" />
       {label}
     </Link>

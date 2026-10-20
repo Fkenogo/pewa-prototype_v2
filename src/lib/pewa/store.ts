@@ -9,8 +9,11 @@ import type {
   Role,
   ScenarioId,
   Section,
+  CartLine,
+  OrderRequest,
 } from "./types";
 import { buildScenario } from "./fixtures";
+import { canAdmitOrder, cartTotal, validateCart } from "./ordering";
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -50,6 +53,16 @@ type Actions = {
   setMenuStatus: (menuId: string, status: MenuStatus) => void;
   addMenu: (name: string) => string;
   log: (e: Omit<ActivityEvent, "id" | "at" | "role">) => void;
+  visitVenue: (id: string) => void;
+  toggleFavourite: (id: string) => void;
+  addCartLine: (venueId: string, line: Omit<CartLine, "id">) => string | null;
+  updateCartQuantity: (id: string, quantity: number) => void;
+  clearCart: () => void;
+  submitOrder: (input: Pick<OrderRequest, "guestName" | "guestContact" | "service" | "note">) => { id?: string; error?: string };
+  acceptOrder: (id: string) => boolean;
+  declineOrder: (id: string, reason: string) => boolean;
+  markOrderReady: (id: string) => boolean;
+  withdrawOrder: (id: string) => boolean;
 };
 
 const now = () => new Date().toISOString();
@@ -65,6 +78,73 @@ export const usePewa = create<PewaState & Actions>()(
         }));
       return {
         ...buildScenario("new-cafe"),
+        visitVenue: (id) => set((s) => ({ recents: [id, ...s.recents.filter((v) => v !== id)].slice(0, 12) })),
+        toggleFavourite: (id) => set((s) => ({ favourites: s.favourites.includes(id) ? s.favourites.filter((v) => v !== id) : [...s.favourites, id] })),
+        clearCart: () => set({ cart: null }),
+        addCartLine: (venueId, line) => {
+          const s = get();
+          if (!canAdmitOrder(s.orderPolicy)) return "Structured requests are paused. Please contact the business directly.";
+          if (s.cart?.lines.length && s.cart.venueId !== venueId) return "Your cart belongs to another business. Clear it before starting a new cart.";
+          const cart = { venueId, lines: [...(s.cart?.lines ?? []), { ...line, id: uid("line") }] };
+          const error = validateCart(s, cart);
+          if (error) return error;
+          set({ cart });
+          return null;
+        },
+        updateCartQuantity: (id, quantity) => set((s) => ({ cart: s.cart ? { ...s.cart, lines: s.cart.lines.flatMap((l) => l.id !== id ? [l] : quantity <= 0 ? [] : [{ ...l, quantity: Math.min(99, Math.floor(quantity)) }]) } : null })),
+        submitOrder: (input) => {
+          const s = get();
+          const error = validateCart(s, s.cart);
+          if (error) return { error };
+          if (!canAdmitOrder(s.orderPolicy)) return { error: "Structured requests are paused. Contact the business directly." };
+          if (!input.guestName.trim() || !input.guestContact.trim()) return { error: "Add your name and phone number." };
+          const venue = s.venues.find((v) => v.id === s.cart?.venueId);
+          if (!venue || !s.cart) return { error: "This venue is no longer available." };
+          if (!venue.services.includes(input.service)) return { error: "Choose a service offered by this business." };
+          const id = uid("order");
+          const sequence = s.orderSequence + 1;
+          const order: OrderRequest = { ...input, guestName: input.guestName.trim(), guestContact: input.guestContact.trim(), id, reference: `PEWA-${String(sequence).padStart(4, "0")}`, venueId: venue.id, orgId: venue.orgId, venueName: venue.name, currency: venue.currency, lines: structuredClone(s.cart.lines), total: cartTotal(s.cart.lines), status: "pending", submittedAt: now(), unitConsumed: false };
+          set({ orders: [order, ...s.orders], cart: null, orderSequence: sequence });
+          get().log({ kind: "order.submitted", message: `${order.reference} submitted — awaiting business acceptance; no unit consumed` });
+          return { id };
+        },
+        acceptOrder: (id) => {
+          const s = get();
+          const order = s.orders.find((o) => o.id === id);
+          if (!order || order.status !== "pending" || !canManageOrders(s.role) || order.orgId !== s.organisation?.id) return false;
+          const policy = { ...s.orderPolicy };
+          if (policy.included > 0 && !policy.expired) policy.included -= 1;
+          else if (policy.topUp > 0) policy.topUp -= 1;
+          else if (policy.overdraftUsed < 10) policy.overdraftUsed += 1;
+          else return false;
+          set({ orderPolicy: policy, orders: s.orders.map((o) => o.id === id ? { ...o, status: "accepted", acceptedAt: now(), unitConsumed: true } : o) });
+          get().log({ kind: "order.accepted", message: `${order.reference} accepted — exactly 1 unit consumed` });
+          return true;
+        },
+        declineOrder: (id, reason) => {
+          const s = get();
+          const order = s.orders.find((o) => o.id === id);
+          if (!order || order.status !== "pending" || !canManageOrders(s.role) || order.orgId !== s.organisation?.id || !reason.trim()) return false;
+          set({ orders: s.orders.map((o) => o.id === id ? { ...o, status: "declined", declineReason: reason, resolvedAt: now() } : o) });
+          get().log({ kind: "order.declined", message: `${order.reference} declined — no unit consumed` });
+          return true;
+        },
+        markOrderReady: (id) => {
+          const s = get();
+          const order = s.orders.find((o) => o.id === id);
+          if (!order || order.status !== "accepted" || !canManageOrders(s.role) || order.orgId !== s.organisation?.id) return false;
+          set({ orders: s.orders.map((o) => o.id === id ? { ...o, status: "ready", resolvedAt: now() } : o) });
+          get().log({ kind: "order.ready", message: `${order.reference} marked ready — no additional unit consumed` });
+          return true;
+        },
+        withdrawOrder: (id) => {
+          const s = get();
+          const order = s.orders.find((o) => o.id === id);
+          if (!order || order.status !== "pending") return false;
+          set({ orders: s.orders.map((o) => o.id === id ? { ...o, status: "withdrawn", resolvedAt: now() } : o) });
+          get().log({ kind: "order.withdrawn", message: `${order.reference} withdrawn before acceptance — no unit consumed` });
+          return true;
+        },
         setRole: (role) => {
           set({ role });
           get().log({ kind: "role.switched", message: `Role switched to ${role}` });
@@ -132,7 +212,10 @@ export const usePewa = create<PewaState & Actions>()(
             const j = i + dir;
             if (i < 0 || j < 0 || j >= ss.length) return ss;
             const c = [...ss];
-            [c[i], c[j]] = [c[j]!, c[i]!];
+            const from = c[i];
+            const to = c[j];
+            if (!from || !to) return ss;
+            [c[i], c[j]] = [to, from];
             return c;
           }),
         upsertOffering: (menuId, sectionId, o) => {
@@ -186,7 +269,9 @@ export const usePewa = create<PewaState & Actions>()(
         },
       };
     },
-    { name: "pewa-prototype-v1", skipHydration: true },
+    { name: "pewa-prototype-v1", skipHydration: true,
+      merge: (persisted, current) => ({ ...current, ...(persisted as Partial<PewaState>) }),
+    },
   ),
 );
 
@@ -201,6 +286,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const canAuthorMenus = (r: Role) => r === "owner" || r === "admin" || r === "manager";
 export const canToggleAvailability = (r: Role) => canAuthorMenus(r) || r === "staff";
+export const canManageOrders = (r: Role) => canAuthorMenus(r) || r === "staff";
 export const isBusinessRole = (r: Role) => r !== "customer" && r !== "operator";
 
 export const formatPrice = (amount: number, currency: string) => {

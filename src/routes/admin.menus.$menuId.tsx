@@ -11,8 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { pageHead } from "@/lib/pewa/metadata";
 
 export const Route = createFileRoute("/admin/menus/$menuId")({
+  head: () => pageHead("Edit business menu", "Create sections, edit offerings and publish your menu on PEWA."),
   component: MenuEditor,
 });
 

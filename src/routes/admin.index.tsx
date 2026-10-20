@@ -7,8 +7,10 @@ import { canAuthorMenus, usePewa } from "@/lib/pewa/store";
 import { StatusBadge } from "@/components/pewa/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { pageHead } from "@/lib/pewa/metadata";
 
 export const Route = createFileRoute("/admin/")({
+  head: () => pageHead("Your business menus", "Publish and share your business menus with QR codes and direct links."),
   component: Overview,
 });
 

@@ -11,9 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as DirectoryRouteImport } from './routes/directory'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as MSlugRouteImport } from './routes/m.$slug'
+import { Route as OrdersIndexRouteImport } from './routes/orders.index'
+import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
 import { Route as AdminMenusMenuIdRouteImport } from './routes/admin.menus.$menuId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -26,9 +31,19 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DirectoryRoute = DirectoryRouteImport.update({
+  id: '/directory',
+  path: '/directory',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersRoute = OrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -36,10 +51,25 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminOrdersRoute = AdminOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
 const MSlugRoute = MSlugRouteImport.update({
   id: '/m/$slug',
   path: '/m/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersIndexRoute = OrdersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OrdersRoute,
+} as any)
+const OrdersOrderIdRoute = OrdersOrderIdRouteImport.update({
+  id: '/$orderId',
+  path: '/$orderId',
+  getParentRoute: () => OrdersRoute,
 } as any)
 const AdminMenusMenuIdRoute = AdminMenusMenuIdRouteImport.update({
   id: '/menus/$menuId',
@@ -50,25 +80,39 @@ const AdminMenusMenuIdRoute = AdminMenusMenuIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/directory': typeof DirectoryRoute
   '/onboarding': typeof OnboardingRoute
+  '/orders': typeof OrdersRouteWithChildren
+  '/admin/orders': typeof AdminOrdersRoute
   '/m/$slug': typeof MSlugRoute
+  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin/': typeof AdminIndexRoute
+  '/orders/': typeof OrdersIndexRoute
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/directory': typeof DirectoryRoute
   '/onboarding': typeof OnboardingRoute
+  '/admin/orders': typeof AdminOrdersRoute
   '/m/$slug': typeof MSlugRoute
+  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin': typeof AdminIndexRoute
+  '/orders': typeof OrdersIndexRoute
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/directory': typeof DirectoryRoute
   '/onboarding': typeof OnboardingRoute
+  '/orders': typeof OrdersRouteWithChildren
+  '/admin/orders': typeof AdminOrdersRoute
   '/m/$slug': typeof MSlugRoute
+  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin/': typeof AdminIndexRoute
+  '/orders/': typeof OrdersIndexRoute
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
 }
 export interface FileRouteTypes {
@@ -76,26 +120,47 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/directory'
     | '/onboarding'
+    | '/orders'
+    | '/admin/orders'
     | '/m/$slug'
+    | '/orders/$orderId'
     | '/admin/'
+    | '/orders/'
     | '/admin/menus/$menuId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/onboarding' | '/m/$slug' | '/admin' | '/admin/menus/$menuId'
+  to:
+    | '/'
+    | '/directory'
+    | '/onboarding'
+    | '/admin/orders'
+    | '/m/$slug'
+    | '/orders/$orderId'
+    | '/admin'
+    | '/orders'
+    | '/admin/menus/$menuId'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/directory'
     | '/onboarding'
+    | '/orders'
+    | '/admin/orders'
     | '/m/$slug'
+    | '/orders/$orderId'
     | '/admin/'
+    | '/orders/'
     | '/admin/menus/$menuId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  DirectoryRoute: typeof DirectoryRoute
   OnboardingRoute: typeof OnboardingRoute
+  OrdersRoute: typeof OrdersRouteWithChildren
   MSlugRoute: typeof MSlugRoute
 }
 
@@ -115,11 +180,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/directory': {
+      id: '/directory'
+      path: '/directory'
+      fullPath: '/directory'
+      preLoaderRoute: typeof DirectoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/onboarding': {
       id: '/onboarding'
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders': {
+      id: '/orders'
+      path: '/orders'
+      fullPath: '/orders'
+      preLoaderRoute: typeof OrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -129,12 +208,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/orders': {
+      id: '/admin/orders'
+      path: '/orders'
+      fullPath: '/admin/orders'
+      preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/m/$slug': {
       id: '/m/$slug'
       path: '/m/$slug'
       fullPath: '/m/$slug'
       preLoaderRoute: typeof MSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/orders/': {
+      id: '/orders/'
+      path: '/'
+      fullPath: '/orders/'
+      preLoaderRoute: typeof OrdersIndexRouteImport
+      parentRoute: typeof OrdersRoute
+    }
+    '/orders/$orderId': {
+      id: '/orders/$orderId'
+      path: '/$orderId'
+      fullPath: '/orders/$orderId'
+      preLoaderRoute: typeof OrdersOrderIdRouteImport
+      parentRoute: typeof OrdersRoute
     }
     '/admin/menus/$menuId': {
       id: '/admin/menus/$menuId'
@@ -147,21 +247,38 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminOrdersRoute: typeof AdminOrdersRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminOrdersRoute: AdminOrdersRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface OrdersRouteChildren {
+  OrdersOrderIdRoute: typeof OrdersOrderIdRoute
+  OrdersIndexRoute: typeof OrdersIndexRoute
+}
+
+const OrdersRouteChildren: OrdersRouteChildren = {
+  OrdersOrderIdRoute: OrdersOrderIdRoute,
+  OrdersIndexRoute: OrdersIndexRoute,
+}
+
+const OrdersRouteWithChildren =
+  OrdersRoute._addFileChildren(OrdersRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  DirectoryRoute: DirectoryRoute,
   OnboardingRoute: OnboardingRoute,
+  OrdersRoute: OrdersRouteWithChildren,
   MSlugRoute: MSlugRoute,
 }
 export const routeTree = rootRouteImport
