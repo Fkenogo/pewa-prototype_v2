@@ -18,7 +18,7 @@ export const Route = createFileRoute("/admin")({
 const NAV = [
   { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
   { label: "Menus", icon: BookOpen, to: "/admin", ready: true },
-  { label: "Orders", icon: ClipboardList, ready: false },
+  { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: true },
   { label: "Activity", icon: Activity, ready: false },
   { label: "More", icon: MoreHorizontal, ready: false },
 ];
@@ -85,7 +85,7 @@ function NavItem({ label, icon: Icon, to, ready, desktop }: { label: string; ico
       </span>
     );
   return (
-    <Link to="/admin" className={`${cls} text-primary`}>
+    <Link to={label === "Orders" ? "/admin/orders" : "/admin"} className={`${cls} text-primary`}>
       <Icon className="h-5 w-5" />
       {label}
     </Link>

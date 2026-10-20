@@ -1,11 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { MapPin, MessageCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Heart, MapPin, MessageCircle, ShoppingBag } from "lucide-react";
 import { formatPrice, usePewa } from "@/lib/pewa/store";
 import type { Offering } from "@/lib/pewa/types";
 import { ContactDrawer } from "@/components/pewa/ContactDrawer";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { CartDrawer } from "@/components/pewa/CartDrawer";
+import { OfferingOrderForm } from "@/components/pewa/OfferingOrderForm";
+import { canAdmitOrder, cartTotal } from "@/lib/pewa/ordering";
 
 export const Route = createFileRoute("/m/$slug")({
   head: ({ params }) => {
@@ -16,6 +20,8 @@ export const Route = createFileRoute("/m/$slug")({
         { name: "description", content: `Browse the ${name} menu. No app or account needed.` },
         { property: "og:title", content: `${name} — Menu` },
         { property: "og:description", content: `Browse the ${name} menu instantly.` },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary_large_image" },
       ],
     };
   },
@@ -24,12 +30,14 @@ export const Route = createFileRoute("/m/$slug")({
 
 function PublicMenu() {
   const { slug } = Route.useParams();
-  const { venues, menus } = usePewa();
+  const { venues, menus, visitVenue, favourites, toggleFavourite, cart, orderPolicy } = usePewa();
   const venue = venues.find((v) => v.slug === slug);
   const live = menus.filter((m) => m.orgId === venue?.orgId && m.status === "published");
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
   const [detail, setDetail] = useState<Offering | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  useEffect(() => { if (venue) visitVenue(venue.id); }, [venue?.id, visitVenue]);
 
   if (!venue) {
     return (
@@ -44,10 +52,10 @@ function PublicMenu() {
   const currency = venue.currency;
 
   return (
-    <main className="mx-auto min-h-screen max-w-lg pb-28">
+    <main className="mx-auto min-h-screen max-w-lg pb-44">
       <header className="bg-primary px-4 pb-6 pt-16 text-primary-foreground">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-foreground font-display text-3xl text-primary">{venue.name[0]}</div>
-        <h1 className="mt-3 text-3xl">{venue.name}</h1>
+        <div className="mt-3 flex items-center gap-3"><h1 className="flex-1 text-3xl">{venue.name}</h1><Button variant="secondary" size="icon" aria-label={`${favourites.includes(venue.id) ? "Unsave" : "Save"} ${venue.name}`} aria-pressed={favourites.includes(venue.id)} onClick={() => toggleFavourite(venue.id)}><Heart className={favourites.includes(venue.id) ? "fill-current" : ""} /></Button></div>
         {venue.tagline && <p className="opacity-80">{venue.tagline}</p>}
         <p className="mt-2 flex items-center gap-1 text-sm opacity-80">
           <MapPin className="h-4 w-4" /> {venue.deliveryOnly ? `Delivers to ${venue.serviceArea}` : venue.address}
@@ -58,6 +66,8 @@ function PublicMenu() {
           ))}
         </div>
       </header>
+      <div className="flex items-center justify-between gap-2 px-4 py-3 text-xs"><Link to="/" className="text-primary underline">← Discover menus</Link><Link to="/orders" className="text-primary underline">My requests</Link></div>
+      {!canAdmitOrder(orderPolicy) && <p className="border-y px-4 py-3 text-sm text-muted-foreground">Manual contact only · Structured requests are paused. This menu remains available.</p>}
 
       {!menu ? (
         <p className="p-6 text-center text-muted-foreground">This business hasn't published a menu yet. You can still contact them directly.</p>
@@ -66,7 +76,7 @@ function PublicMenu() {
           {live.length > 1 && (
             <div className="flex gap-2 px-4 pt-4">
               {live.map((m, i) => (
-                <button key={m.id} onClick={() => setMenuIdx(i)} className={cn("min-h-10 rounded-full border px-4 text-sm font-medium", i === menuIdx && "border-primary bg-primary text-primary-foreground")}>{m.name}</button>
+                <Button variant="outline" key={m.id} onClick={() => setMenuIdx(i)} className={cn("min-h-10 rounded-full border px-4 text-sm font-medium", i === menuIdx && "border-primary bg-primary text-primary-foreground")}>{m.name}</Button>
               ))}
             </div>
           )}
@@ -81,7 +91,7 @@ function PublicMenu() {
               <ul className="space-y-2">
                 {s.offerings.map((o) => (
                   <li key={o.id}>
-                    <button onClick={() => setDetail(o)} className={cn("flex w-full gap-3 rounded-2xl border bg-card p-3 text-left", !o.available && "opacity-60")}>
+                    <Button variant="outline" onClick={() => setDetail(o)} className={cn("h-auto w-full justify-start whitespace-normal rounded-lg bg-card p-3 text-left", !o.available && "opacity-60")}>
                       <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-muted text-3xl">{o.emoji}</span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-start justify-between gap-2">
@@ -96,7 +106,7 @@ function PublicMenu() {
                           ))}
                         </span>
                       </span>
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -110,12 +120,14 @@ function PublicMenu() {
       </p>
 
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg px-4 pb-safe">
-        <button onClick={() => setContact(true)} className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-accent text-base font-semibold text-accent-foreground shadow-xl">
+        {cart?.lines.length ? <Button className="mb-2 h-12 w-full" onClick={() => setCartOpen(true)}><ShoppingBag />View cart · {cart.lines.reduce((sum, l) => sum + l.quantity, 0)} items · {formatPrice(cartTotal(cart.lines), venues.find((v) => v.id === cart.venueId)?.currency ?? currency)}</Button> : null}
+        <Button onClick={() => setContact(true)} className="h-12 w-full rounded-full bg-accent text-base font-semibold text-accent-foreground">
           <MessageCircle className="h-5 w-5" /> Contact business
-        </button>
+        </Button>
       </div>
 
       <ContactDrawer venue={venue} open={contact} onOpenChange={setContact} />
+      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
 
       <Drawer open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DrawerContent className="mx-auto max-w-lg">
@@ -128,23 +140,11 @@ function PublicMenu() {
                 <p className="pt-1 text-lg font-semibold">{formatPrice(detail.price, currency)}</p>
                 {!detail.available && <p className="text-sm font-semibold text-status-soldout">Not available right now</p>}
               </DrawerHeader>
-              <div className="space-y-4 px-4 pb-safe">
-                {detail.modifiers.map((g) => (
-                  <div key={g.id}>
-                    <p className="mb-1 text-sm font-semibold">{g.name}</p>
-                    <ul className="divide-y rounded-xl border">
-                      {g.options.map((o) => (
-                        <li key={o.id} className="flex min-h-11 items-center justify-between px-3 text-sm">
-                          {o.name}
-                          <span className="text-muted-foreground">{o.priceDelta ? `+${formatPrice(o.priceDelta, currency)}` : "Included"}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-                <button onClick={() => { setDetail(null); setContact(true); }} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-primary font-semibold text-primary-foreground">
+               <div className="space-y-4 overflow-y-auto px-4 pb-safe">
+                 {menu && <OfferingOrderForm key={detail.id} offering={detail} venue={venue} menuId={menu.id} onAdded={() => setDetail(null)} />}
+                 <Button variant="secondary" onClick={() => { setDetail(null); setContact(true); }} className="h-12 w-full">
                   <MessageCircle className="h-4 w-4" /> Ask about this item
-                </button>
+                 </Button>
               </div>
             </>
           )}

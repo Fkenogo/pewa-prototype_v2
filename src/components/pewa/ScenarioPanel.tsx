@@ -11,7 +11,7 @@ const ROLES = Object.keys(ROLE_LABELS) as Role[];
 
 export function ScenarioPanel() {
   const [open, setOpen] = useState(false);
-  const { role, scenario, setRole, loadScenario, reset, activity, venues, organisation } = usePewa();
+  const { role, scenario, setRole, loadScenario, reset, activity, venues, organisation, orders } = usePewa();
   const navigate = useNavigate();
   const myVenue = venues.find((v) => v.orgId === organisation?.id);
 
@@ -64,6 +64,9 @@ export function ScenarioPanel() {
               <div className="flex flex-wrap gap-2 text-xs">
                 <Link to="/" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Customer home</Link>
                 <Link to="/admin" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Business workspace</Link>
+                <Link to="/directory" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Directory</Link>
+                <Link to="/admin/orders" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Merchant orders</Link>
+                <Link to="/orders" onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">Customer requests ({orders.length})</Link>
                 {myVenue && (
                   <Link to="/m/$slug" params={{ slug: myVenue.slug }} onClick={() => setOpen(false)} className="rounded-full bg-proto-foreground/10 px-3 py-2">My public menu</Link>
                 )}
@@ -92,7 +95,10 @@ export function ScenarioPanel() {
                       onClick={() => {
                         loadScenario(s.id);
                         setOpen(false);
-                        navigate({ to: s.id === "new-cafe" ? "/onboarding" : s.id === "unavailable-item" ? "/m/$slug" : "/admin", params: { slug: "green-garden-cafe" } } as never);
+                        if (s.id === "new-cafe") navigate({ to: "/onboarding" });
+                        else if (["unavailable-item", "zero-units", "expired-beyond-grace", "outdated-price", "channel-unavailable", "units-available"].includes(s.id)) navigate({ to: "/m/$slug", params: { slug: "green-garden-cafe" } });
+                        else if (["duplicate-accept", "withdraw-vs-accept", "admitted-pending"].includes(s.id)) navigate({ to: "/admin/orders" });
+                        else navigate({ to: "/admin" });
                         toast(`Loaded: ${s.label}`);
                       }}
                       className={cn(
