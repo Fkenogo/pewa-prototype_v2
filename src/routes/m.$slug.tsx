@@ -271,9 +271,17 @@ function PublicMenu() {
                             !o.available && "opacity-60",
                           )}
                         >
-                          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-muted text-3xl">
-                            {o.emoji}
-                          </span>
+                          {o.image ? (
+                            <img
+                              src={o.image}
+                              alt={o.name}
+                              className="h-16 w-16 shrink-0 rounded-xl object-cover border"
+                            />
+                          ) : (
+                            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-muted text-3xl">
+                              {o.emoji}
+                            </span>
+                          )}
                           <span className="min-w-0 flex-1">
                             <span className="flex items-start justify-between gap-2">
                               <span className="font-semibold">{o.name}</span>
@@ -351,9 +359,31 @@ function PublicMenu() {
           {detail && (
             <>
               <DrawerHeader className="text-left">
-                <div className="mb-2 text-5xl">{detail.emoji}</div>
+                {detail.image ? (
+                  <div className="mb-3 overflow-hidden rounded-2xl border">
+                    <img
+                      src={detail.image}
+                      alt={detail.name}
+                      className="h-44 w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="mb-2 text-5xl">{detail.emoji}</div>
+                )}
                 <DrawerTitle className="font-display text-2xl">{detail.name}</DrawerTitle>
                 <DrawerDescription>{detail.description}</DrawerDescription>
+                {detail.tags && detail.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {detail.tags.map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <p className="pt-1 text-lg font-semibold">{formatPrice(detail.price, currency)}</p>
                 {!detail.available && (
                   <p className="text-sm font-semibold text-status-soldout">

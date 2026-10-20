@@ -12,10 +12,15 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DirectoryRouteImport } from './routes/directory'
+import { Route as DocsRouteImport } from './routes/docs'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminActivityRouteImport } from './routes/admin.activity'
+import { Route as AdminBillingRouteImport } from './routes/admin.billing'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
+import { Route as AdminPromotionsRouteImport } from './routes/admin.promotions'
 import { Route as MSlugRouteImport } from './routes/m.$slug'
 import { Route as OrdersIndexRouteImport } from './routes/orders.index'
 import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
@@ -36,9 +41,19 @@ const DirectoryRoute = DirectoryRouteImport.update({
   path: '/directory',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperatorRoute = OperatorRouteImport.update({
+  id: '/operator',
+  path: '/operator',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrdersRoute = OrdersRouteImport.update({
@@ -51,9 +66,24 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminActivityRoute = AdminActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminBillingRoute = AdminBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminOrdersRoute = AdminOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPromotionsRoute = AdminPromotionsRouteImport.update({
+  id: '/promotions',
+  path: '/promotions',
   getParentRoute: () => AdminRoute,
 } as any)
 const MSlugRoute = MSlugRouteImport.update({
@@ -81,9 +111,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/directory': typeof DirectoryRoute
+  '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
+  '/operator': typeof OperatorRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/admin/activity': typeof AdminActivityRoute
+  '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/promotions': typeof AdminPromotionsRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin/': typeof AdminIndexRoute
@@ -93,8 +128,13 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/directory': typeof DirectoryRoute
+  '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
+  '/operator': typeof OperatorRoute
+  '/admin/activity': typeof AdminActivityRoute
+  '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/promotions': typeof AdminPromotionsRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin': typeof AdminIndexRoute
@@ -106,9 +146,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/directory': typeof DirectoryRoute
+  '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
+  '/operator': typeof OperatorRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/admin/activity': typeof AdminActivityRoute
+  '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/promotions': typeof AdminPromotionsRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin/': typeof AdminIndexRoute
@@ -121,9 +166,14 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/directory'
+    | '/docs'
     | '/onboarding'
+    | '/operator'
     | '/orders'
+    | '/admin/activity'
+    | '/admin/billing'
     | '/admin/orders'
+    | '/admin/promotions'
     | '/m/$slug'
     | '/orders/$orderId'
     | '/admin/'
@@ -133,8 +183,13 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/directory'
+    | '/docs'
     | '/onboarding'
+    | '/operator'
+    | '/admin/activity'
+    | '/admin/billing'
     | '/admin/orders'
+    | '/admin/promotions'
     | '/m/$slug'
     | '/orders/$orderId'
     | '/admin'
@@ -145,9 +200,14 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/directory'
+    | '/docs'
     | '/onboarding'
+    | '/operator'
     | '/orders'
+    | '/admin/activity'
+    | '/admin/billing'
     | '/admin/orders'
+    | '/admin/promotions'
     | '/m/$slug'
     | '/orders/$orderId'
     | '/admin/'
@@ -159,7 +219,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   DirectoryRoute: typeof DirectoryRoute
+  DocsRoute: typeof DocsRoute
   OnboardingRoute: typeof OnboardingRoute
+  OperatorRoute: typeof OperatorRoute
   OrdersRoute: typeof OrdersRouteWithChildren
   MSlugRoute: typeof MSlugRoute
 }
@@ -187,11 +249,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DirectoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/onboarding': {
       id: '/onboarding'
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operator': {
+      id: '/operator'
+      path: '/operator'
+      fullPath: '/operator'
+      preLoaderRoute: typeof OperatorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orders': {
@@ -208,11 +284,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/activity': {
+      id: '/admin/activity'
+      path: '/activity'
+      fullPath: '/admin/activity'
+      preLoaderRoute: typeof AdminActivityRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/billing': {
+      id: '/admin/billing'
+      path: '/billing'
+      fullPath: '/admin/billing'
+      preLoaderRoute: typeof AdminBillingRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/orders': {
       id: '/admin/orders'
       path: '/orders'
       fullPath: '/admin/orders'
       preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/promotions': {
+      id: '/admin/promotions'
+      path: '/promotions'
+      fullPath: '/admin/promotions'
+      preLoaderRoute: typeof AdminPromotionsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/m/$slug': {
@@ -247,13 +344,19 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminActivityRoute: typeof AdminActivityRoute
+  AdminBillingRoute: typeof AdminBillingRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
+  AdminPromotionsRoute: typeof AdminPromotionsRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminActivityRoute: AdminActivityRoute,
+  AdminBillingRoute: AdminBillingRoute,
   AdminOrdersRoute: AdminOrdersRoute,
+  AdminPromotionsRoute: AdminPromotionsRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
 }
@@ -277,7 +380,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   DirectoryRoute: DirectoryRoute,
+  DocsRoute: DocsRoute,
   OnboardingRoute: OnboardingRoute,
+  OperatorRoute: OperatorRoute,
   OrdersRoute: OrdersRouteWithChildren,
   MSlugRoute: MSlugRoute,
 }

@@ -27,7 +27,8 @@ export const Route = createFileRoute("/onboarding")({
   component: Onboarding,
 });
 
-const TYPES = ["Single-venue café", "Multi-venue restaurant", "Hotel", "Bakery", "Delivery-only"];
+import { SUGGESTED_BUSINESS_CATEGORIES } from "@/lib/pewa/taxonomy";
+
 const SERVICES = ["Dine-in", "Takeaway", "Delivery"];
 const CURRENCIES = ["KES", "UGX", "TZS", "USD", "EUR", "GBP"];
 
@@ -35,9 +36,12 @@ function Onboarding() {
   const navigate = useNavigate();
   const complete = usePewa((s) => s.completeOnboarding);
   const [step, setStep] = useState(0);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState("");
   const [f, setF] = useState({
     orgName: "",
-    businessType: TYPES[0] as string,
+    businessType: "Café",
+    category: "Café",
     venueName: "",
     address: "",
     currency: "KES",
@@ -47,12 +51,16 @@ function Onboarding() {
     email: "",
     menuName: "All-Day Menu",
   });
-  const deliveryOnly = f.businessType === "Delivery-only";
+  const deliveryOnly =
+    f.businessType.toLowerCase().includes("delivery") ||
+    f.category.toLowerCase().includes("delivery");
   const set = (k: keyof typeof f, v: string | string[]) => setF((p) => ({ ...p, [k]: v }));
 
+  const effectiveCategory = isCustomCategory ? customCategoryInput.trim() : f.category;
+
   const valid = [
-    f.orgName.trim().length > 1,
-    f.venueName.trim().length > 1 && f.address.trim().length > 1,
+    f.orgName.trim().length > 1 && effectiveCategory.length > 1,
+    f.venueName.trim().length > 1 && (deliveryOnly || f.address.trim().length > 1),
     f.services.length > 0 && (f.phone || f.whatsapp || f.email),
     f.menuName.trim().length > 1,
   ][step];
@@ -63,6 +71,8 @@ function Onboarding() {
     if (step < 3) return setStep(step + 1);
     const menuId = complete({
       ...f,
+      category: effectiveCategory,
+      businessType: effectiveCategory,
       deliveryOnly,
       services: deliveryOnly ? ["Delivery"] : f.services,
     });
@@ -106,16 +116,46 @@ function Onboarding() {
             <div>
               <Label className="mb-2 block">What kind of business?</Label>
               <div className="grid gap-2">
-                {TYPES.map((t) => (
+                {SUGGESTED_BUSINESS_CATEGORIES.map((c) => (
                   <Choice
-                    key={t}
-                    active={f.businessType === t}
-                    onClick={() => set("businessType", t)}
+                    key={c.id}
+                    active={!isCustomCategory && f.category === c.label}
+                    onClick={() => {
+                      setIsCustomCategory(false);
+                      set("category", c.label);
+                      set("businessType", c.label);
+                    }}
                   >
-                    {t}
+                    <div className="text-left">
+                      <div className="font-medium">{c.label}</div>
+                      <div className="text-xs text-muted-foreground font-normal">
+                        {c.description}
+                      </div>
+                    </div>
                   </Choice>
                 ))}
+                <Choice active={isCustomCategory} onClick={() => setIsCustomCategory(true)}>
+                  <div className="text-left">
+                    <div className="font-medium">Custom category...</div>
+                    <div className="text-xs text-muted-foreground font-normal">
+                      Type your own category in any language (e.g. Swahili Street Food, Pastry Bar)
+                    </div>
+                  </div>
+                </Choice>
               </div>
+
+              {isCustomCategory && (
+                <div className="mt-3">
+                  <Label className="mb-1.5 block text-xs">Enter your custom category</Label>
+                  <Input
+                    autoFocus
+                    value={customCategoryInput}
+                    onChange={(e) => setCustomCategoryInput(e.target.value)}
+                    placeholder="e.g. Swahili Coastal Dining"
+                    className="h-11"
+                  />
+                </div>
+              )}
             </div>
           </>
         )}

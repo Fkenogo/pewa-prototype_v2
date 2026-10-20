@@ -25,6 +25,7 @@ export interface Organisation {
   id: string;
   name: string;
   businessType: string;
+  category?: string;
   currency: string;
   status?: OrgStatus;
   statusNote?: string;
@@ -42,6 +43,7 @@ export interface Venue {
   contact: { phone: string; whatsapp: string; email: string };
   tagline: string;
   currency: string;
+  category?: string;
 }
 
 export interface ModifierGroup {
@@ -60,17 +62,21 @@ export interface Offering {
   modifiers: ModifierGroup[];
   emoji: string;
   specialBadge?: string;
+  image?: string;
 }
 
 export interface Section {
   id: string;
   name: string;
+  description?: string;
+  categoryTag?: string;
   offerings: Offering[];
 }
 
 export interface Menu {
   id: string;
   orgId: string;
+  venueId?: string;
   name: string;
   status: MenuStatus;
   sections: Section[];

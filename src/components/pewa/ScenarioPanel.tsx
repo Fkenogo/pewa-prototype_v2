@@ -37,10 +37,13 @@ export function ScenarioPanel() {
           >
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">
-                  Prototype only
+                <span className="inline-block rounded bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">
+                  UNFROZEN — FOUNDER REFINEMENT IN PROGRESS
+                </span>
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mt-1">
+                  R1-A: Taxonomy & Structure
                 </p>
-                <h2 className="text-xl">Scenario control</h2>
+                <h2 className="text-xl font-bold">Scenario control</h2>
               </div>
               <button
                 onClick={() => setOpen(false)}

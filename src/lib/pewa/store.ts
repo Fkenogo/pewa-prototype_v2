@@ -38,6 +38,7 @@ type Actions = {
   completeOnboarding: (input: {
     orgName: string;
     businessType: string;
+    category?: string;
     venueName: string;
     address: string;
     deliveryOnly: boolean;
@@ -48,7 +49,7 @@ type Actions = {
     email: string;
     menuName: string;
   }) => string;
-  addSection: (menuId: string, name: string) => void;
+  addSection: (menuId: string, name: string, categoryTag?: string) => void;
   renameSection: (menuId: string, sectionId: string, name: string) => void;
   removeSection: (menuId: string, sectionId: string) => void;
   moveSection: (menuId: string, sectionId: string, dir: -1 | 1) => void;
@@ -423,6 +424,7 @@ export const usePewa = create<PewaState & Actions>()(
               id: orgId,
               name: i.orgName,
               businessType: i.businessType,
+              category: i.category || i.businessType,
               currency: i.currency,
             },
             venues: [
@@ -431,6 +433,7 @@ export const usePewa = create<PewaState & Actions>()(
                 orgId,
                 name: i.venueName,
                 slug,
+                category: i.category || i.businessType,
                 address: i.deliveryOnly ? "" : i.address,
                 deliveryOnly: i.deliveryOnly,
                 serviceArea: i.deliveryOnly ? i.address : "",
@@ -471,8 +474,8 @@ export const usePewa = create<PewaState & Actions>()(
           get().log({ kind: "menu.created", message: `Draft menu “${name}” created` });
           return id;
         },
-        addSection: (menuId, name) => {
-          mutateMenu(menuId, (ss) => [...ss, { id: uid("sec"), name, offerings: [] }]);
+        addSection: (menuId, name, categoryTag) => {
+          mutateMenu(menuId, (ss) => [...ss, { id: uid("sec"), name, categoryTag, offerings: [] }]);
           get().log({ kind: "section.created", message: `Section “${name}” added` });
         },
         renameSection: (menuId, sectionId, name) =>
@@ -631,7 +634,28 @@ export const usePewa = create<PewaState & Actions>()(
     {
       name: "pewa-prototype-v1",
       skipHydration: true,
-      merge: (persisted, current) => ({ ...current, ...(persisted as Partial<PewaState>) }),
+      merge: (persisted, current) => {
+        const p = persisted as Partial<PewaState> | undefined;
+        if (!p) return current;
+        return {
+          ...current,
+          ...p,
+          venues: (p.venues || current.venues).map((v) => ({
+            ...v,
+            category: v.category || current.venues.find((cv) => cv.id === v.id)?.category || "Café",
+          })),
+          menus: (p.menus || current.menus).map((m) => ({
+            ...m,
+            sections: (m.sections || []).map((sec) => ({
+              ...sec,
+              offerings: (sec.offerings || []).map((off) => ({
+                ...off,
+                tags: Array.isArray(off.tags) ? off.tags : [],
+              })),
+            })),
+          })),
+        };
+      },
     },
   ),
 );
