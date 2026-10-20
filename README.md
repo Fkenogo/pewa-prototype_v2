@@ -1,14 +1,16 @@
-# Welcome to your Lovable project
+# Cafe Menu Launchpad
+
+review the attached brief and implementation plan. proceed and start build. Build the PEWA mobile-first PWA interactive prototype starting with the first execution assignment: small café onboarding, menu creation, instant publication, public QR/web menu, customer browsing, and manual contact drawer, with the embedded scenario control panel and role switcher.
 
 This project was built with [Lovable](https://lovable.dev).
 
 ## Build with Lovable
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/6250f51e-c70e-4222-ade3-f3dac60a994a).
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+- **Stay in sync**: every change made in Lovable is committed straight to this repository.
+- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 
@@ -20,10 +22,3 @@ cd <repository-name>
 npm i
 npm run dev
 ```
-
-## Built with
-
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
