@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { AlertTriangle, Copy, CreditCard, ExternalLink, Fuel, Plus } from "lucide-react";
 import { toast } from "sonner";
