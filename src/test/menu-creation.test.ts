@@ -9,6 +9,7 @@ import { validateCart } from "../lib/pewa/ordering";
 import {
   getSuggestedMenuNamesForCategory,
   getVenueBrandContext,
+  getVenuePublishedMenus,
   isMenuEligibleForVenue,
 } from "../lib/pewa/taxonomy";
 import type { Offering } from "../lib/pewa/types";
@@ -846,6 +847,326 @@ describe("R1-B — Mobile-First Menu Creation and Organisation Experience", () =
       const preservedOrder = usePewa.getState().orders.find((o) => o.id === orderResult.id)!;
       expect(preservedOrder.lines[0]!.offeringId).toBe(offering.id);
       expect(preservedOrder.lines[0]!.name).toBe(offering.name);
+    });
+  });
+
+  describe("CORR-D — Published Eligibility Must Use Published State", () => {
+    it("keeps published menu live at Venue A when unpublished draft is reassigned to Venue B", () => {
+      usePewa.getState().loadScenario("multi-brand");
+      const state = usePewa.getState();
+      const venueA = state.venues[0]!;
+      const venueB = state.venues[1]!;
+
+      // 1. Create and publish a menu explicitly assigned to Venue A
+      const menuId = state.addMenu({
+        name: "Morning Bakes A Only",
+        venueId: venueA.id,
+        venueIds: [venueA.id],
+        initialSections: ["Pastries"],
+      });
+      usePewa
+        .getState()
+        .upsertOffering(
+          menuId,
+          usePewa.getState().menus.find((m) => m.id === menuId)!.sections[0]!.id,
+          {
+            id: "item_croissant_a",
+            name: "Almond Croissant",
+            description: "Freshly baked",
+            price: 450,
+            available: true,
+            tags: ["Freshly Baked"],
+            modifiers: [],
+            emoji: "🥐",
+          },
+        );
+      usePewa.getState().publishMenu(menuId);
+
+      // Verify menu is live at Venue A and not at Venue B
+      const publishedAtA1 = getVenuePublishedMenus(
+        venueA,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      expect(publishedAtA1.some((m) => m.id === menuId)).toBe(true);
+      const publishedAtB1 = getVenuePublishedMenus(
+        venueB,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      expect(publishedAtB1.some((m) => m.id === menuId)).toBe(false);
+
+      // 2. Merchant reassigns the working draft to Venue B WITHOUT republishing
+      usePewa.getState().updateMenuMeta(menuId, {
+        venueId: venueB.id,
+        venueIds: [venueB.id],
+      });
+
+      const updatedDraft = usePewa.getState().menus.find((m) => m.id === menuId)!;
+      expect(hasUnpublishedDraftChanges(updatedDraft)).toBe(true);
+      expect(updatedDraft.venueIds).toEqual([venueB.id]);
+      expect(updatedDraft.publishedSnapshot?.venueIds).toEqual([venueA.id]);
+
+      // 3. Customer query check (CORR-D requirement):
+      // Effective published state must keep menu live at Venue A, and Venue B must NOT gain access
+      const publishedAtA2 = getVenuePublishedMenus(
+        venueA,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      expect(publishedAtA2.some((m) => m.id === menuId)).toBe(true);
+
+      const publishedAtB2 = getVenuePublishedMenus(
+        venueB,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      expect(publishedAtB2.some((m) => m.id === menuId)).toBe(false);
+
+      // 4. Publishing the changes updates the venue assignment live
+      usePewa.getState().publishMenu(menuId);
+
+      const publishedAtA3 = getVenuePublishedMenus(
+        venueA,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      expect(publishedAtA3.some((m) => m.id === menuId)).toBe(false);
+
+      const publishedAtB3 = getVenuePublishedMenus(
+        venueB,
+        usePewa.getState().menus,
+        usePewa.getState().venues,
+      );
+      expect(publishedAtB3.some((m) => m.id === menuId)).toBe(true);
+    });
+
+    it("does not make a public menu protected merely because the merchant changes draft setting", () => {
+      usePewa.getState().loadScenario("hotel");
+      const state = usePewa.getState();
+      const venue = state.venues[0]!;
+
+      // Find published public menu
+      const publicMenu = state.menus.find((m) => m.status === "published" && !m.isProtected)!;
+      expect(publicMenu).toBeDefined();
+
+      // Verify it is returned in public discovery
+      const publicMenusInitial = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        state.venues,
+        {
+          includeProtected: false,
+        },
+      );
+      expect(publicMenusInitial.some((m) => m.id === publicMenu.id)).toBe(true);
+
+      // Edit working draft to protected: true without publishing
+      usePewa.getState().updateMenuMeta(publicMenu.id, { isProtected: true });
+
+      const draftMenu = usePewa.getState().menus.find((m) => m.id === publicMenu.id)!;
+      expect(draftMenu.isProtected).toBe(true);
+      expect(draftMenu.publishedSnapshot?.isProtected).toBeFalsy();
+
+      // Customer public discovery STILL includes it because effective published snapshot is public
+      const publicMenusAfterDraftEdit = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        state.venues,
+        {
+          includeProtected: false,
+        },
+      );
+      expect(publicMenusAfterDraftEdit.some((m) => m.id === publicMenu.id)).toBe(true);
+
+      // Upon explicit publication, it becomes protected and excluded from public discovery
+      usePewa.getState().publishMenu(publicMenu.id);
+      const publicMenusAfterPublish = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        state.venues,
+        {
+          includeProtected: false,
+        },
+      );
+      expect(publicMenusAfterPublish.some((m) => m.id === publicMenu.id)).toBe(false);
+    });
+
+    it("does not make a protected menu public or searchable merely because draft visibility changes", () => {
+      usePewa.getState().loadScenario("hotel");
+      const state = usePewa.getState();
+      const venue = state.venues[0]!;
+
+      // Find published protected menu (In-room dining)
+      const protectedMenu = state.menus.find((m) => m.status === "published" && m.isProtected)!;
+      expect(protectedMenu).toBeDefined();
+
+      // Verify it is excluded from public discovery
+      const publicMenusInitial = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        state.venues,
+        {
+          includeProtected: false,
+        },
+      );
+      expect(publicMenusInitial.some((m) => m.id === protectedMenu.id)).toBe(false);
+
+      // Edit working draft to isProtected: false without publishing
+      usePewa.getState().updateMenuMeta(protectedMenu.id, { isProtected: false });
+
+      const draftMenu = usePewa.getState().menus.find((m) => m.id === protectedMenu.id)!;
+      expect(draftMenu.isProtected).toBe(false);
+      expect(draftMenu.publishedSnapshot?.isProtected).toBe(true);
+
+      // Public discovery STILL excludes it because effective published snapshot remains protected
+      const publicMenusAfterDraftEdit = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        state.venues,
+        {
+          includeProtected: false,
+        },
+      );
+      expect(publicMenusAfterDraftEdit.some((m) => m.id === protectedMenu.id)).toBe(false);
+
+      // Upon explicit publication, it becomes public
+      usePewa.getState().publishMenu(protectedMenu.id);
+      const publicMenusAfterPublish = getVenuePublishedMenus(
+        venue,
+        usePewa.getState().menus,
+        state.venues,
+        {
+          includeProtected: false,
+        },
+      );
+      expect(publicMenusAfterPublish.some((m) => m.id === protectedMenu.id)).toBe(true);
+    });
+
+    it("enforces order validation and admission against the effective published menu", () => {
+      usePewa.getState().loadScenario("multi-brand");
+      const state = usePewa.getState();
+      const venueA = state.venues[0]!;
+      const venueB = state.venues[1]!;
+
+      // Create and publish menu at Venue A
+      const menuId = state.addMenu({
+        name: "Venue A Specialty Bread",
+        venueId: venueA.id,
+        venueIds: [venueA.id],
+        initialSections: ["Bread"],
+      });
+      const offering: Offering = {
+        id: "item_sourdough_a",
+        name: "Country Sourdough",
+        description: "Naturally fermented sourdough loaf",
+        price: 600,
+        available: true,
+        tags: ["Freshly Baked"],
+        modifiers: [],
+        emoji: "🍞",
+      };
+      usePewa
+        .getState()
+        .upsertOffering(
+          menuId,
+          usePewa.getState().menus.find((m) => m.id === menuId)!.sections[0]!.id,
+          offering,
+        );
+      usePewa.getState().publishMenu(menuId);
+
+      // Reassign draft to Venue B without publishing
+      usePewa.getState().updateMenuMeta(menuId, {
+        venueId: venueB.id,
+        venueIds: [venueB.id],
+      });
+
+      // 1. Order at Venue A using effective published menu succeeds
+      const cartAtVenueA = {
+        venueId: venueA.id,
+        lines: [
+          {
+            id: "line_a1",
+            menuId,
+            offeringId: offering.id,
+            name: offering.name,
+            emoji: offering.emoji,
+            basePrice: offering.price,
+            options: [],
+            quantity: 1,
+            note: "",
+          },
+        ],
+      };
+      const validationAtA = validateCart(usePewa.getState(), cartAtVenueA);
+      expect(validationAtA).toBeNull();
+
+      // 2. Order at Venue B using unpublished draft reassignment fails
+      const cartAtVenueB = {
+        venueId: venueB.id,
+        lines: [
+          {
+            id: "line_b1",
+            menuId,
+            offeringId: offering.id,
+            name: offering.name,
+            emoji: offering.emoji,
+            basePrice: offering.price,
+            options: [],
+            quantity: 1,
+            note: "",
+          },
+        ],
+      };
+      const validationAtB = validateCart(usePewa.getState(), cartAtVenueB);
+      expect(validationAtB).toContain("unpublished draft, hidden or archived menus");
+
+      // 3. Now merchant explicitly publishes the reassignment
+      usePewa.getState().publishMenu(menuId);
+
+      // Now Venue A fails and Venue B succeeds
+      expect(validateCart(usePewa.getState(), cartAtVenueA)).toContain(
+        "unpublished draft, hidden or archived menus",
+      );
+      expect(validateCart(usePewa.getState(), cartAtVenueB)).toBeNull();
+    });
+
+    it("preserves controlled preview behaviour separate from public publication", () => {
+      usePewa.getState().loadScenario("multi-brand");
+      const state = usePewa.getState();
+      const venueB = state.venues[1]!;
+
+      // Create draft menu assigned to Venue B
+      const draftMenuId = state.addMenu({
+        name: "Venue B Draft Only Menu",
+        venueId: venueB.id,
+        venueIds: [venueB.id],
+        initialSections: ["Draft Section"],
+      });
+
+      // Customer cannot preview draft menu
+      usePewa.getState().setRole("customer");
+      const customerState = usePewa.getState();
+      const canCustomerPreview =
+        canAuthorMenus(customerState.role) && customerState.organisation?.id === venueB.orgId;
+      expect(canCustomerPreview).toBe(false);
+
+      // Merchant CAN preview draft menu at Venue B
+      usePewa.getState().setRole("owner");
+      const ownerState = usePewa.getState();
+      const canOwnerPreview =
+        canAuthorMenus(ownerState.role) &&
+        ownerState.organisation?.id === venueB.orgId &&
+        isMenuEligibleForVenue(
+          ownerState.menus.find((m) => m.id === draftMenuId)!,
+          venueB,
+          ownerState.venues,
+        );
+      expect(canOwnerPreview).toBe(true);
+
+      // Public read path at Venue B excludes the draft menu completely
+      const publicMenus = getVenuePublishedMenus(venueB, ownerState.menus, ownerState.venues);
+      expect(publicMenus.some((m) => m.id === draftMenuId)).toBe(false);
     });
   });
 });

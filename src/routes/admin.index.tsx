@@ -22,7 +22,7 @@ import { canAuthorMenus, canManageBilling, usePewa } from "@/lib/pewa/store";
 import { StatusBadge } from "@/components/pewa/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { pageHead } from "@/lib/pewa/metadata";
-import { isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
+import { getVenuePublishedMenus, isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
 import { CreateMenuModal } from "@/components/pewa/CreateMenuModal";
 import { cn } from "@/lib/utils";
 
@@ -66,9 +66,8 @@ function Overview() {
     : orgMenus;
 
   const live = activeQrVenue
-    ? orgMenus.some(
-        (m) => m.status === "published" && isMenuEligibleForVenue(m, activeQrVenue, venues),
-      )
+    ? getVenuePublishedMenus(activeQrVenue, orgMenus, venues, { includeProtected: false }).length >
+      0
     : false;
 
   const [origin, setOrigin] = useState("");

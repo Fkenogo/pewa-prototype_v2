@@ -9,9 +9,9 @@ import {
   Tag as TagIcon,
   Building2,
 } from "lucide-react";
-import { formatPrice, getLiveMenu, usePewa } from "@/lib/pewa/store";
+import { formatPrice, usePewa } from "@/lib/pewa/store";
 import type { Offering, Venue } from "@/lib/pewa/types";
-import { isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
+import { getVenuePublishedMenus } from "@/lib/pewa/taxonomy";
 import { Button } from "@/components/ui/button";
 import { CustomerNav } from "./CustomerNav";
 import { cn } from "@/lib/utils";
@@ -38,13 +38,9 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
   const [area, setArea] = useState("");
   const [savedOnly, setSavedOnly] = useState(false);
 
-  // Eligible public menus for each venue (published and not protected)
+  // Eligible public menus for each venue (published and not protected, evaluated against effective published snapshot)
   const getVenuePublicMenus = (v: Venue) =>
-    menus
-      .filter(
-        (m) => m.status === "published" && !m.isProtected && isMenuEligibleForVenue(m, v, venues),
-      )
-      .map(getLiveMenu);
+    getVenuePublishedMenus(v, menus, venues, { includeProtected: false });
 
   const live = venues.filter((v) => getVenuePublicMenus(v).length > 0);
   const businessCategories = [...new Set(live.map((v) => v.category).filter(Boolean))] as string[];
@@ -440,10 +436,9 @@ function VenueCard({
 }) {
   const { favourites, toggleFavourite, menus, venues } = usePewa();
   const saved = favourites.includes(venue.id);
-  const venueMenuRaw = menus.find(
-    (m) => m.status === "published" && !m.isProtected && isMenuEligibleForVenue(m, venue, venues),
-  );
-  const venueMenu = venueMenuRaw ? getLiveMenu(venueMenuRaw) : undefined;
+  const venueMenu = getVenuePublishedMenus(venue, menus, venues, {
+    includeProtected: false,
+  })[0];
   const previewImage = venueMenu?.sections.flatMap((s) => s.offerings).find((o) => o.image)?.image;
 
   return (

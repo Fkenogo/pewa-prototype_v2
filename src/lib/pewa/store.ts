@@ -144,27 +144,7 @@ type Actions = {
 
 const now = () => new Date().toISOString();
 
-/**
- * Returns the customer-facing live menu representation.
- * If a published menu has a publishedSnapshot, the snapshot is returned
- * so that uncommitted draft changes are isolated from customers until publication.
- */
-export function getLiveMenu(menu: Menu): Menu {
-  if (menu.status !== "published" || !menu.publishedSnapshot) {
-    return menu;
-  }
-  return {
-    ...menu,
-    name: menu.publishedSnapshot.name,
-    description: menu.publishedSnapshot.description,
-    coverImage: menu.publishedSnapshot.coverImage,
-    venueId: menu.publishedSnapshot.venueId,
-    venueIds: menu.publishedSnapshot.venueIds,
-    isProtected: menu.publishedSnapshot.isProtected,
-    sections: menu.publishedSnapshot.sections,
-    publishedAt: menu.publishedSnapshot.publishedAt,
-  };
-}
+export { getLiveMenu, getVenuePublishedMenus } from "./taxonomy";
 
 /**
  * Checks whether a published menu has pending draft changes that differ from its live snapshot.

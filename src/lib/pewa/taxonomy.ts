@@ -387,6 +387,54 @@ export function isMenuEligibleForVenue(menu: Menu, venue: Venue, allVenues?: Ven
 }
 
 /**
+ * Returns the effective customer-facing live menu representation.
+ * If a published menu has a publishedSnapshot, the snapshot is returned
+ * so that uncommitted draft changes (including venue assignment, protection,
+ * sections, offerings, and prices) are isolated from customers until publication.
+ */
+export function getLiveMenu(menu: Menu): Menu {
+  if (menu.status !== "published" || !menu.publishedSnapshot) {
+    return menu;
+  }
+  return {
+    ...menu,
+    name: menu.publishedSnapshot.name,
+    description: menu.publishedSnapshot.description,
+    coverImage: menu.publishedSnapshot.coverImage,
+    venueId: menu.publishedSnapshot.venueId,
+    venueIds: menu.publishedSnapshot.venueIds,
+    isProtected: menu.publishedSnapshot.isProtected,
+    sections: menu.publishedSnapshot.sections,
+    publishedAt: menu.publishedSnapshot.publishedAt,
+  };
+}
+
+/**
+ * Returns all published menus eligible for a specific venue, evaluated against
+ * their effective published state (including published venue assignments and protection).
+ *
+ * Requirements (CORR-D):
+ * 1. Determines whether the menu has a published status.
+ * 2. Resolves its effective published snapshot.
+ * 3. Evaluates venue eligibility and public/protected visibility against that effective published state.
+ */
+export function getVenuePublishedMenus(
+  venue: Venue,
+  menus: Menu[],
+  allVenues?: Venue[],
+  options?: { includeProtected?: boolean },
+): Menu[] {
+  const includeProtected = options?.includeProtected ?? true;
+  return menus
+    .filter((m) => m.status === "published")
+    .map(getLiveMenu)
+    .filter((liveMenu) => {
+      if (!includeProtected && liveMenu.isProtected) return false;
+      return isMenuEligibleForVenue(liveMenu, venue, allVenues);
+    });
+}
+
+/**
  * Returns whether an offering image originates from the curated prototype library or merchant upload.
  */
 export function getImageSource(offering: {

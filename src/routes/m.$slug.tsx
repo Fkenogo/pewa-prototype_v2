@@ -29,6 +29,7 @@ import { OfferingOrderForm } from "@/components/pewa/OfferingOrderForm";
 import { canAdmitOrder, cartTotal } from "@/lib/pewa/ordering";
 import {
   isMenuEligibleForVenue,
+  getVenuePublishedMenus,
   getImageSource,
   isDietaryClaimTag,
   PEWA_TAG_DISCLAIMER,
@@ -98,9 +99,7 @@ function PublicMenu() {
   const live: Menu[] = venue
     ? previewMenu
       ? [previewMenu]
-      : menus
-          .filter((m) => isMenuEligibleForVenue(m, venue, venues) && m.status === "published")
-          .map(getLiveMenu)
+      : getVenuePublishedMenus(venue, menus, venues, { includeProtected: true })
     : [];
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
