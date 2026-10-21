@@ -19,6 +19,18 @@ const DAY_MAP: Record<number, DayOfWeek> = {
   6: "sat",
 };
 
+export const DAY_ORDER: DayOfWeek[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+export function getPreviousDay(day: DayOfWeek): DayOfWeek {
+  const idx = DAY_ORDER.indexOf(day);
+  return DAY_ORDER[(idx - 1 + DAY_ORDER.length) % DAY_ORDER.length]!;
+}
+
+export function getNextDay(day: DayOfWeek): DayOfWeek {
+  const idx = DAY_ORDER.indexOf(day);
+  return DAY_ORDER[(idx + 1) % DAY_ORDER.length]!;
+}
+
 export const ALL_DAYS: { id: DayOfWeek; label: string; short: string }[] = [
   { id: "mon", label: "Monday", short: "Mon" },
   { id: "tue", label: "Tuesday", short: "Tue" },
@@ -30,16 +42,69 @@ export const ALL_DAYS: { id: DayOfWeek; label: string; short: string }[] = [
 ];
 
 /**
- * Checks whether an offering is explicitly hidden/excluded at a specific venue.
+ * Returns the effective shared offerings list for a given menu context.
+ * Published live menus read frozen snapshot shared offerings;
+ * drafts and explicit preview mode read working catalogue state.
  */
-export function isOfferingHiddenAtVenue(offering: Offering, venueId?: string): boolean {
-  if (!venueId || !offering.venueOverrides) return false;
-  return Boolean(offering.venueOverrides[venueId]?.hidden);
+export function getMenuEffectiveSharedOfferings(
+  menu?: Menu | null,
+  sharedOfferings?: SharedOffering[],
+  options?: { isPreview?: boolean },
+): SharedOffering[] {
+  if (
+    !options?.isPreview &&
+    menu?.status === "published" &&
+    menu.publishedSnapshot?.sharedOfferingsSnapshot
+  ) {
+    return menu.publishedSnapshot.sharedOfferingsSnapshot;
+  }
+  return sharedOfferings || [];
+}
+
+/**
+ * Checks whether an offering is explicitly hidden/excluded at a specific venue.
+ * Precedence hierarchy (CORR-B):
+ * 1. Explicit local offering venue override takes highest precedence.
+ * 2. Inherits master venue exclusion if offering references a shared master.
+ */
+export function isOfferingHiddenAtVenue(
+  offering: Offering,
+  venueId?: string,
+  sharedOfferingsOrMaster?: SharedOffering[] | SharedOffering,
+): boolean {
+  if (!venueId) return false;
+
+  // 1. Explicit local offering venue override
+  const localOverride = offering.venueOverrides?.[venueId];
+  if (localOverride && localOverride.hidden !== undefined) {
+    return Boolean(localOverride.hidden);
+  }
+
+  // 2. Inherited master venue exclusion
+  let master: SharedOffering | undefined;
+  if (sharedOfferingsOrMaster) {
+    if (Array.isArray(sharedOfferingsOrMaster)) {
+      if (offering.sharedOfferingId) {
+        master = sharedOfferingsOrMaster.find((s) => s.id === offering.sharedOfferingId);
+      }
+    } else {
+      master = sharedOfferingsOrMaster;
+    }
+  }
+  if (master?.venueOverrides?.[venueId]?.hidden !== undefined) {
+    return Boolean(master.venueOverrides[venueId]?.hidden);
+  }
+
+  return false;
 }
 
 /**
  * Resolves the effective offering attributes for a given venue context.
  * Applies shared master defaults and explicit venue-level overrides.
+ * Precedence hierarchy:
+ * 1. Shared master default (base)
+ * 2. Menu offering definition
+ * 3. Explicit venue-specific override
  */
 export function getEffectiveOffering(
   offering: Offering,
@@ -87,7 +152,43 @@ export function getEffectiveOffering(
 }
 
 /**
+ * Returns current day of week and minutes from midnight in the venue's local timezone.
+ * Defaults to "Africa/Nairobi" (UTC+3) if timezone is unconfigured.
+ */
+export function getVenueLocalTime(
+  venueOrTz?: Venue | string,
+  date: Date = new Date(),
+): { day: DayOfWeek; minutes: number } {
+  const tz = (typeof venueOrTz === "string" ? venueOrTz : venueOrTz?.timezone) || "Africa/Nairobi";
+
+  try {
+    const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" });
+    const dayStr = dayFmt.format(date).toLowerCase().slice(0, 3) as DayOfWeek;
+    const day: DayOfWeek = DAY_ORDER.includes(dayStr) ? dayStr : "mon";
+
+    const timeFmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    });
+    const parts = timeFmt.formatToParts(date);
+    const hourPart = parts.find((p) => p.type === "hour")?.value ?? "0";
+    const minPart = parts.find((p) => p.type === "minute")?.value ?? "0";
+    const hours = parseInt(hourPart, 10) % 24;
+    const minutes = parseInt(minPart, 10);
+
+    return { day, minutes: hours * 60 + minutes };
+  } catch {
+    const day = DAY_MAP[date.getDay()] || "mon";
+    const minutes = date.getHours() * 60 + date.getMinutes();
+    return { day, minutes };
+  }
+}
+
+/**
  * Parses time string "HH:MM" to minutes from midnight (0 to 1439).
+ * Returns null if the format or numbers are invalid.
  */
 export function parseTimeToMinutes(timeStr: string): number | null {
   if (!timeStr) return null;
@@ -101,56 +202,166 @@ export function parseTimeToMinutes(timeStr: string): number | null {
   return hours * 60 + minutes;
 }
 
+export interface ParsedScheduleReferenceTime {
+  valid: boolean;
+  day: DayOfWeek;
+  minutes: number;
+  error?: string | undefined;
+}
+
+/**
+ * Parses a simulated schedule reference time.
+ * Supports:
+ * - "09:00" (HH:MM -> uses venue's current day)
+ * - "mon 09:00" or "Monday 09:00" (explicit Day + HH:MM)
+ * - Date instance
+ * - { day?: DayOfWeek; time?: string }
+ *
+ * Fails closed with an explanatory error if the string is malformed or invalid.
+ */
+export function parseScheduleReferenceTime(
+  ref?: string | Date | { day?: DayOfWeek; time?: string } | undefined,
+  venueOrTz?: Venue | string,
+): ParsedScheduleReferenceTime {
+  if (!ref) {
+    const venueNow = getVenueLocalTime(venueOrTz);
+    return { valid: true, day: venueNow.day, minutes: venueNow.minutes };
+  }
+
+  if (ref instanceof Date) {
+    const venueTime = getVenueLocalTime(venueOrTz, ref);
+    return { valid: true, day: venueTime.day, minutes: venueTime.minutes };
+  }
+
+  if (typeof ref === "object") {
+    const parsedMinutes = ref.time ? parseTimeToMinutes(ref.time) : null;
+    if (ref.time && parsedMinutes === null) {
+      return {
+        valid: false,
+        day: "mon",
+        minutes: 0,
+        error: `Invalid time format "${ref.time}". Expected HH:MM between 00:00 and 23:59.`,
+      };
+    }
+    const day = ref.day && DAY_ORDER.includes(ref.day) ? ref.day : getVenueLocalTime(venueOrTz).day;
+    const minutes = parsedMinutes !== null ? parsedMinutes : getVenueLocalTime(venueOrTz).minutes;
+    return { valid: true, day, minutes };
+  }
+
+  if (typeof ref === "string") {
+    const trimmed = ref.trim().toLowerCase();
+    if (!trimmed) {
+      const venueNow = getVenueLocalTime(venueOrTz);
+      return { valid: true, day: venueNow.day, minutes: venueNow.minutes };
+    }
+
+    // Check for day prefix (e.g. "mon 09:00", "tue 22:30", "monday 09:00")
+    const parts = trimmed.split(/\s+/);
+    if (parts.length >= 2) {
+      const dayRaw = parts[0]!.slice(0, 3) as DayOfWeek;
+      const timeRaw = parts[1]!;
+      if (!DAY_ORDER.includes(dayRaw)) {
+        return {
+          valid: false,
+          day: "mon",
+          minutes: 0,
+          error: `Unrecognized day of week "${parts[0]}". Expected mon, tue, wed, thu, fri, sat, or sun.`,
+        };
+      }
+      const minutes = parseTimeToMinutes(timeRaw);
+      if (minutes === null) {
+        return {
+          valid: false,
+          day: dayRaw,
+          minutes: 0,
+          error: `Invalid time format "${timeRaw}". Expected HH:MM between 00:00 and 23:59.`,
+        };
+      }
+      return { valid: true, day: dayRaw, minutes };
+    }
+
+    // Single token: must be HH:MM
+    if (trimmed.includes(":")) {
+      const minutes = parseTimeToMinutes(trimmed);
+      if (minutes === null) {
+        return {
+          valid: false,
+          day: "mon",
+          minutes: 0,
+          error: `Invalid time format "${trimmed}". Expected HH:MM between 00:00 and 23:59.`,
+        };
+      }
+      const day = getVenueLocalTime(venueOrTz).day;
+      return { valid: true, day, minutes };
+    }
+
+    return {
+      valid: false,
+      day: "mon",
+      minutes: 0,
+      error: `Malformed schedule reference "${ref}". Expected "HH:MM" or "[day] HH:MM".`,
+    };
+  }
+
+  return { valid: false, day: "mon", minutes: 0, error: "Unsupported reference time value." };
+}
+
 /**
  * Checks whether a given schedule is active at a specified reference time/date.
+ * Handles deterministic day evaluation, fail-closed validation, and overnight
+ * intervals continuing past midnight (e.g. Monday 22:00 to Tuesday 04:00).
  */
 export function isOfferingInSchedule(
   schedule?: OfferingSchedule,
-  simulatedTimeOrDate?: string | Date,
+  simulatedTimeOrDate?: string | Date | { day?: DayOfWeek; time?: string },
+  venueOrTz?: Venue | string,
 ): boolean {
   if (!schedule || !schedule.enabled) return true;
 
-  let currentMinutes: number;
-  let currentDay: DayOfWeek;
-
-  if (typeof simulatedTimeOrDate === "string" && simulatedTimeOrDate.includes(":")) {
-    // "HH:MM" string format
-    const parsed = parseTimeToMinutes(simulatedTimeOrDate);
-    currentMinutes =
-      parsed !== null ? parsed : new Date().getHours() * 60 + new Date().getMinutes();
-    currentDay = DAY_MAP[new Date().getDay()] || "mon";
-  } else {
-    const date = simulatedTimeOrDate instanceof Date ? simulatedTimeOrDate : new Date();
-    currentMinutes = date.getHours() * 60 + date.getMinutes();
-    currentDay = DAY_MAP[date.getDay()] || "mon";
+  const parsed = parseScheduleReferenceTime(simulatedTimeOrDate, venueOrTz);
+  if (!parsed.valid) {
+    // Fail closed if schedule reference time is malformed
+    return false;
   }
 
-  // Check day of week
-  if (schedule.days && schedule.days.length > 0) {
-    if (!schedule.days.includes(currentDay)) {
-      return false;
-    }
-  }
+  const { day: currentDay, minutes: currentMinutes } = parsed;
+  const days = schedule.days && schedule.days.length > 0 ? schedule.days : null;
 
-  // Check time of day window
   const startMin = schedule.startTime ? parseTimeToMinutes(schedule.startTime) : null;
   const endMin = schedule.endTime ? parseTimeToMinutes(schedule.endTime) : null;
 
+  // If start or end time strings are set but malformed, fail closed
+  if (schedule.startTime && startMin === null) return false;
+  if (schedule.endTime && endMin === null) return false;
+
   if (startMin !== null && endMin !== null) {
     if (startMin <= endMin) {
-      // Normal range (e.g. 07:00 to 11:30)
-      if (currentMinutes < startMin || currentMinutes >= endMin) return false;
+      // Normal intraday range (e.g. 07:00 to 11:30)
+      if (days && !days.includes(currentDay)) return false;
+      return currentMinutes >= startMin && currentMinutes < endMin;
     } else {
-      // Overnight range (e.g. 22:00 to 04:00)
-      if (currentMinutes < startMin && currentMinutes >= endMin) return false;
+      // Overnight range crossing midnight (e.g. 22:00 to 04:00)
+      if (!days) {
+        return currentMinutes >= startMin || currentMinutes < endMin;
+      }
+      // Part A: Started today and runs to midnight
+      const isTodayStart = days.includes(currentDay) && currentMinutes >= startMin;
+      // Part B: Started yesterday and continues until endMin this morning
+      const prevDay = getPreviousDay(currentDay);
+      const isYesterdayContinuation = days.includes(prevDay) && currentMinutes < endMin;
+
+      return isTodayStart || isYesterdayContinuation;
     }
   } else if (startMin !== null) {
-    if (currentMinutes < startMin) return false;
+    if (days && !days.includes(currentDay)) return false;
+    return currentMinutes >= startMin;
   } else if (endMin !== null) {
-    if (currentMinutes >= endMin) return false;
+    if (days && !days.includes(currentDay)) return false;
+    return currentMinutes < endMin;
+  } else {
+    if (days && !days.includes(currentDay)) return false;
+    return true;
   }
-
-  return true;
 }
 
 export interface EffectiveAvailability {
@@ -168,12 +379,14 @@ export function getEffectiveOfferingAvailability(
   offering: Offering,
   venueId?: string,
   options?: {
-    simulatedTime?: string | undefined;
+    simulatedTime?: string | Date | { day?: DayOfWeek; time?: string } | undefined;
     sharedOfferings?: SharedOffering[] | undefined;
+    venue?: Venue | undefined;
+    venueOrTz?: Venue | string | undefined;
   },
 ): EffectiveAvailability {
-  // 1. Check local venue exclusion
-  if (isOfferingHiddenAtVenue(offering, venueId)) {
+  // 1. Check venue exclusion (including inherited master exclusions)
+  if (isOfferingHiddenAtVenue(offering, venueId, options?.sharedOfferings)) {
     return {
       available: false,
       reason: "venue_excluded",
@@ -196,7 +409,8 @@ export function getEffectiveOfferingAvailability(
 
   // 3. Check time-of-day and day-of-week schedule
   if (effective.schedule && effective.schedule.enabled) {
-    const inSchedule = isOfferingInSchedule(effective.schedule, options?.simulatedTime);
+    const tzTarget = options?.venueOrTz || options?.venue;
+    const inSchedule = isOfferingInSchedule(effective.schedule, options?.simulatedTime, tzTarget);
     if (!inSchedule) {
       const scheduleLabel = formatSchedule(effective.schedule);
       return {

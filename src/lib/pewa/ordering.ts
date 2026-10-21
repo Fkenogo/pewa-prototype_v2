@@ -264,14 +264,17 @@ export function validateCart(state: PewaState, cart: GuestCart | null): string |
     if (!rawOffering) {
       return `${line.name} is no longer available on this menu.`;
     }
+    const effectiveShared =
+      menu.publishedSnapshot?.sharedOfferingsSnapshot || state.sharedOfferings;
     const availability = getEffectiveOfferingAvailability(rawOffering, cart.venueId, {
       simulatedTime: state.simulatedTime,
-      sharedOfferings: state.sharedOfferings,
+      sharedOfferings: effectiveShared,
+      venue,
     });
     if (!availability.available) {
       return `${line.name} is no longer available (${availability.message || "Unavailable"}). Remove it before submitting.`;
     }
-    const offering = getEffectiveOffering(rawOffering, cart.venueId, state.sharedOfferings);
+    const offering = getEffectiveOffering(rawOffering, cart.venueId, effectiveShared);
     if (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 99)
       return "Choose a quantity between 1 and 99.";
     if (offering.price !== line.basePrice)

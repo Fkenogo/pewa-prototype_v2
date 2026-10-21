@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { pageHead } from "@/lib/pewa/metadata";
 import { getVenuePublishedMenus, isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
-import { getSharedOfferingUsage } from "@/lib/pewa/availability";
+import { getSharedOfferingUsage, parseScheduleReferenceTime } from "@/lib/pewa/availability";
 import { CreateMenuModal } from "@/components/pewa/CreateMenuModal";
 import type { SharedOffering } from "@/lib/pewa/types";
 import { cn } from "@/lib/utils";
@@ -70,6 +70,7 @@ function Overview() {
     upsertSharedOffering,
     deleteSharedOffering,
     setMenuStatus,
+    publishMenu,
     duplicateMenu,
     deleteMenu,
   } = usePewa();
@@ -78,6 +79,14 @@ function Overview() {
   const [activeTab, setActiveTab] = useState<"menus" | "shared">("menus");
   const [editingSharedOffering, setEditingSharedOffering] = useState<SharedOffering | null>(null);
   const [isCreatingShared, setIsCreatingShared] = useState(false);
+  const [customTimeInput, setCustomTimeInput] = useState(simulatedTime || "");
+
+  useEffect(() => {
+    setCustomTimeInput(simulatedTime || "");
+  }, [simulatedTime]);
+
+  const parsedTime = customTimeInput.trim() ? parseScheduleReferenceTime(customTimeInput) : null;
+  const hasTimeError = parsedTime !== null && !parsedTime.valid;
 
   const orgVenues = venues.filter((v) => v.orgId === organisation?.id);
   const isMultiVenue = orgVenues.length > 1;
@@ -147,48 +156,76 @@ function Overview() {
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-semibold">Simulated Service Time:</span>
                 <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs font-bold text-foreground">
-                  {simulatedTime ? `${simulatedTime}` : "System Clock (Live)"}
+                  {simulatedTime ? `${simulatedTime}` : "System Clock (Live, Africa/Nairobi)"}
                 </span>
+                {simulatedTime && (
+                  <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                    Active simulation
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Simulate dayparts to evaluate breakfast, afternoon, and scheduled availability.
+                Simulate day-of-week and time to evaluate breakfast, afternoon, and overnight
+                service intervals deterministically.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
             <Button
-              variant={simulatedTime === "09:00" ? "default" : "outline"}
+              variant={simulatedTime === "mon 09:00" ? "default" : "outline"}
               size="sm"
               className="h-7 text-xs px-2.5"
               onClick={() => {
-                setSimulatedTime("09:00");
-                toast.info("Clock set to 09:00 (Breakfast hours)");
+                setSimulatedTime("mon 09:00");
+                toast.info("Clock set to Monday 09:00 (Breakfast hours)");
               }}
             >
-              Breakfast (09:00)
+              Mon 09:00 (Breakfast)
             </Button>
             <Button
-              variant={simulatedTime === "14:00" ? "default" : "outline"}
+              variant={simulatedTime === "tue 14:00" ? "default" : "outline"}
               size="sm"
               className="h-7 text-xs px-2.5"
               onClick={() => {
-                setSimulatedTime("14:00");
-                toast.info("Clock set to 14:00 (Afternoon hours)");
+                setSimulatedTime("tue 14:00");
+                toast.info("Clock set to Tuesday 14:00 (Lunch hours)");
               }}
             >
-              Afternoon (14:00)
+              Tue 14:00 (Lunch)
             </Button>
             <Button
-              variant={simulatedTime === "19:00" ? "default" : "outline"}
+              variant={simulatedTime === "mon 23:30" ? "default" : "outline"}
               size="sm"
               className="h-7 text-xs px-2.5"
               onClick={() => {
-                setSimulatedTime("19:00");
-                toast.info("Clock set to 19:00 (Dinner hours)");
+                setSimulatedTime("mon 23:30");
+                toast.info("Clock set to Monday 23:30 (Late night interval)");
               }}
             >
-              Dinner (19:00)
+              Mon 23:30 (Late night)
+            </Button>
+            <Button
+              variant={simulatedTime === "tue 02:00" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs px-2.5"
+              onClick={() => {
+                setSimulatedTime("tue 02:00");
+                toast.info("Clock set to Tuesday 02:00 (Overnight continuation)");
+              }}
+            >
+              Tue 02:00 (Overnight)
+            </Button>
+            <Button
+              variant={simulatedTime === "sun 11:00" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs px-2.5"
+              onClick={() => {
+                setSimulatedTime("sun 11:00");
+                toast.info("Clock set to Sunday 11:00 (Weekend brunch)");
+              }}
+            >
+              Sun 11:00 (Weekend)
             </Button>
             {simulatedTime && (
               <Button
@@ -204,6 +241,60 @@ function Overview() {
               </Button>
             )}
           </div>
+        </div>
+
+        {/* Custom time input row */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t pt-2 text-xs">
+          <Label
+            htmlFor="custom-sim-time"
+            className="text-[11px] text-muted-foreground font-medium"
+          >
+            Custom schedule time:
+          </Label>
+          <div className="flex items-center gap-1.5">
+            <Input
+              id="custom-sim-time"
+              placeholder="e.g. mon 09:00 or 14:30"
+              value={customTimeInput}
+              onChange={(e) => setCustomTimeInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const check = parseScheduleReferenceTime(customTimeInput);
+                  if (check.valid) {
+                    setSimulatedTime(customTimeInput.trim());
+                    toast.success(`Simulated time set to "${customTimeInput.trim()}"`);
+                  } else {
+                    toast.error(check.error || "Invalid time format");
+                  }
+                }
+              }}
+              className={cn("h-7 w-44 text-xs font-mono", hasTimeError && "border-destructive")}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs px-2 font-semibold"
+              onClick={() => {
+                if (!customTimeInput.trim()) {
+                  setSimulatedTime(undefined);
+                  toast.info("Clock reset to system time");
+                  return;
+                }
+                const check = parseScheduleReferenceTime(customTimeInput);
+                if (check.valid) {
+                  setSimulatedTime(customTimeInput.trim());
+                  toast.success(`Simulated time set to "${customTimeInput.trim()}"`);
+                } else {
+                  toast.error(check.error || "Invalid time format");
+                }
+              }}
+            >
+              Apply
+            </Button>
+          </div>
+          {hasTimeError && (
+            <span className="text-[11px] font-medium text-destructive">⚠ {parsedTime.error}</span>
+          )}
         </div>
       </div>
 
@@ -397,12 +488,12 @@ function Overview() {
               displayedMenus.map((m) => {
                 const itemCount = m.sections.reduce((n, s) => n + s.offerings.length, 0);
 
-                // Determine assigned venues
                 const assignedVenues = orgVenues.filter((v) =>
                   isMenuEligibleForVenue(m, v, venues),
                 );
                 const primaryAssignedVenue = assignedVenues[0] || activeQrVenue;
-                const hasPendingChanges = m.status === "published" && hasUnpublishedDraftChanges(m);
+                const hasPendingChanges =
+                  m.status === "published" && hasUnpublishedDraftChanges(m, sharedOfferings);
 
                 return (
                   <article
@@ -684,19 +775,57 @@ function Overview() {
                             </p>
                           )}
 
-                          {/* Usage Breakdown */}
+                          {/* Usage Breakdown with Pending Publication Detection */}
                           <div className="mt-2 text-[11px] text-muted-foreground">
                             {usages.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="font-semibold text-foreground">Active in:</span>
-                                {usages.map((u, i) => (
-                                  <span
-                                    key={i}
-                                    className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground"
-                                  >
-                                    {u.menuName} ({u.sectionName})
-                                  </span>
-                                ))}
+                              <div className="space-y-1.5">
+                                <span className="font-semibold text-foreground">
+                                  Linked menu locations:
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {usages.map((u, i) => {
+                                    const linkedMenu = menus.find((m) => m.id === u.menuId);
+                                    const hasPending =
+                                      linkedMenu &&
+                                      linkedMenu.status === "published" &&
+                                      hasUnpublishedDraftChanges(linkedMenu, sharedOfferings);
+                                    return (
+                                      <span
+                                        key={i}
+                                        className={cn(
+                                          "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]",
+                                          hasPending
+                                            ? "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-300 font-medium"
+                                            : "border-border bg-muted/60 text-foreground font-normal",
+                                        )}
+                                      >
+                                        <span>
+                                          {u.menuName} ({u.sectionName})
+                                        </span>
+                                        {hasPending && (
+                                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                                            Unpublished catalogue update
+                                          </span>
+                                        )}
+                                        {hasPending && author && (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-5 px-1.5 text-[10px] font-semibold border-amber-500/40 hover:bg-amber-500/20"
+                                            onClick={() => {
+                                              publishMenu(u.menuId);
+                                              toast.success(
+                                                `Published latest catalogue updates to “${u.menuName}”`,
+                                              );
+                                            }}
+                                          >
+                                            Publish now
+                                          </Button>
+                                        )}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             ) : (
                               <span className="italic text-muted-foreground">

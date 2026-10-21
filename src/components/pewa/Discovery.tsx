@@ -105,18 +105,20 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     const qualifyingOfferings: QualifyingOfferingMatch[] = [];
 
     for (const m of venueMenus) {
+      const effectiveShared = m.publishedSnapshot?.sharedOfferingsSnapshot || sharedOfferings;
       for (const s of m.sections) {
         if (isSectionCategory && s.name.toLowerCase() !== category.toLowerCase()) {
           continue;
         }
         for (const rawOffering of s.offerings) {
-          if (isOfferingHiddenAtVenue(rawOffering, v.id)) continue;
+          if (isOfferingHiddenAtVenue(rawOffering, v.id, effectiveShared)) continue;
           const availability = getEffectiveOfferingAvailability(rawOffering, v.id, {
             simulatedTime,
-            sharedOfferings,
+            sharedOfferings: effectiveShared,
+            venue: v,
           });
           if (!availability.available) continue;
-          const o = getEffectiveOffering(rawOffering, v.id, sharedOfferings);
+          const o = getEffectiveOffering(rawOffering, v.id, effectiveShared);
 
           // Check tag filter
           if (tagFilter && !o.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase())) {

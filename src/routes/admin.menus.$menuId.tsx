@@ -82,7 +82,7 @@ function MenuEditor() {
 
   const currency = primaryVenue?.currency || s.organisation?.currency || "KES";
   const author = canAuthorMenus(s.role);
-  const hasDraftChanges = menu ? hasUnpublishedDraftChanges(menu) : false;
+  const hasDraftChanges = menu ? hasUnpublishedDraftChanges(menu, s.sharedOfferings) : false;
 
   // Local State
   const [customSectionInput, setCustomSectionInput] = useState("");

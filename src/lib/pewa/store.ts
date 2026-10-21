@@ -36,6 +36,12 @@ import {
   getEffectiveOffering,
   getEffectiveOfferingAvailability,
   isOfferingHiddenAtVenue,
+  getMenuEffectiveSharedOfferings,
+  isOfferingInSchedule,
+  formatSchedule,
+  getSharedOfferingUsage,
+  parseScheduleReferenceTime,
+  getVenueLocalTime,
 } from "./availability";
 
 export {
@@ -46,9 +52,6 @@ export {
   validateOfferingModifiersConfig,
   validateModifierSelection,
   validateAndRecalculateLineModifiers,
-  getEffectiveOffering,
-  getEffectiveOfferingAvailability,
-  isOfferingHiddenAtVenue,
 };
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -217,12 +220,27 @@ export {
   searchImageLibrary,
   cropAndCompressImage,
 } from "./taxonomy";
+export {
+  getMenuEffectiveSharedOfferings,
+  getEffectiveOffering,
+  getEffectiveOfferingAvailability,
+  isOfferingHiddenAtVenue,
+  isOfferingInSchedule,
+  formatSchedule,
+  getSharedOfferingUsage,
+  parseScheduleReferenceTime,
+  getVenueLocalTime,
+} from "./availability";
 
 /**
  * Checks whether a published menu has pending draft changes that differ from its live snapshot.
  * Availability changes (sold out) take effect immediately and do not count as draft changes.
+ * Also checks if any shared offerings linked in this menu have pending catalogue changes.
  */
-export function hasUnpublishedDraftChanges(menu: Menu): boolean {
+export function hasUnpublishedDraftChanges(
+  menu: Menu,
+  sharedOfferings?: SharedOffering[],
+): boolean {
   if (menu.status !== "published" || !menu.publishedSnapshot) return false;
   const snap = menu.publishedSnapshot;
 
@@ -254,25 +272,64 @@ export function hasUnpublishedDraftChanges(menu: Menu): boolean {
       })),
     }));
 
-  return JSON.stringify(normSec(menu.sections)) !== JSON.stringify(normSec(snap.sections));
+  if (JSON.stringify(normSec(menu.sections)) !== JSON.stringify(normSec(snap.sections))) {
+    return true;
+  }
+
+  // Check if any shared offering linked in this menu has been updated in the catalogue
+  if (sharedOfferings && snap.sharedOfferingsSnapshot) {
+    const usedSharedIds = new Set<string>();
+    for (const sec of menu.sections) {
+      for (const off of sec.offerings) {
+        if (off.sharedOfferingId) {
+          usedSharedIds.add(off.sharedOfferingId);
+        }
+      }
+    }
+    for (const sharedId of usedSharedIds) {
+      const currentShared = sharedOfferings.find((s) => s.id === sharedId);
+      const snapShared = snap.sharedOfferingsSnapshot.find((s) => s.id === sharedId);
+      if (!currentShared && !snapShared) continue;
+      if (!currentShared || !snapShared) return true;
+      if (JSON.stringify(currentShared) !== JSON.stringify(snapShared)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
-const ensurePublishedSnapshots = (menus: Menu[]): Menu[] =>
+const ensurePublishedSnapshots = (menus: Menu[], sharedOfferings?: SharedOffering[]): Menu[] =>
   menus.map((m) => {
-    if (m.status === "published" && !m.publishedSnapshot) {
-      return {
-        ...m,
-        publishedSnapshot: {
-          name: m.name,
-          description: m.description,
-          coverImage: m.coverImage,
-          venueId: m.venueId,
-          venueIds: m.venueIds ? [...m.venueIds] : undefined,
-          isProtected: m.isProtected,
-          sections: JSON.parse(JSON.stringify(m.sections)),
-          publishedAt: m.publishedAt || now(),
-        },
-      };
+    if (m.status === "published") {
+      if (!m.publishedSnapshot) {
+        return {
+          ...m,
+          publishedSnapshot: {
+            name: m.name,
+            description: m.description,
+            coverImage: m.coverImage,
+            venueId: m.venueId,
+            venueIds: m.venueIds ? [...m.venueIds] : undefined,
+            isProtected: m.isProtected,
+            sections: JSON.parse(JSON.stringify(m.sections)),
+            publishedAt: m.publishedAt || now(),
+            sharedOfferingsSnapshot: sharedOfferings
+              ? JSON.parse(JSON.stringify(sharedOfferings))
+              : undefined,
+          },
+        };
+      }
+      if (!m.publishedSnapshot.sharedOfferingsSnapshot && sharedOfferings) {
+        return {
+          ...m,
+          publishedSnapshot: {
+            ...m.publishedSnapshot,
+            sharedOfferingsSnapshot: JSON.parse(JSON.stringify(sharedOfferings)),
+          },
+        };
+      }
     }
     return m;
   });
@@ -289,7 +346,7 @@ export const usePewa = create<PewaState & Actions>()(
       const initialSeed = buildScenario("new-cafe");
       return {
         ...initialSeed,
-        menus: ensurePublishedSnapshots(initialSeed.menus),
+        menus: ensurePublishedSnapshots(initialSeed.menus, initialSeed.sharedOfferings),
         visitVenue: (id) =>
           set((s) => ({ recents: [id, ...s.recents.filter((v) => v !== id)].slice(0, 12) })),
         toggleFavourite: (id) =>
@@ -326,12 +383,15 @@ export const usePewa = create<PewaState & Actions>()(
           if (!rawOffering) {
             return "This offering is not found on the published menu.";
           }
-          if (isOfferingHiddenAtVenue(rawOffering, venueId)) {
+          const effectiveShared =
+            publishedMenu.publishedSnapshot?.sharedOfferingsSnapshot || s.sharedOfferings;
+          if (isOfferingHiddenAtVenue(rawOffering, venueId, effectiveShared)) {
             return `${rawOffering.name} is not available at this service location.`;
           }
           const availability = getEffectiveOfferingAvailability(rawOffering, venueId, {
             simulatedTime: s.simulatedTime,
-            sharedOfferings: s.sharedOfferings,
+            sharedOfferings: effectiveShared,
+            venue,
           });
           if (!availability.available) {
             return availability.reason === "sold_out_manual"
@@ -339,7 +399,7 @@ export const usePewa = create<PewaState & Actions>()(
               : `${rawOffering.name} is currently outside scheduled hours (${availability.scheduleDetails || "Scheduled hours"}).`;
           }
 
-          const effectiveOffering = getEffectiveOffering(rawOffering, venueId, s.sharedOfferings);
+          const effectiveOffering = getEffectiveOffering(rawOffering, venueId, effectiveShared);
           const optionsList = line.options || [];
           const modCheck = validateAndRecalculateLineModifiers(effectiveOffering, optionsList);
           if (!modCheck.valid) {
@@ -403,7 +463,9 @@ export const usePewa = create<PewaState & Actions>()(
             if (!rawOffering) {
               return structuredClone(line);
             }
-            const offering = getEffectiveOffering(rawOffering, venue.id, s.sharedOfferings);
+            const effectiveShared =
+              menu?.publishedSnapshot?.sharedOfferingsSnapshot || s.sharedOfferings;
+            const offering = getEffectiveOffering(rawOffering, venue.id, effectiveShared);
             const modCheck = validateAndRecalculateLineModifiers(offering, line.options);
             return {
               ...line,
@@ -659,11 +721,19 @@ export const usePewa = create<PewaState & Actions>()(
         },
         loadScenario: (id) => {
           const sc = buildScenario(id);
-          set({ ...sc, menus: ensurePublishedSnapshots(sc.menus), role: get().role });
+          set({
+            ...sc,
+            menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
+            role: get().role,
+          });
         },
         reset: () => {
           const sc = buildScenario(get().scenario);
-          set({ ...sc, menus: ensurePublishedSnapshots(sc.menus), role: get().role });
+          set({
+            ...sc,
+            menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
+            role: get().role,
+          });
         },
         log: (e) =>
           set((s) => ({
@@ -1305,6 +1375,7 @@ export const usePewa = create<PewaState & Actions>()(
             isProtected: m.isProtected,
             sections: JSON.parse(JSON.stringify(m.sections)),
             publishedAt: now(),
+            sharedOfferingsSnapshot: JSON.parse(JSON.stringify(get().sharedOfferings || [])),
           };
           set((s) => ({
             menus: s.menus.map((x) =>

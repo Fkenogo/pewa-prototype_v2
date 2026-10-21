@@ -4,7 +4,10 @@ import { toast } from "sonner";
 import type { Offering, Venue } from "@/lib/pewa/types";
 import { formatPrice, usePewa, validateModifierSelection } from "@/lib/pewa/store";
 import { canAdmitOrder } from "@/lib/pewa/ordering";
-import { getEffectiveOfferingAvailability } from "@/lib/pewa/availability";
+import {
+  getEffectiveOfferingAvailability,
+  getMenuEffectiveSharedOfferings,
+} from "@/lib/pewa/availability";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -29,9 +32,14 @@ export function OfferingOrderForm({
   const isUnpublishedOrPreview =
     isPreview || (parentMenu ? parentMenu.status !== "published" : false);
 
+  const effectiveShared = getMenuEffectiveSharedOfferings(parentMenu, sharedOfferings, {
+    isPreview,
+  });
+
   const availability = getEffectiveOfferingAvailability(offering, venue.id, {
     simulatedTime,
-    sharedOfferings,
+    sharedOfferings: effectiveShared,
+    venue,
   });
 
   // Single choice state: groupId -> optionId (never silently pre-selected)

@@ -45,6 +45,7 @@ export interface Venue {
   currency: string;
   category?: string | undefined;
   businessCategory?: string | undefined;
+  timezone?: string | undefined;
 }
 
 export interface ModifierOption {
@@ -133,6 +134,7 @@ export interface MenuPublishedSnapshot {
   isProtected?: boolean | undefined;
   sections: Section[];
   publishedAt: string;
+  sharedOfferingsSnapshot?: SharedOffering[] | undefined;
 }
 
 export interface Menu {

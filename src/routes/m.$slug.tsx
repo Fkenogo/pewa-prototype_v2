@@ -38,6 +38,7 @@ import {
   getEffectiveOffering,
   getEffectiveOfferingAvailability,
   isOfferingHiddenAtVenue,
+  getMenuEffectiveSharedOfferings,
 } from "@/lib/pewa/availability";
 
 export const Route = createFileRoute("/m/$slug")({
@@ -348,103 +349,109 @@ function PublicMenu() {
                   </a>
                 ))}
               </nav>
-              {menu.sections.map((s) => {
-                const visibleOfferings = s.offerings.filter(
-                  (o) => !isOfferingHiddenAtVenue(o, venue.id),
-                );
-                if (visibleOfferings.length === 0) return null;
-                return (
-                  <section key={s.id} id={s.id} className="scroll-mt-16 px-4 pt-6">
-                    <h2 className="mb-3 text-2xl">{s.name}</h2>
-                    <ul className="space-y-2">
-                      {visibleOfferings.map((rawOffering) => {
-                        const o = getEffectiveOffering(rawOffering, venue.id, sharedOfferings);
-                        const availability = getEffectiveOfferingAvailability(
-                          rawOffering,
-                          venue.id,
-                          {
-                            simulatedTime,
-                            sharedOfferings,
-                          },
-                        );
-                        return (
-                          <li key={o.id}>
-                            <Button
-                              variant="outline"
-                              onClick={() => setDetail(o)}
-                              className={cn(
-                                "h-auto w-full justify-start whitespace-normal rounded-lg bg-card p-3 text-left",
-                                !availability.available && "opacity-60",
-                              )}
-                            >
-                              {o.image ? (
-                                <img
-                                  src={o.image}
-                                  alt={o.name}
-                                  className="h-16 w-16 shrink-0 rounded-xl object-cover border"
-                                />
-                              ) : (
-                                <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-muted text-3xl">
-                                  {o.emoji}
-                                </span>
-                              )}
-                              <span className="min-w-0 flex-1">
-                                <span className="flex items-start justify-between gap-2">
-                                  <span className="font-semibold">{o.name}</span>
-                                  <span className="shrink-0 font-semibold">
-                                    {formatPrice(o.price, currency)}
+              {(() => {
+                const effectiveShared = getMenuEffectiveSharedOfferings(menu, sharedOfferings, {
+                  isPreview: isPreviewMode,
+                });
+                return menu.sections.map((s) => {
+                  const visibleOfferings = s.offerings.filter(
+                    (o) => !isOfferingHiddenAtVenue(o, venue.id, effectiveShared),
+                  );
+                  if (visibleOfferings.length === 0) return null;
+                  return (
+                    <section key={s.id} id={s.id} className="scroll-mt-16 px-4 pt-6">
+                      <h2 className="mb-3 text-2xl">{s.name}</h2>
+                      <ul className="space-y-2">
+                        {visibleOfferings.map((rawOffering) => {
+                          const o = getEffectiveOffering(rawOffering, venue.id, effectiveShared);
+                          const availability = getEffectiveOfferingAvailability(
+                            rawOffering,
+                            venue.id,
+                            {
+                              simulatedTime,
+                              sharedOfferings: effectiveShared,
+                              venue,
+                            },
+                          );
+                          return (
+                            <li key={o.id}>
+                              <Button
+                                variant="outline"
+                                onClick={() => setDetail(o)}
+                                className={cn(
+                                  "h-auto w-full justify-start whitespace-normal rounded-lg bg-card p-3 text-left",
+                                  !availability.available && "opacity-60",
+                                )}
+                              >
+                                {o.image ? (
+                                  <img
+                                    src={o.image}
+                                    alt={o.name}
+                                    className="h-16 w-16 shrink-0 rounded-xl object-cover border"
+                                  />
+                                ) : (
+                                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-muted text-3xl">
+                                    {o.emoji}
                                   </span>
-                                </span>
-                                <span className="line-clamp-2 text-sm text-muted-foreground">
-                                  {o.description}
-                                </span>
-                                <span className="mt-1 flex flex-wrap gap-1">
-                                  {o.specialBadge && (
-                                    <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-bold text-accent">
-                                      ★ {o.specialBadge}
+                                )}
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex items-start justify-between gap-2">
+                                    <span className="font-semibold">{o.name}</span>
+                                    <span className="shrink-0 font-semibold">
+                                      {formatPrice(o.price, currency)}
                                     </span>
-                                  )}
-                                  {!availability.available && (
-                                    <span
-                                      className={cn(
-                                        "rounded-full px-2 py-0.5 text-[10px] font-bold",
-                                        availability.reason === "sold_out_manual"
-                                          ? "bg-status-soldout/15 text-status-soldout"
-                                          : "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-                                      )}
-                                    >
-                                      {availability.badgeText || "Unavailable"}
-                                    </span>
-                                  )}
-                                  {o.tags &&
-                                    o.tags.slice(0, 3).map((t) => (
+                                  </span>
+                                  <span className="line-clamp-2 text-sm text-muted-foreground">
+                                    {o.description}
+                                  </span>
+                                  <span className="mt-1 flex flex-wrap gap-1">
+                                    {o.specialBadge && (
+                                      <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-bold text-accent">
+                                        ★ {o.specialBadge}
+                                      </span>
+                                    )}
+                                    {!availability.available && (
                                       <span
-                                        key={t}
                                         className={cn(
-                                          "rounded-full px-2 py-0.5 text-[10px] font-medium",
-                                          isDietaryClaimTag(t)
-                                            ? "border border-primary/25 bg-primary/10 text-primary font-semibold"
-                                            : "bg-secondary text-secondary-foreground",
+                                          "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                          availability.reason === "sold_out_manual"
+                                            ? "bg-status-soldout/15 text-status-soldout"
+                                            : "bg-amber-500/15 text-amber-700 dark:text-amber-400",
                                         )}
                                       >
-                                        {t}
+                                        {availability.badgeText || "Unavailable"}
                                       </span>
-                                    ))}
-                                  {o.tags && o.tags.length > 3 && (
-                                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-medium">
-                                      +{o.tags.length - 3}
-                                    </span>
-                                  )}
+                                    )}
+                                    {o.tags &&
+                                      o.tags.slice(0, 3).map((t) => (
+                                        <span
+                                          key={t}
+                                          className={cn(
+                                            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                                            isDietaryClaimTag(t)
+                                              ? "border border-primary/25 bg-primary/10 text-primary font-semibold"
+                                              : "bg-secondary text-secondary-foreground",
+                                          )}
+                                        >
+                                          {t}
+                                        </span>
+                                      ))}
+                                    {o.tags && o.tags.length > 3 && (
+                                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-medium">
+                                        +{o.tags.length - 3}
+                                      </span>
+                                    )}
+                                  </span>
                                 </span>
-                              </span>
-                            </Button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                );
-              })}
+                              </Button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  );
+                });
+              })()}
             </>
           )}
         </>
