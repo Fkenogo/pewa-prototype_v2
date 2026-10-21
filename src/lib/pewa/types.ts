@@ -47,10 +47,20 @@ export interface Venue {
   businessCategory?: string | undefined;
 }
 
+export interface ModifierOption {
+  id: string;
+  name: string;
+  priceDelta: number;
+}
+
 export interface ModifierGroup {
   id: string;
   name: string;
-  options: { id: string; name: string; priceDelta: number }[];
+  options: ModifierOption[];
+  required?: boolean | undefined;
+  selectionType?: "single" | "multiple" | undefined;
+  minSelections?: number | undefined;
+  maxSelections?: number | undefined;
 }
 
 export interface Offering {

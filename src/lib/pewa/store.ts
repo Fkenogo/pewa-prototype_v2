@@ -19,7 +19,26 @@ import type {
   ModerationCase,
 } from "./types";
 import { buildScenario } from "./fixtures";
-import { canAdmitOrder, cartTotal, validateCart } from "./ordering";
+import { getVenuePublishedMenus } from "./taxonomy";
+import {
+  canAdmitOrder,
+  cartTotal,
+  validateCart,
+  validateModifierGroupConfig,
+  validateOfferingModifiersConfig,
+  validateModifierSelection,
+  validateAndRecalculateLineModifiers,
+} from "./ordering";
+
+export {
+  canAdmitOrder,
+  cartTotal,
+  validateCart,
+  validateModifierGroupConfig,
+  validateOfferingModifiersConfig,
+  validateModifierSelection,
+  validateAndRecalculateLineModifiers,
+};
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -66,6 +85,13 @@ type Actions = {
     menuId: string,
     sectionId: string,
     o: Omit<Offering, "id"> & { id?: string },
+  ) => void;
+  duplicateOffering: (menuId: string, sectionId: string, offeringId: string) => string;
+  moveOfferingWithinSection: (
+    menuId: string,
+    sectionId: string,
+    offeringId: string,
+    dir: -1 | 1,
   ) => void;
   removeOffering: (menuId: string, sectionId: string, offeringId: string) => void;
   toggleAvailability: (menuId: string, sectionId: string, offeringId: string) => void;
@@ -144,7 +170,13 @@ type Actions = {
 
 const now = () => new Date().toISOString();
 
-export { getLiveMenu, getVenuePublishedMenus } from "./taxonomy";
+export {
+  getLiveMenu,
+  getVenuePublishedMenus,
+  IMAGE_LIBRARY_CATEGORIES,
+  searchImageLibrary,
+  cropAndCompressImage,
+} from "./taxonomy";
 
 /**
  * Checks whether a published menu has pending draft changes that differ from its live snapshot.
@@ -234,7 +266,40 @@ export const usePewa = create<PewaState & Actions>()(
             return "Structured requests are paused. Please contact the business directly.";
           if (s.cart?.lines.length && s.cart.venueId !== venueId)
             return "Your cart belongs to another business. Clear it before starting a new cart.";
-          const cart = { venueId, lines: [...(s.cart?.lines ?? []), { ...line, id: uid("line") }] };
+
+          const venue = s.venues.find((v) => v.id === venueId);
+          if (!venue) return "This venue is no longer available.";
+
+          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+            includeProtected: true,
+          });
+          const publishedMenu = venuePublishedMenus.find((m) => m.id === line.menuId);
+          if (!publishedMenu) {
+            return "Cannot add items from an unpublished draft or archived menu.";
+          }
+          const publishedOffering = publishedMenu.sections
+            .flatMap((sec) => sec.offerings)
+            .find((o) => o.id === line.offeringId);
+          if (!publishedOffering) {
+            return "This offering is not found on the published menu.";
+          }
+          if (!publishedOffering.available) {
+            return `${publishedOffering.name} is currently sold out.`;
+          }
+
+          const modCheck = validateAndRecalculateLineModifiers(publishedOffering, line.options);
+          if (!modCheck.valid) {
+            return modCheck.error || "Invalid option selection.";
+          }
+
+          const authoritativeLine: CartLine = {
+            ...line,
+            id: uid("line"),
+            basePrice: publishedOffering.price,
+            options: modCheck.authoritativeOptions || line.options,
+          };
+
+          const cart = { venueId, lines: [...(s.cart?.lines ?? []), authoritativeLine] };
           const error = validateCart(s, cart);
           if (error) return error;
           set({ cart });
@@ -267,6 +332,28 @@ export const usePewa = create<PewaState & Actions>()(
           if (!venue || !s.cart) return { error: "This venue is no longer available." };
           if (!venue.services.includes(input.service))
             return { error: "Choose a service offered by this business." };
+
+          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+            includeProtected: true,
+          });
+
+          // Authoritatively recalculate lines and prices from the effective published snapshot
+          const authoritativeLines: CartLine[] = s.cart.lines.map((line) => {
+            const menu = venuePublishedMenus.find((m) => m.id === line.menuId);
+            const offering = menu?.sections
+              .flatMap((sec) => sec.offerings)
+              .find((o) => o.id === line.offeringId);
+            if (!offering) {
+              return structuredClone(line);
+            }
+            const modCheck = validateAndRecalculateLineModifiers(offering, line.options);
+            return {
+              ...line,
+              basePrice: offering.price,
+              options: modCheck.authoritativeOptions || line.options,
+            };
+          });
+
           const id = uid("order");
           const sequence = s.orderSequence + 1;
           const order: OrderRequest = {
@@ -279,8 +366,8 @@ export const usePewa = create<PewaState & Actions>()(
             orgId: venue.orgId,
             venueName: venue.name,
             currency: venue.currency,
-            lines: structuredClone(s.cart.lines),
-            total: cartTotal(s.cart.lines),
+            lines: authoritativeLines,
+            total: cartTotal(authoritativeLines),
             status: "pending",
             submittedAt: now(),
             unitConsumed: false,
@@ -837,6 +924,62 @@ export const usePewa = create<PewaState & Actions>()(
             message: `${isNew ? "Added" : "Updated"} “${o.name}”`,
           });
         },
+        duplicateOffering: (menuId, sectionId, offeringId) => {
+          let newId = "";
+          let clonedName = "";
+          mutateMenu(menuId, (ss) =>
+            ss.map((x) => {
+              if (x.id !== sectionId) return x;
+              const targetIndex = x.offerings.findIndex((o) => o.id === offeringId);
+              if (targetIndex === -1) return x;
+              const target = x.offerings[targetIndex];
+              if (!target) return x;
+              newId = uid("off");
+              clonedName = `${target.name} (Copy)`;
+              const clone: Offering = {
+                ...target,
+                id: newId,
+                name: clonedName,
+                description: target.description ?? "",
+                modifiers: target.modifiers.map((g, gi) => ({
+                  ...g,
+                  id: `g${gi}_${uid("mod")}`,
+                  options: g.options.map((opt, oi) => ({
+                    ...opt,
+                    id: `o${gi}_${oi}_${uid("opt")}`,
+                  })),
+                })),
+              };
+              const updated = [...x.offerings];
+              updated.splice(targetIndex + 1, 0, clone);
+              return { ...x, offerings: updated };
+            }),
+          );
+          if (clonedName) {
+            get().log({
+              kind: "offering.created",
+              message: `Duplicated offering “${clonedName}”`,
+            });
+          }
+          return newId;
+        },
+        moveOfferingWithinSection: (menuId, sectionId, offeringId, dir) => {
+          mutateMenu(menuId, (ss) =>
+            ss.map((x) => {
+              if (x.id !== sectionId) return x;
+              const idx = x.offerings.findIndex((o) => o.id === offeringId);
+              if (idx === -1) return x;
+              const newIdx = idx + dir;
+              if (newIdx < 0 || newIdx >= x.offerings.length) return x;
+              const copy = [...x.offerings];
+              const item = copy[idx];
+              if (!item) return x;
+              copy.splice(idx, 1);
+              copy.splice(newIdx, 0, item);
+              return { ...x, offerings: copy };
+            }),
+          );
+        },
         removeOffering: (menuId, sectionId, offeringId) =>
           mutateMenu(menuId, (ss) =>
             ss.map((x) =>
@@ -849,19 +992,20 @@ export const usePewa = create<PewaState & Actions>()(
           let name = "";
           let avail = true;
           mutateMenu(menuId, (ss) =>
-            ss.map((x) =>
-              x.id === sectionId
-                ? {
-                    ...x,
-                    offerings: x.offerings.map((y) => {
-                      if (y.id !== offeringId) return y;
-                      name = y.name;
-                      avail = !y.available;
-                      return { ...y, available: !y.available };
-                    }),
-                  }
-                : x,
-            ),
+            ss.map((x) => {
+              if (sectionId && x.id !== sectionId) return x;
+              const hasOffering = x.offerings.some((y) => y.id === offeringId);
+              if (!hasOffering) return x;
+              return {
+                ...x,
+                offerings: x.offerings.map((y) => {
+                  if (y.id !== offeringId) return y;
+                  name = y.name;
+                  avail = !y.available;
+                  return { ...y, available: !y.available };
+                }),
+              };
+            }),
           );
           // Immediate availability changes apply to publishedSnapshot as well
           set((s) => ({
@@ -872,7 +1016,8 @@ export const usePewa = create<PewaState & Actions>()(
                 publishedSnapshot: {
                   ...m.publishedSnapshot,
                   sections: m.publishedSnapshot.sections.map((sec) => {
-                    if (sec.id !== sectionId) return sec;
+                    const hasOff = sec.offerings.some((o) => o.id === offeringId);
+                    if (!hasOff) return sec;
                     return {
                       ...sec,
                       offerings: sec.offerings.map((off) =>

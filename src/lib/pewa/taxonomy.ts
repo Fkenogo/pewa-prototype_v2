@@ -229,70 +229,231 @@ export interface CuratedLibraryImage {
   title: string;
   category: "coffee" | "breakfast" | "bakery" | "mains" | "burgers" | "dessert" | "drinks";
   url: string;
+  keywords?: string[];
 }
 
+export const IMAGE_LIBRARY_CATEGORIES = [
+  { id: "all", label: "All Photos" },
+  { id: "coffee", label: "Coffee & Tea" },
+  { id: "bakery", label: "Bakery & Bakes" },
+  { id: "breakfast", label: "Breakfast & Brunch" },
+  { id: "mains", label: "Main Dishes" },
+  { id: "burgers", label: "Burgers & Sandwiches" },
+  { id: "dessert", label: "Desserts & Sweets" },
+  { id: "drinks", label: "Cold Drinks & Juices" },
+] as const;
+
 export const PROTOTYPE_IMAGE_LIBRARY: CuratedLibraryImage[] = [
+  // Coffee & Tea
   {
     id: "img_flat_white",
     title: "Artisan Flat White & Latte Art",
     category: "coffee",
     url: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&w=600&q=80",
+    keywords: ["coffee", "flat white", "latte", "espresso", "milk", "hot"],
+  },
+  {
+    id: "img_cappuccino",
+    title: "Classic Frothy Cappuccino with Cocoa",
+    category: "coffee",
+    url: "https://images.unsplash.com/photo-1572442388796-11668a67e53d?auto=format&fit=crop&w=600&q=80",
+    keywords: ["coffee", "cappuccino", "espresso", "foam", "cocoa", "hot"],
   },
   {
     id: "img_cold_brew",
     title: "18-Hour Slow Cold Brew on Ice",
     category: "coffee",
     url: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?auto=format&fit=crop&w=600&q=80",
+    keywords: ["coffee", "cold brew", "iced", "ice", "black"],
   },
   {
-    id: "img_avo_toast",
-    title: "Avocado Sourdough Toast with Seeds",
-    category: "breakfast",
-    url: "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=600&q=80",
+    id: "img_espresso_single",
+    title: "Single Origin Double Shot Espresso",
+    category: "coffee",
+    url: "https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?auto=format&fit=crop&w=600&q=80",
+    keywords: ["coffee", "espresso", "crema", "short", "hot"],
   },
+  {
+    id: "img_iced_latte",
+    title: "Iced Vanilla Oat Milk Latte",
+    category: "coffee",
+    url: "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?auto=format&fit=crop&w=600&q=80",
+    keywords: ["coffee", "iced latte", "oat milk", "vanilla", "iced"],
+  },
+
+  // Bakery & Bakes
   {
     id: "img_croissant",
     title: "Flaky Golden Butter Croissant",
     category: "bakery",
     url: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=600&q=80",
+    keywords: ["croissant", "pastry", "butter", "viennoiserie", "bake", "breakfast"],
+  },
+  {
+    id: "img_almond_croissant",
+    title: "Toasted Almond Frangipane Croissant",
+    category: "bakery",
+    url: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=600&q=80",
+    keywords: ["almond croissant", "croissant", "pastry", "almond", "baked", "flaky"],
   },
   {
     id: "img_sourdough",
     title: "Crusty Artisanal Country Sourdough",
     category: "bakery",
     url: "https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?auto=format&fit=crop&w=600&q=80",
+    keywords: ["bread", "sourdough", "loaf", "artisanal", "crust"],
   },
   {
-    id: "img_wagyu_smash",
-    title: "Double Wagyu Cheeseburger with Fries",
-    category: "burgers",
-    url: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=600&q=80",
+    id: "img_cinnamon_roll",
+    title: "Glazed Cinnamon Swirl Bun",
+    category: "bakery",
+    url: "https://images.unsplash.com/photo-1509365465985-25d11c17e812?auto=format&fit=crop&w=600&q=80",
+    keywords: ["cinnamon roll", "bun", "pastry", "sweet", "spice"],
   },
+  {
+    id: "img_mandazi",
+    title: "Cardamom Spiced Mandazi Pastries",
+    category: "bakery",
+    url: "https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?auto=format&fit=crop&w=600&q=80",
+    keywords: ["mandazi", "swahili", "cardamom", "pastry", "fried"],
+  },
+
+  // Breakfast & Brunch
+  {
+    id: "img_avo_toast",
+    title: "Avocado Sourdough Toast with Seeds",
+    category: "breakfast",
+    url: "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=600&q=80",
+    keywords: ["avocado", "toast", "breakfast", "brunch", "sourdough", "vegan"],
+  },
+  {
+    id: "img_pancakes",
+    title: "Fluffy Buttermilk Pancakes with Berries",
+    category: "breakfast",
+    url: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&w=600&q=80",
+    keywords: ["pancakes", "berries", "syrup", "breakfast", "sweet"],
+  },
+  {
+    id: "img_eggs_benedict",
+    title: "Classic Eggs Benedict with Hollandaise",
+    category: "breakfast",
+    url: "https://images.unsplash.com/photo-1608039829572-78524f79c4c7?auto=format&fit=crop&w=600&q=80",
+    keywords: ["eggs benedict", "poached eggs", "brunch", "breakfast"],
+  },
+
+  // Mains
   {
     id: "img_steak_frites",
     title: "Prime Aged Ribeye Steak & Herb Butter",
     category: "mains",
     url: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80",
+    keywords: ["steak", "beef", "ribeye", "meat", "dinner", "mains"],
   },
   {
     id: "img_risotto",
     title: "Wild Mushroom & Truffle Risotto",
     category: "mains",
     url: "https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?auto=format&fit=crop&w=600&q=80",
+    keywords: ["risotto", "mushroom", "truffle", "italian", "vegetarian", "rice"],
   },
+  {
+    id: "img_salmon",
+    title: "Pan-Seared Salmon with Asparagus",
+    category: "mains",
+    url: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=600&q=80",
+    keywords: ["salmon", "fish", "seafood", "healthy", "dinner"],
+  },
+  {
+    id: "img_pizza",
+    title: "Wood-Fired Neapolitan Margherita Pizza",
+    category: "mains",
+    url: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80",
+    keywords: ["pizza", "margherita", "cheese", "wood-fired", "italian"],
+  },
+
+  // Burgers
+  {
+    id: "img_wagyu_smash",
+    title: "Double Wagyu Cheeseburger with Fries",
+    category: "burgers",
+    url: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=600&q=80",
+    keywords: ["burger", "cheeseburger", "wagyu", "fries", "beef"],
+  },
+  {
+    id: "img_chicken_burger",
+    title: "Crispy Buttermilk Chicken Sandwich",
+    category: "burgers",
+    url: "https://images.unsplash.com/photo-1625813506062-0aeb1d7a094b?auto=format&fit=crop&w=600&q=80",
+    keywords: ["chicken burger", "crispy chicken", "sandwich", "spicy"],
+  },
+
+  // Desserts
   {
     id: "img_pistachio_gelato",
     title: "Bronte Pistachio Artisanal Gelato",
     category: "dessert",
     url: "https://images.unsplash.com/photo-1560008511-11c63416e52d?auto=format&fit=crop&w=600&q=80",
+    keywords: ["gelato", "ice cream", "pistachio", "dessert", "sweet"],
   },
   {
-    id: "img_mandazi",
-    title: "Cardamom Spiced Mandazi Pastries",
-    category: "bakery",
-    url: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=600&q=80",
+    id: "img_tiramisu",
+    title: "Classic Espresso Savoiardi Tiramisu",
+    category: "dessert",
+    url: "https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?auto=format&fit=crop&w=600&q=80",
+    keywords: ["tiramisu", "dessert", "espresso", "mascarpone", "italian"],
+  },
+
+  // Drinks
+  {
+    id: "img_fresh_juice",
+    title: "Freshly Cold-Pressed Orange Juice",
+    category: "drinks",
+    url: "https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=600&q=80",
+    keywords: ["orange juice", "juice", "fresh", "drink", "cold", "citrus"],
+  },
+  {
+    id: "img_iced_tea",
+    title: "Hibiscus Berry Iced Tea Cooler",
+    category: "drinks",
+    url: "https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=600&q=80",
+    keywords: ["iced tea", "hibiscus", "cooler", "tea", "drink", "cold"],
   },
 ];
+
+/**
+ * Resolves a curated library image by its stable ID.
+ */
+export function getCuratedLibraryImage(id: string): CuratedLibraryImage | undefined {
+  return PROTOTYPE_IMAGE_LIBRARY.find((img) => img.id === id);
+}
+
+/**
+ * Returns the URL for a curated library image by its stable ID, or an empty string if not found.
+ */
+export function getCuratedLibraryImageUrl(id: string): string {
+  const item = getCuratedLibraryImage(id);
+  return item ? item.url : "";
+}
+
+/**
+ * Searches and filters the prototype curated image library by keyword and/or category.
+ */
+export function searchImageLibrary(
+  query: string = "",
+  category: string = "all",
+): CuratedLibraryImage[] {
+  const q = query.toLowerCase().trim();
+  return PROTOTYPE_IMAGE_LIBRARY.filter((item) => {
+    const matchesCat = category === "all" || item.category === category;
+    if (!matchesCat) return false;
+    if (!q) return true;
+    return (
+      item.title.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q) ||
+      (item.keywords && item.keywords.some((k) => k.toLowerCase().includes(q)))
+    );
+  });
+}
 
 /**
  * Returns recommended section names tailored to a business category or business type.
@@ -540,6 +701,115 @@ export async function processImageUpload(file: File): Promise<{
       img.src = dataUrl;
     };
     reader.readAsDataURL(file);
+  });
+}
+
+export interface CropOptions {
+  zoom?: number; // scale: 1.0 to 3.0
+  panX?: number; // -50 to 50 (% offset from center)
+  panY?: number; // -50 to 50 (% offset from center)
+  aspectRatio?: number; // width / height, e.g. 1 (square) or 4/3
+}
+
+/**
+ * Crops and compresses an image data URL or image source.
+ * Supports interactive zoom (scale), pan (repositioning), and aspect-ratio clipping
+ * while ensuring bounded output size for prototype persistence.
+ */
+export async function cropAndCompressImage(
+  dataUrl: string,
+  options: CropOptions = {},
+): Promise<{
+  dataUrl: string;
+  source: "upload";
+}> {
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+    throw new Error("Invalid image data provided for cropping.");
+  }
+
+  if (typeof window === "undefined" || typeof Image === "undefined") {
+    throw new Error(
+      "Image processing requires a browser environment. Previously selected image is preserved.",
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onerror = () =>
+      reject(new Error("Unable to decode image file. Previously selected image is preserved."));
+    img.onload = () => {
+      try {
+        const aspect = options.aspectRatio ?? 4 / 3;
+        const targetWidth = 800;
+        const targetHeight = Math.round(targetWidth / aspect);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return reject(
+            new Error(
+              "Unable to compress image: 2D canvas context is unavailable. Previously selected image is preserved.",
+            ),
+          );
+        }
+
+        const zoom = Math.max(1, options.zoom ?? 1);
+        const panX = Math.max(-50, Math.min(50, options.panX ?? 0));
+        const panY = Math.max(-50, Math.min(50, options.panY ?? 0));
+
+        // Calculate source rect
+        const imgAspect = img.width / img.height;
+        let baseW = img.width;
+        let baseH = img.height;
+
+        if (imgAspect > aspect) {
+          baseW = img.height * aspect;
+          baseH = img.height;
+        } else {
+          baseW = img.width;
+          baseH = img.width / aspect;
+        }
+
+        const cropW = baseW / zoom;
+        const cropH = baseH / zoom;
+
+        const maxOffsetW = (img.width - cropW) / 2;
+        const maxOffsetH = (img.height - cropH) / 2;
+
+        const centerX = img.width / 2;
+        const centerY = img.height / 2;
+
+        const offsetX = (panX / 50) * maxOffsetW;
+        const offsetY = (panY / 50) * maxOffsetH;
+
+        let srcX = centerX - cropW / 2 + offsetX;
+        let srcY = centerY - cropH / 2 + offsetY;
+
+        srcX = Math.max(0, Math.min(img.width - cropW, srcX));
+        srcY = Math.max(0, Math.min(img.height - cropH, srcY));
+
+        ctx.drawImage(img, srcX, srcY, cropW, cropH, 0, 0, targetWidth, targetHeight);
+        const compressed = canvas.toDataURL("image/jpeg", 0.82);
+        if (!compressed || !compressed.startsWith("data:image/")) {
+          return reject(
+            new Error(
+              "Image compression output was invalid. Previously selected image is preserved.",
+            ),
+          );
+        }
+        resolve({ dataUrl: compressed, source: "upload" });
+      } catch (err: unknown) {
+        const detail = err instanceof Error ? err.message : "Crop failed";
+        reject(
+          new Error(
+            `Unable to crop/compress image (${detail}). Previously selected image is preserved.`,
+          ),
+        );
+      }
+    };
+    img.src = dataUrl;
   });
 }
 

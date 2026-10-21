@@ -10,10 +10,13 @@ import {
   processImageUpload,
   PEWA_TAG_DISCLAIMER,
   PROTOTYPE_IMAGE_LIBRARY,
+  getCuratedLibraryImage,
+  getCuratedLibraryImageUrl,
   SUGGESTED_BUSINESS_CATEGORIES,
 } from "../lib/pewa/taxonomy";
 import { usePewa } from "../lib/pewa/store";
-import type { Menu, Section, Offering, Venue } from "../lib/pewa/types";
+import { buildScenario } from "../lib/pewa/fixtures";
+import type { Menu, Section, Offering, Venue, ScenarioId } from "../lib/pewa/types";
 
 describe("Slice R1-A — Menu Taxonomy and Structure Engine", () => {
   beforeEach(() => {
@@ -221,6 +224,46 @@ describe("Slice R1-A — Menu Taxonomy and Structure Engine", () => {
       expect(flatWhite).toBeDefined();
       expect(flatWhite?.image).toBeDefined();
       expect(flatWhite?.emoji).toBe("☕");
+    });
+
+    it("assigns representative sample images by stable ID and matches offering semantics", () => {
+      // 1. Verify helper looks up by stable ID
+      expect(getCuratedLibraryImage("img_flat_white")?.title).toContain("Flat White");
+      expect(getCuratedLibraryImageUrl("img_flat_white")).toBeTruthy();
+      expect(getCuratedLibraryImageUrl("non_existent")).toBe("");
+
+      // 2. Collect all offerings across representative scenarios
+      const scenariosToTest: ScenarioId[] = [
+        "established-restaurant",
+        "hotel",
+        "delivery-only",
+        "multi-brand",
+      ];
+      const allOfferings = scenariosToTest.flatMap((scenId) => {
+        const data = buildScenario(scenId);
+        return data.menus.flatMap((m) => m.sections.flatMap((s) => s.offerings));
+      });
+
+      const expectedMappings: Record<string, { name: string; imageId: string }> = {
+        off_flat: { name: "Flat White", imageId: "img_flat_white" },
+        off_cold: { name: "Cold Brew", imageId: "img_cold_brew" },
+        off_avo: { name: "Avocado Toast", imageId: "img_avo_toast" },
+        off_mandazi: { name: "Cardamom Mandazi", imageId: "img_mandazi" },
+        off_steak: { name: "Prime Aged Ribeye", imageId: "img_steak_frites" },
+        off_risotto: { name: "Wild Mushroom Risotto", imageId: "img_risotto" },
+        off_double_smash: { name: "The Double Wagyu Smash", imageId: "img_wagyu_smash" },
+        off_country_sourdough: { name: "Country Sourdough Loaf", imageId: "img_sourdough" },
+        off_croissant: { name: "Golden Butter Croissant", imageId: "img_croissant" },
+        off_pistachio: { name: "Bronte Pistachio", imageId: "img_pistachio_gelato" },
+      };
+
+      for (const [offeringId, expected] of Object.entries(expectedMappings)) {
+        const item = allOfferings.find((o) => o.id === offeringId);
+        expect(item, `Offering ${offeringId} should exist in fixtures`).toBeDefined();
+        expect(item?.name).toBe(expected.name);
+        const expectedUrl = getCuratedLibraryImageUrl(expected.imageId);
+        expect(item?.image, `${expected.name} should map to ${expected.imageId}`).toBe(expectedUrl);
+      }
     });
   });
 
