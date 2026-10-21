@@ -285,21 +285,21 @@ function MenuEditor() {
     <main className="mx-auto max-w-3xl px-4 pt-4 pb-28">
       {/* Top Navigation & Status Bar */}
       <div className="flex items-center justify-between gap-2 border-b pb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <Link
             to="/admin"
             aria-label="Back to menus"
-            className="flex h-11 items-center gap-1.5 px-2.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors font-semibold text-xs"
+            className="flex h-11 items-center gap-1.5 px-2.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors font-semibold text-xs shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Menus</span>
+            <span>Menus</span>
           </Link>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
             <StatusBadge status={menu.status} />
             {menu.isProtected && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 shrink-0">
                 <Lock className="h-3 w-3" />
-                <span>Protected (In-Room)</span>
+                <span>Protected</span>
               </span>
             )}
           </div>
@@ -355,8 +355,8 @@ function MenuEditor() {
       {/* Menu Header Details */}
       <div className="mt-4">
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight">{menu.name}</h1>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-3xl font-extrabold tracking-tight break-words">{menu.name}</h1>
             {menu.description ? (
               <p className="mt-1 text-sm text-muted-foreground">{menu.description}</p>
             ) : (
@@ -646,148 +646,156 @@ function MenuEditor() {
                 </li>
               ) : (
                 sec.offerings.map((o, oIdx) => (
-                  <li key={o.id} className="flex items-center gap-2.5 p-3">
-                    <div className="relative shrink-0">
-                      {o.image ? (
-                        <img
-                          src={o.image}
-                          alt={o.name}
-                          className="h-14 w-14 rounded-xl object-cover border"
-                        />
-                      ) : (
-                        <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-2xl">
-                          {o.emoji}
-                        </span>
-                      )}
-                      {o.image && (
-                        <span className="absolute -bottom-1 -right-1 rounded bg-black/75 px-1 py-0.2 text-[8px] font-medium text-white backdrop-blur">
-                          {getImageSource(o) === "library" ? "Lib" : "Photo"}
-                        </span>
-                      )}
-                    </div>
-
-                    <div
-                      className="min-w-0 flex-1 cursor-pointer"
-                      onClick={() =>
-                        author && setEditingOffering({ sectionId: sec.id, offering: o })
-                      }
-                    >
-                      <p
-                        className={cn(
-                          "truncate font-medium text-sm",
-                          !o.available && "text-muted-foreground line-through",
+                  <li key={o.id} className="p-3 space-y-2 border-b last:border-b-0">
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative shrink-0">
+                        {o.image ? (
+                          <img
+                            src={o.image}
+                            alt={o.name}
+                            className="h-14 w-14 rounded-xl object-cover border"
+                          />
+                        ) : (
+                          <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-2xl">
+                            {o.emoji}
+                          </span>
                         )}
+                        {o.image && (
+                          <span className="absolute -bottom-1 -right-1 rounded bg-black/75 px-1 py-0.2 text-[8px] font-medium text-white backdrop-blur">
+                            {getImageSource(o) === "library" ? "Lib" : "Photo"}
+                          </span>
+                        )}
+                      </div>
+
+                      <div
+                        className="min-w-0 flex-1 cursor-pointer"
+                        onClick={() =>
+                          author && setEditingOffering({ sectionId: sec.id, offering: o })
+                        }
                       >
-                        {o.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground font-medium">
-                        {formatPrice(o.price, currency)}
-                        {o.modifiers.length > 0 &&
-                          ` · ${o.modifiers.length} option group${o.modifiers.length > 1 ? "s" : ""}`}
-                      </p>
+                        <p
+                          className={cn(
+                            "truncate font-medium text-sm text-foreground",
+                            !o.available && "text-muted-foreground line-through",
+                          )}
+                        >
+                          {o.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground font-medium">
+                          {formatPrice(o.price, currency)}
+                          {o.modifiers.length > 0 &&
+                            ` · ${o.modifiers.length} option group${o.modifiers.length > 1 ? "s" : ""}`}
+                        </p>
 
-                      <div className="mt-1 flex flex-wrap items-center gap-1">
-                        {o.sharedOfferingId && (
-                          <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-400">
-                            Shared
-                          </span>
-                        )}
-                        {o.schedule?.enabled && (
-                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
-                            🕒 {formatSchedule(o.schedule)}
-                          </span>
-                        )}
-                        {o.venueOverrides && Object.keys(o.venueOverrides).length > 0 && (
-                          <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-400">
-                            {Object.keys(o.venueOverrides).length} Branch Override
-                            {Object.keys(o.venueOverrides).length > 1 ? "s" : ""}
-                          </span>
-                        )}
-                        {o.tags &&
-                          o.tags.map((t) => (
-                            <span
-                              key={t}
-                              className={cn(
-                                "rounded-full px-2 py-0.5 text-[10px] font-medium",
-                                isDietaryClaimTag(t)
-                                  ? "bg-primary/10 text-primary border border-primary/20"
-                                  : "bg-secondary text-secondary-foreground",
-                              )}
-                            >
-                              {t}
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {o.sharedOfferingId && (
+                            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-400">
+                              Shared
                             </span>
-                          ))}
+                          )}
+                          {o.schedule?.enabled && (
+                            <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                              🕒 {formatSchedule(o.schedule)}
+                            </span>
+                          )}
+                          {o.venueOverrides && Object.keys(o.venueOverrides).length > 0 && (
+                            <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-400">
+                              {Object.keys(o.venueOverrides).length} Branch Override
+                              {Object.keys(o.venueOverrides).length > 1 ? "s" : ""}
+                            </span>
+                          )}
+                          {o.tags &&
+                            o.tags.map((t) => (
+                              <span
+                                key={t}
+                                className={cn(
+                                  "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                                  isDietaryClaimTag(t)
+                                    ? "bg-primary/10 text-primary border border-primary/20"
+                                    : "bg-secondary text-secondary-foreground",
+                                )}
+                              >
+                                {t}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {canToggleAvailability(s.role) && (
+                          <label className="flex flex-col items-center text-[10px] text-muted-foreground shrink-0 cursor-pointer">
+                            <Switch
+                              checked={o.available}
+                              onCheckedChange={() => s.toggleAvailability(menu.id, sec.id, o.id)}
+                              aria-label="Available"
+                            />
+                            <span className="mt-0.5">{o.available ? "Active" : "Sold out"}</span>
+                          </label>
+                        )}
+
+                        {author && (
+                          <IconBtn
+                            label="Edit item"
+                            onClick={() =>
+                              setEditingOffering({
+                                sectionId: sec.id,
+                                offering: o,
+                              })
+                            }
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </IconBtn>
+                        )}
                       </div>
                     </div>
 
-                    {/* Quick Move Offering to Another Section */}
-                    {author && menu.sections.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setMoveItemPicker({
-                            offeringId: o.id,
-                            fromSectionId: sec.id,
-                            offeringName: o.name,
-                          })
-                        }
-                        className="h-8 px-1.5 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors flex items-center gap-0.5"
-                        title="Move to another section"
-                        aria-label="Move to another section"
-                      >
-                        <MoveRight className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-
-                    {/* Mobile Reorder and Duplicate Controls */}
+                    {/* Reorder, Duplicate and Move Controls */}
                     {author && (
-                      <div className="flex items-center gap-0.5">
-                        <IconBtn
-                          label="Move item up"
-                          disabled={oIdx === 0}
-                          onClick={() => s.moveOfferingWithinSection(menu.id, sec.id, o.id, -1)}
-                        >
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </IconBtn>
-                        <IconBtn
-                          label="Move item down"
-                          disabled={oIdx === sec.offerings.length - 1}
-                          onClick={() => s.moveOfferingWithinSection(menu.id, sec.id, o.id, 1)}
-                        >
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </IconBtn>
-                        <IconBtn
-                          label="Duplicate item"
-                          onClick={() => handleDuplicateOffering(sec.id, o.id)}
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </IconBtn>
+                      <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-border/40 text-xs">
+                        {menu.sections.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setMoveItemPicker({
+                                offeringId: o.id,
+                                fromSectionId: sec.id,
+                                offeringName: o.name,
+                              })
+                            }
+                            className="h-8 px-2 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors flex items-center gap-1"
+                            title="Move to another section"
+                            aria-label="Move to another section"
+                          >
+                            <MoveRight className="h-3.5 w-3.5" />
+                            <span>Move section</span>
+                          </button>
+                        ) : (
+                          <div />
+                        )}
+
+                        <div className="flex items-center gap-0.5">
+                          <IconBtn
+                            label="Move item up"
+                            disabled={oIdx === 0}
+                            onClick={() => s.moveOfferingWithinSection(menu.id, sec.id, o.id, -1)}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </IconBtn>
+                          <IconBtn
+                            label="Move item down"
+                            disabled={oIdx === sec.offerings.length - 1}
+                            onClick={() => s.moveOfferingWithinSection(menu.id, sec.id, o.id, 1)}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </IconBtn>
+                          <IconBtn
+                            label="Duplicate item"
+                            onClick={() => handleDuplicateOffering(sec.id, o.id)}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </IconBtn>
+                        </div>
                       </div>
-                    )}
-
-                    {canToggleAvailability(s.role) && (
-                      <label className="flex flex-col items-center text-[10px] text-muted-foreground shrink-0 cursor-pointer">
-                        <Switch
-                          checked={o.available}
-                          onCheckedChange={() => s.toggleAvailability(menu.id, sec.id, o.id)}
-                          aria-label="Available"
-                        />
-                        <span className="mt-0.5">{o.available ? "Active" : "Sold out"}</span>
-                      </label>
-                    )}
-
-                    {author && (
-                      <IconBtn
-                        label="Edit item"
-                        onClick={() =>
-                          setEditingOffering({
-                            sectionId: sec.id,
-                            offering: o,
-                          })
-                        }
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </IconBtn>
                     )}
                   </li>
                 ))
