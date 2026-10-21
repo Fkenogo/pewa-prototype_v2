@@ -542,9 +542,10 @@ export const usePewa = create<PewaState & Actions>()(
           )
             return false;
           const policy = { ...s.orderPolicy };
+          const maxRecoverable = policy.overdraftMax ?? 10;
           if (policy.included > 0 && !policy.expired) policy.included -= 1;
           else if (policy.topUp > 0) policy.topUp -= 1;
-          else if (policy.overdraftUsed < 10) policy.overdraftUsed += 1;
+          else if (policy.overdraftUsed < maxRecoverable) policy.overdraftUsed += 1;
           else return false;
           set({
             orderPolicy: policy,
@@ -718,33 +719,37 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         recordPromotionImpression: (campaignId) => {
+          // Simulated non-authoritative exposure accounting per CORR-B:
+          // Prototype simulates an exposure fee ($0.10) per delivered impression, capped at available budget.
+          const SIMULATED_IMPRESSION_COST = 0.1;
           set((s) => ({
             campaigns: s.campaigns.map((c) =>
               c.id === campaignId
                 ? {
                     ...c,
                     impressions: c.impressions + 1,
-                    spent: Math.min(c.budget, +(c.spent + 0.1).toFixed(2)),
+                    spent: Math.min(c.budget, +(c.spent + SIMULATED_IMPRESSION_COST).toFixed(2)),
                   }
                 : c,
             ),
           }));
         },
         recordPromotionClick: (campaignId) => {
+          // Engagement tracking per CORR-B:
+          // Clicks are tracked separately as engagement metrics and MUST NOT draw down promotional budget.
           set((s) => ({
             campaigns: s.campaigns.map((c) =>
               c.id === campaignId
                 ? {
                     ...c,
                     clicks: c.clicks + 1,
-                    spent: Math.min(c.budget, +(c.spent + 0.25).toFixed(2)),
                   }
                 : c,
             ),
           }));
           get().log({
             kind: "promo.clicked",
-            message: `Sponsored offer clicked (campaign: ${campaignId})`,
+            message: `Sponsored offer clicked (campaign: ${campaignId}) — engagement tracked; zero budget charged`,
           });
         },
         setRole: (role) => {

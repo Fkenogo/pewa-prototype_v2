@@ -798,13 +798,19 @@ export function OperatorConsolePage() {
                               Budget: <strong>${camp.budget}</strong>
                             </span>
                             <span>
-                              Spent: <strong>${camp.spent}</strong>
+                              Spent: <strong>${camp.spent}</strong>{" "}
+                              <span className="text-[10px] text-muted-foreground italic">
+                                (simulated exposure)
+                              </span>
                             </span>
                             <span>
                               Impressions: <strong>{camp.impressions}</strong>
                             </span>
                             <span>
-                              Clicks: <strong>{camp.clicks}</strong>
+                              Clicks: <strong>{camp.clicks}</strong>{" "}
+                              <span className="text-[10px] text-muted-foreground italic">
+                                (engagement)
+                              </span>
                             </span>
                             <span>
                               CTR:{" "}

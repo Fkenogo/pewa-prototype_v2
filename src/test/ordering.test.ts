@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { usePewa, canManageBilling, canManagePromotions, canViewActivity } from "@/lib/pewa/store";
-import { validateCart } from "@/lib/pewa/ordering";
+import { canAdmitOrder, getAvailableCapacity, validateCart } from "@/lib/pewa/ordering";
 
 const customer = {
   guestName: "Guest",
@@ -257,18 +257,26 @@ describe("Slice P5: Advanced experiences (Hotel, Sponsored offers & RBAC)", () =
     expect(usePewa.getState().guestSession).toBeNull();
   });
 
-  it("sponsored offers: campaign tracking increments impressions and clicks", () => {
+  it("sponsored offers: campaign tracking increments impressions and clicks with impression-only spend", () => {
     usePewa.getState().loadScenario("sponsored-campaign");
-    const camp = usePewa.getState().campaigns[0];
-    expect(camp?.active).toBe(true);
-    const initialImpressions = camp?.impressions ?? 0;
-    const initialClicks = camp?.clicks ?? 0;
+    const camp = usePewa.getState().campaigns[0]!;
+    expect(camp.active).toBe(true);
+    const initialImpressions = camp.impressions;
+    const initialClicks = camp.clicks;
+    const initialSpent = camp.spent;
 
-    usePewa.getState().recordPromotionImpression(camp!.id);
-    expect(usePewa.getState().campaigns[0]?.impressions).toBe(initialImpressions + 1);
+    // 1. Impression delivery increments impressions and charges simulated exposure ($0.10)
+    usePewa.getState().recordPromotionImpression(camp.id);
+    const afterImpression = usePewa.getState().campaigns[0]!;
+    expect(afterImpression.impressions).toBe(initialImpressions + 1);
+    expect(afterImpression.spent).toBeCloseTo(initialSpent + 0.1, 2);
 
-    usePewa.getState().recordPromotionClick(camp!.id);
-    expect(usePewa.getState().campaigns[0]?.clicks).toBe(initialClicks + 1);
+    // 2. Click tracking increments clicks but charges ZERO budget (CORR-B)
+    const spentBeforeClick = afterImpression.spent;
+    usePewa.getState().recordPromotionClick(camp.id);
+    const afterClick = usePewa.getState().campaigns[0]!;
+    expect(afterClick.clicks).toBe(initialClicks + 1);
+    expect(afterClick.spent).toBe(spentBeforeClick);
   });
 
   it("multi-brand scenario loads multiple venues under one organisation", () => {
@@ -291,5 +299,240 @@ describe("Slice P5: Advanced experiences (Hotel, Sponsored offers & RBAC)", () =
     expect(canViewActivity("staff")).toBe(true);
     expect(canViewActivity("customer")).toBe(false);
     expect(canViewActivity("operator")).toBe(false);
+  });
+});
+
+describe("CORR-A: Consumption admission consistency", () => {
+  beforeEach(() => {
+    usePewa.getState().loadScenario("units-available");
+    usePewa.getState().setRole("owner");
+  });
+
+  it("admits orders when included units are available", () => {
+    const policy = {
+      included: 50,
+      includedMax: 200,
+      topUp: 0,
+      overdraftUsed: 0,
+      overdraftMax: 10,
+      expired: false,
+      cycleRenewsAt: "2026-11-19T00:00:00.000Z",
+      tier: "Base Monthly Tier",
+    };
+    expect(canAdmitOrder(policy)).toBe(true);
+    expect(getAvailableCapacity(policy)).toBe(60); // 50 regular + 10 recoverable
+  });
+
+  it("admits orders when included units are zero but top-up units exist", () => {
+    const policy = {
+      included: 0,
+      includedMax: 200,
+      topUp: 15,
+      overdraftUsed: 0,
+      overdraftMax: 10,
+      expired: false,
+      cycleRenewsAt: "2026-11-19T00:00:00.000Z",
+      tier: "Base Monthly Tier",
+    };
+    expect(canAdmitOrder(policy)).toBe(true);
+    expect(getAvailableCapacity(policy)).toBe(25); // 15 topUp + 10 recoverable
+  });
+
+  it("admits orders when included and top-up are zero but recoverable units remain", () => {
+    const policy = {
+      included: 0,
+      includedMax: 200,
+      topUp: 0,
+      overdraftUsed: 4,
+      overdraftMax: 10,
+      expired: false,
+      cycleRenewsAt: "2026-11-19T00:00:00.000Z",
+      tier: "Base Monthly Tier",
+    };
+    expect(canAdmitOrder(policy)).toBe(true);
+    expect(getAvailableCapacity(policy)).toBe(6); // 10 max - 4 used = 6
+  });
+
+  it("pauses admissions when regular units and all 10 recoverable units are exhausted", () => {
+    const policy = {
+      included: 0,
+      includedMax: 200,
+      topUp: 0,
+      overdraftUsed: 10,
+      overdraftMax: 10,
+      expired: false,
+      cycleRenewsAt: "2026-11-19T00:00:00.000Z",
+      tier: "Base Monthly Tier",
+    };
+    expect(canAdmitOrder(policy)).toBe(false);
+    expect(getAvailableCapacity(policy)).toBe(0);
+  });
+
+  it("pauses admissions when subscription is expired, regardless of remaining units", () => {
+    const policyWithIncluded = {
+      included: 150,
+      includedMax: 200,
+      topUp: 20,
+      overdraftUsed: 0,
+      overdraftMax: 10,
+      expired: true,
+      cycleRenewsAt: "2026-10-01T00:00:00.000Z",
+      tier: "Base Monthly Tier",
+    };
+    expect(canAdmitOrder(policyWithIncluded)).toBe(false);
+    expect(getAvailableCapacity(policyWithIncluded)).toBe(0);
+  });
+
+  it("enforces admission check at cart addition and order submission", () => {
+    usePewa.setState((s) => ({
+      orderPolicy: {
+        ...s.orderPolicy,
+        included: 0,
+        topUp: 0,
+        overdraftUsed: 10,
+        expired: false,
+      },
+    }));
+    // Cart addition fails
+    const cartErr = addItem();
+    expect(cartErr).toContain("paused");
+
+    // Force line into cart and verify submitOrder fails
+    usePewa.setState({
+      cart: {
+        venueId: "venue_ggc",
+        lines: [
+          {
+            id: "line_test",
+            menuId: "menu_ggc_allday",
+            offeringId: "off_flat",
+            name: "Flat White",
+            emoji: "☕",
+            basePrice: 280,
+            options: [],
+            quantity: 1,
+            note: "",
+          },
+        ],
+      },
+    });
+    const subRes = usePewa.getState().submitOrder(customer);
+    expect(subRes.error).toContain("paused");
+  });
+
+  it("idempotent acceptance consumes exactly one unit across duplicate calls", () => {
+    const id = submit();
+    const initialIncluded = usePewa.getState().orderPolicy.included;
+
+    // First acceptance succeeds and consumes 1 unit
+    expect(usePewa.getState().acceptOrder(id)).toBe(true);
+    expect(usePewa.getState().orderPolicy.included).toBe(initialIncluded - 1);
+    expect(usePewa.getState().orders.find((o) => o.id === id)?.unitConsumed).toBe(true);
+
+    // Second acceptance on already-accepted order fails and consumes zero additional units
+    expect(usePewa.getState().acceptOrder(id)).toBe(false);
+    expect(usePewa.getState().orderPolicy.included).toBe(initialIncluded - 1);
+  });
+
+  it("acceptance draws from included first, then top-up, then recoverable overdraft", () => {
+    // 1. Included units available
+    usePewa.setState((s) => ({
+      orderPolicy: { ...s.orderPolicy, included: 1, topUp: 5, overdraftUsed: 0, expired: false },
+    }));
+    const id1 = submit();
+    expect(usePewa.getState().acceptOrder(id1)).toBe(true);
+    expect(usePewa.getState().orderPolicy.included).toBe(0);
+    expect(usePewa.getState().orderPolicy.topUp).toBe(5);
+    expect(usePewa.getState().orderPolicy.overdraftUsed).toBe(0);
+
+    // 2. Included is 0, draws from top-up
+    const id2 = submit();
+    expect(usePewa.getState().acceptOrder(id2)).toBe(true);
+    expect(usePewa.getState().orderPolicy.included).toBe(0);
+    expect(usePewa.getState().orderPolicy.topUp).toBe(4);
+    expect(usePewa.getState().orderPolicy.overdraftUsed).toBe(0);
+
+    // 3. Included and topUp are 0, draws from recoverable overdraft
+    usePewa.setState((s) => ({
+      orderPolicy: { ...s.orderPolicy, included: 0, topUp: 0, overdraftUsed: 0, expired: false },
+    }));
+    const id3 = submit();
+    expect(usePewa.getState().acceptOrder(id3)).toBe(true);
+    expect(usePewa.getState().orderPolicy.included).toBe(0);
+    expect(usePewa.getState().orderPolicy.topUp).toBe(0);
+    expect(usePewa.getState().orderPolicy.overdraftUsed).toBe(1);
+  });
+
+  it("zero capacity preserves published menus and direct contact info", () => {
+    usePewa.getState().loadScenario("zero-units");
+    const state = usePewa.getState();
+    expect(canAdmitOrder(state.orderPolicy)).toBe(false);
+    expect(state.menus[0]?.status).toBe("published");
+    expect(state.menus[0]?.sections.length).toBeGreaterThan(0);
+    expect(state.venues[0]?.contact.phone).toBeTruthy();
+    expect(state.venues[0]?.contact.whatsapp).toBeTruthy();
+  });
+});
+
+describe("CORR-B: Impression-based promotion accounting", () => {
+  beforeEach(() => {
+    usePewa.getState().loadScenario("sponsored-campaign");
+  });
+
+  it("delivers promotional impressions and charges simulated exposure fee", () => {
+    const camp = usePewa.getState().campaigns[0]!;
+    const initialImpressions = camp.impressions;
+    const initialSpent = camp.spent;
+
+    usePewa.getState().recordPromotionImpression(camp.id);
+    const updated = usePewa.getState().campaigns[0]!;
+    expect(updated.impressions).toBe(initialImpressions + 1);
+    expect(updated.spent).toBeCloseTo(initialSpent + 0.1, 2);
+  });
+
+  it("tracks clicks as engagement without deducting promotional budget", () => {
+    const camp = usePewa.getState().campaigns[0]!;
+    const initialClicks = camp.clicks;
+    const initialSpent = camp.spent;
+
+    usePewa.getState().recordPromotionClick(camp.id);
+    const updated = usePewa.getState().campaigns[0]!;
+    expect(updated.clicks).toBe(initialClicks + 1);
+    expect(updated.spent).toBe(initialSpent); // Zero budget charged for click
+  });
+
+  it("caps promotional spend at campaign budget regardless of impression volume", () => {
+    const camp = usePewa.getState().campaigns[0]!;
+    usePewa.setState((s) => ({
+      campaigns: s.campaigns.map((c) =>
+        c.id === camp.id ? { ...c, budget: 10.0, spent: 9.95 } : c,
+      ),
+    }));
+
+    usePewa.getState().recordPromotionImpression(camp.id);
+    const updated = usePewa.getState().campaigns[0]!;
+    expect(updated.spent).toBe(10.0); // Capped at budget
+
+    // Additional impressions do not exceed budget
+    usePewa.getState().recordPromotionImpression(camp.id);
+    const afterSecond = usePewa.getState().campaigns[0]!;
+    expect(afterSecond.spent).toBe(10.0);
+    expect(afterSecond.impressions).toBe(updated.impressions + 1);
+  });
+
+  it("preserves campaign configuration and metadata across impression/click updates", () => {
+    const camp = usePewa.getState().campaigns[0]!;
+    usePewa.getState().recordPromotionImpression(camp.id);
+    usePewa.getState().recordPromotionClick(camp.id);
+
+    const updated = usePewa.getState().campaigns[0]!;
+    expect(updated.id).toBe(camp.id);
+    expect(updated.orgId).toBe(camp.orgId);
+    expect(updated.venueId).toBe(camp.venueId);
+    expect(updated.title).toBe(camp.title);
+    expect(updated.tagline).toBe(camp.tagline);
+    expect(updated.badgeText).toBe("Sponsored");
+    expect(updated.budget).toBe(camp.budget);
+    expect(updated.active).toBe(true);
   });
 });

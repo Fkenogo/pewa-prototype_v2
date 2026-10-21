@@ -151,6 +151,9 @@ function PromotionsPage() {
                 </p>
                 <p>
                   Only delivered, on-screen qualifying impressions count toward campaign activity.
+                  Clicks are tracked separately as engagement and do not draw down budget.
+                  (Simulated impression pricing at $0.10/impression is non-authoritative prototype
+                  simulation).
                 </p>
               </div>
             </div>
@@ -226,9 +229,14 @@ function PromotionsPage() {
                         </div>
 
                         <div className="mt-4 flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">
-                            Spend: <b>${camp.spent.toFixed(2)}</b> / ${camp.budget.toFixed(2)}
-                          </span>
+                          <div>
+                            <span className="text-xs text-muted-foreground">
+                              Spend: <b>${camp.spent.toFixed(2)}</b> / ${camp.budget.toFixed(2)}
+                            </span>
+                            <span className="block text-[10px] text-muted-foreground italic">
+                              Simulated exposure rate ($0.10/view); clicks do not consume budget
+                            </span>
+                          </div>
                           <Button
                             variant="outline"
                             size="sm"

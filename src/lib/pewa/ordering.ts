@@ -17,8 +17,21 @@ export const lineTotal = (line: CartLine) =>
   line.quantity;
 export const cartTotal = (lines: CartLine[]) =>
   lines.reduce((sum, line) => sum + lineTotal(line), 0);
-export const canAdmitOrder = (policy: OrderPolicy | null | undefined): boolean =>
-  Boolean(policy && !policy.expired && policy.included + policy.topUp > 0);
+export const getAvailableCapacity = (policy: OrderPolicy | null | undefined): number => {
+  if (!policy || policy.expired) return 0;
+  const regular = (policy.included ?? 0) + (policy.topUp ?? 0);
+  const maxRecoverable = policy.overdraftMax ?? 10;
+  const recoverableRemaining = Math.max(0, maxRecoverable - (policy.overdraftUsed ?? 0));
+  return regular + recoverableRemaining;
+};
+
+export const canAdmitOrder = (policy: OrderPolicy | null | undefined): boolean => {
+  if (!policy || policy.expired) return false;
+  const regular = (policy.included ?? 0) + (policy.topUp ?? 0);
+  const maxRecoverable = policy.overdraftMax ?? 10;
+  const recoverableRemaining = Math.max(0, maxRecoverable - (policy.overdraftUsed ?? 0));
+  return regular + recoverableRemaining > 0;
+};
 
 export function getAuthoritativeVenues(state: { venues: Venue[] }): Venue[] {
   const storeVenueIds = new Set(state.venues.map((v) => v.id));

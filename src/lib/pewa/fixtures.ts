@@ -737,7 +737,16 @@ export function buildScenario(
     sharedOfferings: sampleSharedOfferings,
     simulatedTime: "10:00",
   };
-  if (id === "zero-units" || id === "admitted-pending") common.orderPolicy.included = 0;
+  if (id === "zero-units") {
+    common.orderPolicy.included = 0;
+    common.orderPolicy.topUp = 0;
+    common.orderPolicy.overdraftUsed = 10;
+  }
+  if (id === "admitted-pending") {
+    common.orderPolicy.included = 0;
+    common.orderPolicy.topUp = 0;
+    common.orderPolicy.overdraftUsed = 0;
+  }
 
   if (id === "new-cafe") {
     return {

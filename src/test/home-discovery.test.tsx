@@ -309,8 +309,12 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       const addErr = usePewa.getState().addCartLine(cloudBurgerVenue.id, {
         offeringId: wagyuOffering!.id,
         menuId: cloudBurgerMenu.id,
+        name: wagyuOffering!.name,
+        emoji: wagyuOffering!.emoji,
+        basePrice: wagyuOffering!.price,
         quantity: 1,
         options: [],
+        note: "",
       });
       expect(addErr).toBeNull();
 
@@ -327,6 +331,7 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
         guestName: "Alice Mwangi",
         guestContact: "+254711000111",
         service: "Delivery",
+        note: "",
       });
       expect(submitRes.error).toBeUndefined();
       expect(submitRes.id).toBeDefined();
@@ -352,13 +357,17 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       const addErr = usePewa.getState().addCartLine(cloudBurgerVenue.id, {
         offeringId: wagyuOffering!.id,
         menuId: cloudBurgerMenu.id,
+        name: wagyuOffering!.name,
+        emoji: wagyuOffering!.emoji,
+        basePrice: wagyuOffering!.price,
         quantity: 1,
         options: [],
+        note: "",
       });
       expect(addErr).toContain("Structured requests are paused");
     });
 
-    it("Finding 2 (P2): persists campaign in store and tracks impressions and clicks with live spend", () => {
+    it("Finding 2 (P2): persists campaign in store and tracks impressions and clicks with impression-only spend", () => {
       usePewa.getState().loadScenario("new-cafe");
       const initialCampaigns = usePewa.getState().campaigns;
       expect(initialCampaigns.length).toBeGreaterThan(0);
@@ -376,7 +385,14 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
 
       const updated = usePewa.getState().campaigns.find((c) => c.id === camp.id);
       expect(updated?.clicks).toBe(initialClicks + 1);
-      expect(updated?.spent).toBeGreaterThan(initialSpent);
+      expect(updated?.spent).toBeGreaterThan(initialSpent); // Impression incremented spend
+
+      // Verify second click increments engagement without drawing down budget (CORR-B)
+      const spentAfterFirstClick = updated!.spent;
+      usePewa.getState().recordPromotionClick(camp.id);
+      const afterSecondClick = usePewa.getState().campaigns.find((c) => c.id === camp.id);
+      expect(afterSecondClick?.clicks).toBe(initialClicks + 2);
+      expect(afterSecondClick?.spent).toBe(spentAfterFirstClick);
     });
 
     it("Finding 3 (P2): derives menu-only badge using !canAdmitOrder(orderPolicy) predicate", () => {
@@ -396,11 +412,49 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
         },
       });
       expect(canAdmitOrder(usePewa.getState().orderPolicy)).toBe(true);
-      const { unmount } = render(<Discovery />);
+      const { unmount: unmount1 } = render(<Discovery />);
       expect(screen.queryByText(/📖 Menu & Direct Contact/i)).not.toBeInTheDocument();
-      unmount();
+      unmount1();
 
-      // 2. Expired subscription with remaining included units fails canAdmitOrder, so menu-only badge appears
+      // 2. With 0 included units and 0 top-up units, but eligible recoverable capacity remaining,
+      // canAdmitOrder is true, so business does NOT appear menu-only (CORR-A)
+      usePewa.setState({
+        orderPolicy: {
+          included: 0,
+          includedMax: 200,
+          topUp: 0,
+          overdraftUsed: 2,
+          overdraftMax: 10,
+          expired: false,
+          cycleRenewsAt: "2026-11-19T00:00:00.000Z",
+          tier: "Base Monthly Tier",
+        },
+      });
+      expect(canAdmitOrder(usePewa.getState().orderPolicy)).toBe(true);
+      const { unmount: unmount2 } = render(<Discovery />);
+      expect(screen.queryByText(/📖 Menu & Direct Contact/i)).not.toBeInTheDocument();
+      unmount2();
+
+      // 3. When recoverable capacity is exhausted (overdraftUsed >= overdraftMax) and units are 0,
+      // canAdmitOrder is false, so menu-only badge appears
+      usePewa.setState({
+        orderPolicy: {
+          included: 0,
+          includedMax: 200,
+          topUp: 0,
+          overdraftUsed: 10,
+          overdraftMax: 10,
+          expired: false,
+          cycleRenewsAt: "2026-11-19T00:00:00.000Z",
+          tier: "Base Monthly Tier",
+        },
+      });
+      expect(canAdmitOrder(usePewa.getState().orderPolicy)).toBe(false);
+      const { unmount: unmount3 } = render(<Discovery />);
+      expect(screen.getAllByText(/📖 Menu & Direct Contact/i).length).toBeGreaterThan(0);
+      unmount3();
+
+      // 4. Expired subscription with remaining included units fails canAdmitOrder, so menu-only badge appears
       usePewa.setState({
         orderPolicy: {
           included: 50,
