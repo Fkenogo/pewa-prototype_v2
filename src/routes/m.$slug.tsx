@@ -203,11 +203,14 @@ function PublicMenu() {
           ))}
         </div>
       </header>
-      <div className="flex items-center justify-between gap-2 px-4 py-3 text-xs">
-        <Link to="/" className="text-primary underline">
+      <div className="flex items-center justify-between gap-2 px-4 py-2 text-xs">
+        <Link to="/" className="flex h-10 items-center font-medium text-primary hover:underline">
           ← Discover menus
         </Link>
-        <Link to="/orders" className="text-primary underline">
+        <Link
+          to="/orders"
+          className="flex h-10 items-center font-medium text-primary hover:underline"
+        >
           My requests
         </Link>
       </div>
