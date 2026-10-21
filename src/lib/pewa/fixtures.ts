@@ -658,6 +658,38 @@ const promoSeedCampaign: PromotionCampaign = {
   endDate: "2026-10-31T00:00:00.000Z",
 };
 
+export {
+  greenGardenVenue,
+  greenGardenMenu,
+  hotelVenue,
+  hotelPublicMenu,
+  hotelProtectedMenu,
+  cloudBurgerVenue,
+  cloudBurgerMenu,
+  solBakeryVenue,
+  solBakeryMenu,
+  gelatoLabVenue,
+  gelatoLabMenu,
+  promoSeedCampaign,
+};
+
+export const PROTOTYPE_DIRECTORY_VENUES: Venue[] = [
+  greenGardenVenue,
+  hotelVenue,
+  cloudBurgerVenue,
+  solBakeryVenue,
+  gelatoLabVenue,
+];
+
+export const PROTOTYPE_DIRECTORY_MENUS: Menu[] = [
+  greenGardenMenu(false),
+  hotelPublicMenu,
+  hotelProtectedMenu,
+  cloudBurgerMenu,
+  solBakeryMenu,
+  gelatoLabMenu,
+];
+
 export function buildScenario(
   id: ScenarioId,
 ): Omit<PewaState, "role"> & { role: PewaState["role"] } {

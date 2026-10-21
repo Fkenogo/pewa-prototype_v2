@@ -21,7 +21,7 @@ import type {
   ModerationCase,
   VenueOfferingOverride,
 } from "./types";
-import { buildScenario } from "./fixtures";
+import { buildScenario, PROTOTYPE_DIRECTORY_VENUES, PROTOTYPE_DIRECTORY_MENUS } from "./fixtures";
 import { getVenuePublishedMenus } from "./taxonomy";
 import {
   canAdmitOrder,
@@ -391,10 +391,18 @@ export const usePewa = create<PewaState & Actions>()(
           if (s.cart?.lines.length && s.cart.venueId !== venueId)
             return "Your cart belongs to another business. Clear it before starting a new cart.";
 
-          const venue = s.venues.find((v) => v.id === venueId);
+          const allVenues = [
+            ...s.venues,
+            ...PROTOTYPE_DIRECTORY_VENUES.filter((dv) => !s.venues.some((v) => v.id === dv.id)),
+          ];
+          const allMenus = [
+            ...s.menus,
+            ...PROTOTYPE_DIRECTORY_MENUS.filter((dm) => !s.menus.some((m) => m.id === dm.id)),
+          ];
+          const venue = allVenues.find((v) => v.id === venueId);
           if (!venue) return "This venue is no longer available.";
 
-          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+          const venuePublishedMenus = getVenuePublishedMenus(venue, allMenus, allVenues, {
             includeProtected: true,
           });
           const publishedMenu = venuePublishedMenus.find((m) => m.id === line.menuId);

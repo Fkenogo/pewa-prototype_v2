@@ -40,6 +40,7 @@ import {
   isOfferingHiddenAtVenue,
   getMenuEffectiveSharedOfferings,
 } from "@/lib/pewa/availability";
+import { PROTOTYPE_DIRECTORY_VENUES, PROTOTYPE_DIRECTORY_MENUS } from "@/lib/pewa/fixtures";
 
 export const Route = createFileRoute("/m/$slug")({
   validateSearch: (search: Record<string, unknown>): { preview?: string | undefined } => ({
@@ -81,7 +82,15 @@ function PublicMenu() {
     verifyGuestSession,
     clearGuestSession,
   } = usePewa();
-  const venue = venues.find((v) => v.slug === slug);
+  const allVenues = [
+    ...venues,
+    ...PROTOTYPE_DIRECTORY_VENUES.filter((dv) => !venues.some((v) => v.id === dv.id)),
+  ];
+  const allMenus = [
+    ...menus,
+    ...PROTOTYPE_DIRECTORY_MENUS.filter((dm) => !menus.some((m) => m.id === dm.id)),
+  ];
+  const venue = allVenues.find((v) => v.slug === slug);
 
   // CORR-A: Controlled draft preview
   // Preview access requires an explicitly authorised simulated merchant role with appropriate organisation/venue scope.
@@ -96,7 +105,7 @@ function PublicMenu() {
           (m) =>
             m.id === previewMenuId &&
             m.orgId === organisation.id &&
-            isMenuEligibleForVenue(m, venue, venues),
+            isMenuEligibleForVenue(m, venue, allVenues),
         )
       : undefined;
 
@@ -107,7 +116,7 @@ function PublicMenu() {
   const live: Menu[] = venue
     ? previewMenu
       ? [previewMenu]
-      : getVenuePublishedMenus(venue, menus, venues, { includeProtected: true })
+      : getVenuePublishedMenus(venue, allMenus, allVenues, { includeProtected: true })
     : [];
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
