@@ -9,7 +9,7 @@ import type {
   UsageDisputeCase,
   Venue,
 } from "./types";
-import { PROTOTYPE_IMAGE_LIBRARY } from "./taxonomy";
+import { getCuratedLibraryImageUrl } from "./taxonomy";
 
 export const SCENARIOS: { id: ScenarioId; label: string; ready: boolean; hint: string }[] = [
   { id: "new-cafe", label: "New café", ready: true, hint: "Empty workspace — start onboarding" },
@@ -125,7 +125,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           tags: ["Hot", "House Blend"],
           available: true,
           emoji: "☕",
-          image: PROTOTYPE_IMAGE_LIBRARY[0]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_flat_white"),
           imageSource: "library",
           modifiers: [
             {
@@ -152,7 +152,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           tags: ["Iced", "Vegan", "Single Origin"],
           available: !soldOut,
           emoji: "🧊",
-          image: PROTOTYPE_IMAGE_LIBRARY[1]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_cold_brew"),
           imageSource: "library",
           modifiers: [],
         },
@@ -170,7 +170,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           tags: ["Vegetarian", "Organic"],
           available: true,
           emoji: "🥑",
-          image: PROTOTYPE_IMAGE_LIBRARY[2]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_avo_toast"),
           imageSource: "library",
           modifiers: [
             {
@@ -188,7 +188,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           tags: ["Vegetarian", "Freshly Baked"],
           available: true,
           emoji: "🍩",
-          image: PROTOTYPE_IMAGE_LIBRARY[9]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_mandazi"),
           imageSource: "library",
           modifiers: [],
         },
@@ -239,7 +239,7 @@ const hotelPublicMenu: Menu = {
           specialBadge: "Chef's Special",
           available: true,
           emoji: "🥩",
-          image: PROTOTYPE_IMAGE_LIBRARY[6]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_steak_frites"),
           imageSource: "library",
           modifiers: [],
         },
@@ -251,7 +251,7 @@ const hotelPublicMenu: Menu = {
           tags: ["Vegetarian", "Signature"],
           available: true,
           emoji: "🍲",
-          image: PROTOTYPE_IMAGE_LIBRARY[7]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_risotto"),
           imageSource: "library",
           modifiers: [],
         },
@@ -341,7 +341,7 @@ const cloudBurgerMenu: Menu = {
           specialBadge: "20% Off Launch",
           available: true,
           emoji: "🍔",
-          image: PROTOTYPE_IMAGE_LIBRARY[5]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_wagyu_smash"),
           imageSource: "library",
           modifiers: [],
         },
@@ -410,7 +410,7 @@ const solBakeryMenu: Menu = {
           tags: ["Vegan", "Sourdough", "Organic"],
           available: true,
           emoji: "🥖",
-          image: PROTOTYPE_IMAGE_LIBRARY[4]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_sourdough"),
           imageSource: "library",
           modifiers: [],
         },
@@ -428,7 +428,7 @@ const solBakeryMenu: Menu = {
           tags: ["Freshly Baked", "Vegetarian"],
           available: true,
           emoji: "🥐",
-          image: PROTOTYPE_IMAGE_LIBRARY[3]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_croissant"),
           imageSource: "library",
           modifiers: [],
         },
@@ -459,7 +459,7 @@ const gelatoLabMenu: Menu = {
           tags: ["Gluten-Free", "Vegetarian", "Signature"],
           available: true,
           emoji: "🍨",
-          image: PROTOTYPE_IMAGE_LIBRARY[8]?.url ?? "",
+          image: getCuratedLibraryImageUrl("img_pistachio_gelato"),
           imageSource: "library",
           modifiers: [],
         },

@@ -421,6 +421,21 @@ export const PROTOTYPE_IMAGE_LIBRARY: CuratedLibraryImage[] = [
 ];
 
 /**
+ * Resolves a curated library image by its stable ID.
+ */
+export function getCuratedLibraryImage(id: string): CuratedLibraryImage | undefined {
+  return PROTOTYPE_IMAGE_LIBRARY.find((img) => img.id === id);
+}
+
+/**
+ * Returns the URL for a curated library image by its stable ID, or an empty string if not found.
+ */
+export function getCuratedLibraryImageUrl(id: string): string {
+  const item = getCuratedLibraryImage(id);
+  return item ? item.url : "";
+}
+
+/**
  * Searches and filters the prototype curated image library by keyword and/or category.
  */
 export function searchImageLibrary(
