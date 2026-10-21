@@ -9,7 +9,12 @@ import {
   getAuthoritativeVenues,
   getAuthoritativeMenus,
 } from "@/lib/pewa/ordering";
-import { cloudBurgerVenue, cloudBurgerMenu } from "@/lib/pewa/fixtures";
+import {
+  cloudBurgerVenue,
+  cloudBurgerMenu,
+  PROTOTYPE_DIRECTORY_VENUES,
+  PROTOTYPE_DIRECTORY_MENUS,
+} from "@/lib/pewa/fixtures";
 
 // Mock @tanstack/react-router Link for testing
 vi.mock("@tanstack/react-router", () => ({
@@ -698,21 +703,19 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       fireEvent.click(seeNearbyBtn);
 
       // Graceful fallback notice should be displayed without broken UI
-      expect(screen.getByText(/Location access was denied or unavailable/i)).toBeInTheDocument();
+      expect(screen.getByText(/Location access was denied/i)).toBeInTheDocument();
 
       // Dismiss the notice
       const dismissBtn = screen.getByRole("button", { name: /Dismiss location notice/i });
       fireEvent.click(dismissBtn);
-      expect(
-        screen.queryByText(/Location access was denied or unavailable/i),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/Location access was denied/i)).not.toBeInTheDocument();
 
       // 2. Test granted flow
       mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
         success({
           coords: {
-            latitude: -1.2921,
-            longitude: 36.8219,
+            latitude: -1.2841,
+            longitude: 36.8236,
             accuracy: 10,
             altitude: null,
             altitudeAccuracy: null,
@@ -724,9 +727,7 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       });
 
       fireEvent.click(seeNearbyBtn);
-      expect(
-        screen.getByText(/Showing venues within your local service area/i),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Showing businesses within ~3 km/i)).toBeInTheDocument();
       expect(screen.getByText(/Nearby Area Active/i)).toBeInTheDocument();
     });
 
@@ -763,6 +764,306 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       // 2. Directory mode: renders rich previews
       render(<Discovery directory />);
       expect(screen.getAllByText(/Popular offerings/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  // =========================================================================
+  // PEWA-R2-A-CORR-004: Nearby Discovery Truthfulness & Merge Readiness
+  // =========================================================================
+  describe("PEWA-R2-A-CORR-004: Nearby Discovery Truthfulness", () => {
+    beforeEach(() => {
+      usePewa.getState().reset();
+      usePewa.getState().loadScenario("new-cafe");
+    });
+
+    it("Permission granted with sufficient venue-location data: filters accurately based on coordinates", () => {
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn(),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      // 1. Customer at Westlands (-1.2612, 36.8044)
+      mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: -1.2612,
+            longitude: 36.8044,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      const { unmount } = render(<Discovery />);
+      const seeNearbyBtn = screen.getByRole("button", { name: /See nearby/i });
+      fireEvent.click(seeNearbyBtn);
+
+      // Sol Bakery (Westlands, 0km) is displayed
+      expect(screen.getByText("Sol Artisan Bakery")).toBeInTheDocument();
+      // Grand Horizon Hotel (Riverside, ~1.1km) is displayed
+      expect(screen.getByText("The Grand Horizon Hotel")).toBeInTheDocument();
+      // CloudBurger Kitchen (delivery area includes Westlands) is displayed
+      expect(screen.getByText("CloudBurger Kitchen")).toBeInTheDocument();
+
+      // Green Garden Café (CBD, ~3.32km) is outside 3km radius
+      expect(screen.queryByText("Green Garden Café")).not.toBeInTheDocument();
+      // Gelato Craft Lab (Village Market, ~3.54km) is outside 3km radius
+      expect(screen.queryByText("Gelato Craft Lab")).not.toBeInTheDocument();
+
+      // Notice explains grounded radius
+      expect(
+        screen.getByText(/Showing businesses within ~3 km of your current location/i),
+      ).toBeInTheDocument();
+
+      unmount();
+
+      // 2. Customer at CBD (-1.2841, 36.8236)
+      mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: -1.2841,
+            longitude: 36.8236,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Green Garden Café (CBD, 0km) is displayed
+      expect(screen.getByText("Green Garden Café")).toBeInTheDocument();
+      // Venues further away are NOT displayed
+      expect(screen.queryByText("Sol Artisan Bakery")).not.toBeInTheDocument();
+      expect(screen.queryByText("Gelato Craft Lab")).not.toBeInTheDocument();
+      expect(screen.queryByText("CloudBurger Kitchen")).not.toBeInTheDocument();
+    });
+
+    it("Permission granted without sufficient matching data: handles out-of-range customer and incomplete data", () => {
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn(),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      // 1. Customer in Mombasa (hundreds of km away from Nairobi)
+      mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: -4.0435,
+            longitude: 39.6682,
+            accuracy: 50,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      const { unmount } = render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Notice truthfully explains no businesses were found within nearby radius
+      expect(
+        screen.getByText(/No businesses found within your nearby radius/i),
+      ).toBeInTheDocument();
+
+      // Fallback area selection options are displayed
+      expect(screen.getByText(/Try area:/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Westlands" })).toBeInTheDocument();
+
+      unmount();
+
+      // 2. Dataset where venues have no coordinates or delivery coverage
+      usePewa.setState({
+        venues: PROTOTYPE_DIRECTORY_VENUES.map((v) => ({
+          ...v,
+          coordinates: undefined,
+          serviceArea: "",
+        })),
+        menus: PROTOTYPE_DIRECTORY_MENUS,
+      });
+
+      mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: -1.2612,
+            longitude: 36.8044,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Truthful explanation of incomplete location data
+      expect(
+        screen.getByText(
+          /Precise nearby matching is not available because venue location data is incomplete/i,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("Permission denied: non-blocking graceful notice with manual area fallback", () => {
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn((_success, error) => {
+          error({
+            code: 1, // PERMISSION_DENIED
+            message: "Denied",
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          } as GeolocationPositionError);
+        }),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Truthful denied message
+      expect(screen.getByText(/Location access was denied/i)).toBeInTheDocument();
+
+      // All demonstration venues remain completely accessible and unblocked
+      expect(
+        screen.getByRole("heading", { name: "Green Garden Café", level: 3 }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Sol Artisan Bakery", level: 3 }),
+      ).toBeInTheDocument();
+
+      // Dismiss notice works
+      fireEvent.click(screen.getByRole("button", { name: /Dismiss location notice/i }));
+      expect(screen.queryByText(/Location access was denied/i)).not.toBeInTheDocument();
+    });
+
+    it("Location unavailable: non-blocking graceful notice", () => {
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn((_success, error) => {
+          error({
+            code: 2, // POSITION_UNAVAILABLE
+            message: "Position unavailable",
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          } as GeolocationPositionError);
+        }),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Truthful unavailable message
+      expect(screen.getByText(/Location is currently unavailable/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Green Garden Café", level: 3 }),
+      ).toBeInTheDocument();
+    });
+
+    it("Delivery-only coverage when explicitly defined: checks customer location against dispatch zones", () => {
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn(),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      // 1. Customer at Gigiri / Village Market (-1.2294, 36.8047)
+      mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: -1.2294,
+            longitude: 36.8047,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      const { unmount } = render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Gelato Craft Lab (located at Village Market) matches
+      expect(
+        screen.getByRole("heading", { name: "Gelato Craft Lab", level: 3 }),
+      ).toBeInTheDocument();
+
+      // CloudBurger Kitchen (delivers to Kilimani, Lavington & Westlands) is EXCLUDED because Gigiri is not covered
+      expect(screen.queryByText("CloudBurger Kitchen")).not.toBeInTheDocument();
+
+      unmount();
+
+      // 2. Customer at Westlands (-1.2612, 36.8044)
+      mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: -1.2612,
+            longitude: 36.8044,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // CloudBurger Kitchen is INCLUDED because customer is in its Westlands delivery zone
+      expect(
+        screen.getByRole("heading", { name: "CloudBurger Kitchen", level: 3 }),
+      ).toBeInTheDocument();
+      expect(screen.getAllByText(/Delivery Only/i).length).toBeGreaterThan(0);
+    });
+
+    it("No false nearby labels or distance claims and customer privacy is preserved", () => {
+      render(<Discovery />);
+
+      // Venue cards should not display fabricated distance metrics (e.g. "0.4 km away", "350m")
+      expect(screen.queryByText(/\d+(\.\d+)?\s*km away/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/\d+\s*m away/i)).not.toBeInTheDocument();
+
+      // Verify customer coordinates are NOT stored in localStorage
+      expect(localStorage.getItem("pewa_user_coords")).toBeNull();
+      expect(localStorage.getItem("pewa_customer_coords")).toBeNull();
+      expect(localStorage.getItem("coords")).toBeNull();
     });
   });
 });

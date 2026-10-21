@@ -19,6 +19,8 @@ import {
   isOfferingHiddenAtVenue,
 } from "@/lib/pewa/availability";
 import { canAdmitOrder, getAuthoritativeVenues, getAuthoritativeMenus } from "@/lib/pewa/ordering";
+import { evaluateVenueProximity, hasVenueLocationData } from "@/lib/pewa/proximity";
+import type { VenueCoordinates } from "@/lib/pewa/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -138,8 +140,9 @@ export function Discovery({
   const [recentsOnly, setRecentsOnly] = useState(initialFilter === "recents");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [nearbyStatus, setNearbyStatus] = useState<
-    "idle" | "requesting" | "granted" | "denied" | "unsupported"
+    "idle" | "requesting" | "granted" | "denied" | "unavailable" | "unsupported"
   >("idle");
+  const [nearbyCoords, setNearbyCoords] = useState<VenueCoordinates | null>(null);
   const [nearbyNotice, setNearbyNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -173,6 +176,14 @@ export function Discovery({
     if (savedOnly && !favourites.includes(v.id)) return [];
     if (recentsOnly && !recents.includes(v.id)) return [];
     if (service && !v.services.includes(service)) return [];
+
+    // Proximity / Nearby filter based on genuine coordinates or delivery coverage
+    if (nearbyStatus === "granted" && nearbyCoords) {
+      const prox = evaluateVenueProximity(v, nearbyCoords);
+      if (!prox.isNearby) {
+        return [];
+      }
+    }
 
     const venueLoc = (v.deliveryOnly ? v.serviceArea : v.address).toLowerCase();
 
@@ -317,13 +328,16 @@ export function Discovery({
 
   const activeCampaigns = campaigns.filter((c) => c.active);
 
+  const venuesWithLocationData = useMemo(() => live.filter((v) => hasVenueLocationData(v)), [live]);
+
   const activeFilterCount =
     (category ? 1 : 0) +
     (area ? 1 : 0) +
     (tagFilter ? 1 : 0) +
     (service ? 1 : 0) +
     (savedOnly ? 1 : 0) +
-    (recentsOnly ? 1 : 0);
+    (recentsOnly ? 1 : 0) +
+    (nearbyStatus === "granted" && nearbyCoords !== null ? 1 : 0);
 
   const hasActiveFilters = Boolean(
     q ||
@@ -333,7 +347,7 @@ export function Discovery({
     service ||
     savedOnly ||
     recentsOnly ||
-    nearbyStatus === "granted",
+    (nearbyStatus === "granted" && nearbyCoords !== null),
   );
 
   const recordedImpressionsRef = useRef<Set<string>>(new Set());
@@ -357,18 +371,21 @@ export function Discovery({
     setSavedOnly(false);
     setRecentsOnly(false);
     setNearbyStatus("idle");
+    setNearbyCoords(null);
     setNearbyNotice(null);
   };
 
   const handleSeeNearby = () => {
     if (nearbyStatus === "granted") {
       setNearbyStatus("idle");
+      setNearbyCoords(null);
       setNearbyNotice(null);
       return;
     }
 
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setNearbyStatus("unsupported");
+      setNearbyCoords(null);
       setNearbyNotice(
         "Location services are not supported by this browser. You can search by area (e.g. Westlands, CBD) or select an area manually.",
       );
@@ -379,21 +396,48 @@ export function Discovery({
     setNearbyNotice(null);
 
     navigator.geolocation.getCurrentPosition(
-      (_pos) => {
-        // Truthful bounded proximity: in this prototype, location matches the local Nairobi operating area
-        // without fabricating unverified GPS coordinates or precision distance metrics.
+      (pos) => {
+        const coords: VenueCoordinates = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+        // Preserving customer privacy: coordinates are held strictly in component memory and never persisted
+        setNearbyCoords(coords);
         setNearbyStatus("granted");
-        setNearbyNotice(
-          "Showing venues within your local service area. Delivery kitchens evaluate by designated dispatch zones.",
-        );
+
+        const dataAvailableVenues = live.filter((v) => hasVenueLocationData(v));
+        if (dataAvailableVenues.length === 0) {
+          setNearbyNotice(
+            "Precise nearby matching is not available because venue location data is incomplete. You can search by area or select a neighborhood manually.",
+          );
+        } else {
+          const matchingCount = live.filter(
+            (v) => evaluateVenueProximity(v, coords).isNearby,
+          ).length;
+          if (matchingCount === 0) {
+            setNearbyNotice(
+              "No businesses found within your nearby radius (~3 km) based on your current location. You can browse all venues or select an area manually.",
+            );
+          } else {
+            setNearbyNotice(
+              "Showing businesses within ~3 km of your current location. Delivery kitchens evaluated by designated delivery zones.",
+            );
+          }
+        }
       },
       (err) => {
-        setNearbyStatus("denied");
-        setNearbyNotice(
-          err && err.code === 1
-            ? "Location access was denied or unavailable. You can search by neighborhood (e.g. Westlands, CBD) or browse all menus."
-            : "Location is currently unavailable. You can search by area or browse all menus.",
-        );
+        setNearbyCoords(null);
+        if (err && err.code === 1) {
+          setNearbyStatus("denied");
+          setNearbyNotice(
+            "Location access was denied. You can search by neighborhood (e.g. Westlands, CBD) or browse all menus.",
+          );
+        } else {
+          setNearbyStatus("unavailable");
+          setNearbyNotice(
+            "Location is currently unavailable. You can search by area or browse all menus.",
+          );
+        }
       },
       { timeout: 5000, maximumAge: 60000 },
     );
@@ -615,6 +659,7 @@ export function Discovery({
                 type="button"
                 onClick={() => {
                   setNearbyStatus("idle");
+                  setNearbyCoords(null);
                   setNearbyNotice(null);
                 }}
                 className="hover:opacity-75"
@@ -630,10 +675,16 @@ export function Discovery({
       {/* Nearby Notice or Denial Fallback Banner */}
       {nearbyNotice && (
         <div
-          role={nearbyStatus === "denied" || nearbyStatus === "unsupported" ? "alert" : "status"}
+          role={
+            nearbyStatus === "denied" ||
+            nearbyStatus === "unavailable" ||
+            nearbyStatus === "unsupported"
+              ? "alert"
+              : "status"
+          }
           className={cn(
             "mt-3 flex items-start justify-between gap-2 rounded-xl border p-3 text-xs shadow-xs",
-            nearbyStatus === "granted"
+            nearbyStatus === "granted" && results.length > 0
               ? "border-emerald-500/30 bg-emerald-50/60 text-emerald-950 dark:bg-emerald-950/20 dark:text-emerald-200"
               : "border-amber-500/30 bg-amber-50/70 text-amber-950 dark:bg-amber-950/20 dark:text-amber-200",
           )}
@@ -642,16 +693,41 @@ export function Discovery({
             <MapPin
               className={cn(
                 "mt-0.5 h-4 w-4 shrink-0",
-                nearbyStatus === "granted"
+                nearbyStatus === "granted" && results.length > 0
                   ? "text-emerald-600 dark:text-emerald-400"
                   : "text-amber-600 dark:text-amber-400",
               )}
             />
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               <p className="font-semibold">
-                {nearbyStatus === "granted" ? "Nearby Discovery Active" : "Location Access Notice"}
+                {nearbyStatus === "granted" && results.length > 0
+                  ? "Nearby Discovery Active"
+                  : "Location Discovery Notice"}
               </p>
               <p className="text-[11px] opacity-90">{nearbyNotice}</p>
+
+              {(nearbyStatus !== "granted" || results.length === 0) && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Try area:
+                  </span>
+                  {NEIGHBORHOOD_FILTERS.filter((f) => f.id !== "all")
+                    .slice(0, 4)
+                    .map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => {
+                          setArea(f.id);
+                          setNearbyNotice(null);
+                        }}
+                        className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium text-foreground hover:bg-muted"
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
           <button

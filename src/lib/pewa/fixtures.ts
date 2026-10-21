@@ -142,6 +142,7 @@ const greenGardenVenue: Venue = {
   },
   tagline: "Garden-fresh breakfasts & slow coffee",
   currency: "KES",
+  coordinates: { latitude: -1.2841, longitude: 36.8236 },
 };
 
 const greenGardenMenu = (soldOut: boolean): Menu => ({
@@ -273,6 +274,7 @@ const hotelVenue: Venue = {
   },
   tagline: "Luxury hospitality, rooftop lounge & 24hr in-room dining",
   currency: "KES",
+  coordinates: { latitude: -1.2683, longitude: 36.7972 },
 };
 
 const hotelPublicMenu: Menu = {
@@ -454,6 +456,7 @@ const solBakeryVenue: Venue = {
   },
   tagline: "Natural sourdough breads, pastries & morning coffee",
   currency: "KES",
+  coordinates: { latitude: -1.2612, longitude: 36.8044 },
 };
 
 const gelatoLabVenue: Venue = {
@@ -473,6 +476,7 @@ const gelatoLabVenue: Venue = {
   },
   tagline: "Small-batch Italian gelato churned daily",
   currency: "KES",
+  coordinates: { latitude: -1.2294, longitude: 36.8047 },
 };
 
 const solBakeryMenu: Menu = {

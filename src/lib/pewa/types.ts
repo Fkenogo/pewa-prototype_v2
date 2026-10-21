@@ -31,6 +31,11 @@ export interface Organisation {
   statusNote?: string | undefined;
 }
 
+export interface VenueCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
 export interface Venue {
   id: string;
   orgId: string;
@@ -46,6 +51,7 @@ export interface Venue {
   category?: string | undefined;
   businessCategory?: string | undefined;
   timezone?: string | undefined;
+  coordinates?: VenueCoordinates | undefined;
 }
 
 export interface ModifierOption {
