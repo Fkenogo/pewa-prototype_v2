@@ -289,9 +289,10 @@ function MenuEditor() {
           <Link
             to="/admin"
             aria-label="Back to menus"
-            className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-muted text-muted-foreground"
+            className="flex h-11 items-center gap-1.5 px-2.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors font-semibold text-xs"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Menus</span>
           </Link>
           <div className="flex items-center gap-1.5">
             <StatusBadge status={menu.status} />
@@ -1462,7 +1463,7 @@ function IconBtn({
   return (
     <button
       aria-label={label}
-      className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-20 transition-colors"
+      className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-20 transition-colors"
       {...rest}
     >
       {children}
