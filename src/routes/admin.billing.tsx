@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { canManageBilling, usePewa } from "@/lib/pewa/store";
+import { canAdmitOrder } from "@/lib/pewa/ordering";
 import { pageHead } from "@/lib/pewa/metadata";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -82,7 +83,9 @@ function BillingDashboard() {
   const overdraftMax = orderPolicy.overdraftMax || 10;
   const includedPct = Math.round((orderPolicy.included / includedMax) * 100);
   const totalAvailable = orderPolicy.included + orderPolicy.topUp;
-  const isExhausted = totalAvailable === 0 && !orderPolicy.expired;
+  const isExhausted = !canAdmitOrder(orderPolicy) && !orderPolicy.expired;
+  const isOperatingOnContinuity = totalAvailable === 0 && canAdmitOrder(orderPolicy);
+  const remainingContinuity = Math.max(0, overdraftMax - orderPolicy.overdraftUsed);
   const hasContinuityUsed = orderPolicy.overdraftUsed > 0;
 
   const billingLogs = activity
@@ -127,6 +130,37 @@ function BillingDashboard() {
                 <b>Your menus, direct links, and QR codes remain 100% active.</b> Customers can
                 still browse dishes and contact your venue directly via WhatsApp or phone.
                 Structured order submissions will resume the moment capacity is replenished.
+              </p>
+              <div className="pt-2">
+                <Button
+                  size="sm"
+                  onClick={() => setTopUpModalOpen(true)}
+                  className="bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  <PackagePlus className="mr-1.5 h-3.5 w-3.5" /> Purchase top-up bundle
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isOperatingOnContinuity && (
+        <section
+          role="alert"
+          className="mt-6 rounded-2xl border-2 border-amber-500/30 bg-amber-50/50 p-4 text-amber-950 dark:bg-amber-950/20 dark:text-amber-200"
+        >
+          <div className="flex items-start gap-3">
+            <Zap className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="space-y-1">
+              <p className="font-semibold">
+                Operating on Recoverable Continuity Units ({remainingContinuity} of {overdraftMax}{" "}
+                remaining)
+              </p>
+              <p className="text-sm opacity-90">
+                Regular included and top-up units have reached 0. Up to 10 recoverable continuity
+                units ensure eligible customer order admissions stay active. Purchase a top-up
+                bundle to settle consumed units and maintain uninterrupted service.
               </p>
               <div className="pt-2">
                 <Button

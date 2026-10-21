@@ -142,6 +142,11 @@ const greenGardenVenue: Venue = {
   },
   tagline: "Garden-fresh breakfasts & slow coffee",
   currency: "KES",
+  coordinates: {
+    latitude: -1.2841,
+    longitude: 36.8236,
+    verificationStatus: "demonstration",
+  },
 };
 
 const greenGardenMenu = (soldOut: boolean): Menu => ({
@@ -273,6 +278,11 @@ const hotelVenue: Venue = {
   },
   tagline: "Luxury hospitality, rooftop lounge & 24hr in-room dining",
   currency: "KES",
+  coordinates: {
+    latitude: -1.2683,
+    longitude: 36.7972,
+    verificationStatus: "demonstration",
+  },
 };
 
 const hotelPublicMenu: Menu = {
@@ -395,6 +405,7 @@ const cloudBurgerVenue: Venue = {
   address: "",
   deliveryOnly: true,
   serviceArea: "Kilimani, Lavington & Westlands",
+  deliveryCoverageStatus: "approximate_preview",
   services: ["Delivery"],
   contact: {
     phone: "+254722334455",
@@ -454,6 +465,11 @@ const solBakeryVenue: Venue = {
   },
   tagline: "Natural sourdough breads, pastries & morning coffee",
   currency: "KES",
+  coordinates: {
+    latitude: -1.2612,
+    longitude: 36.8044,
+    verificationStatus: "demonstration",
+  },
 };
 
 const gelatoLabVenue: Venue = {
@@ -473,6 +489,11 @@ const gelatoLabVenue: Venue = {
   },
   tagline: "Small-batch Italian gelato churned daily",
   currency: "KES",
+  coordinates: {
+    latitude: -1.2294,
+    longitude: 36.8047,
+    verificationStatus: "demonstration",
+  },
 };
 
 const solBakeryMenu: Menu = {
@@ -658,6 +679,38 @@ const promoSeedCampaign: PromotionCampaign = {
   endDate: "2026-10-31T00:00:00.000Z",
 };
 
+export {
+  greenGardenVenue,
+  greenGardenMenu,
+  hotelVenue,
+  hotelPublicMenu,
+  hotelProtectedMenu,
+  cloudBurgerVenue,
+  cloudBurgerMenu,
+  solBakeryVenue,
+  solBakeryMenu,
+  gelatoLabVenue,
+  gelatoLabMenu,
+  promoSeedCampaign,
+};
+
+export const PROTOTYPE_DIRECTORY_VENUES: Venue[] = [
+  greenGardenVenue,
+  hotelVenue,
+  cloudBurgerVenue,
+  solBakeryVenue,
+  gelatoLabVenue,
+];
+
+export const PROTOTYPE_DIRECTORY_MENUS: Menu[] = [
+  greenGardenMenu(false),
+  hotelPublicMenu,
+  hotelProtectedMenu,
+  cloudBurgerMenu,
+  solBakeryMenu,
+  gelatoLabMenu,
+];
+
 export function buildScenario(
   id: ScenarioId,
 ): Omit<PewaState, "role"> & { role: PewaState["role"] } {
@@ -677,7 +730,7 @@ export function buildScenario(
       cycleRenewsAt: "2026-11-19T00:00:00.000Z",
       tier: "Base Monthly Tier",
     },
-    campaigns: [] as PromotionCampaign[],
+    campaigns: [promoSeedCampaign] as PromotionCampaign[],
     guestSession: null as GuestSession | null,
     disputes: [
       {
@@ -705,7 +758,16 @@ export function buildScenario(
     sharedOfferings: sampleSharedOfferings,
     simulatedTime: "10:00",
   };
-  if (id === "zero-units" || id === "admitted-pending") common.orderPolicy.included = 0;
+  if (id === "zero-units") {
+    common.orderPolicy.included = 0;
+    common.orderPolicy.topUp = 0;
+    common.orderPolicy.overdraftUsed = 10;
+  }
+  if (id === "admitted-pending") {
+    common.orderPolicy.included = 0;
+    common.orderPolicy.topUp = 0;
+    common.orderPolicy.overdraftUsed = 0;
+  }
 
   if (id === "new-cafe") {
     return {

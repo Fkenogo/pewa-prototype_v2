@@ -21,7 +21,7 @@ import type {
   ModerationCase,
   VenueOfferingOverride,
 } from "./types";
-import { buildScenario } from "./fixtures";
+import { buildScenario, PROTOTYPE_DIRECTORY_VENUES, PROTOTYPE_DIRECTORY_MENUS } from "./fixtures";
 import { getVenuePublishedMenus } from "./taxonomy";
 import {
   canAdmitOrder,
@@ -31,6 +31,8 @@ import {
   validateOfferingModifiersConfig,
   validateModifierSelection,
   validateAndRecalculateLineModifiers,
+  getAuthoritativeVenues,
+  getAuthoritativeMenus,
 } from "./ordering";
 import {
   getEffectiveOffering,
@@ -52,6 +54,8 @@ export {
   validateOfferingModifiersConfig,
   validateModifierSelection,
   validateAndRecalculateLineModifiers,
+  getAuthoritativeVenues,
+  getAuthoritativeMenus,
 };
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -391,10 +395,12 @@ export const usePewa = create<PewaState & Actions>()(
           if (s.cart?.lines.length && s.cart.venueId !== venueId)
             return "Your cart belongs to another business. Clear it before starting a new cart.";
 
-          const venue = s.venues.find((v) => v.id === venueId);
+          const allVenues = getAuthoritativeVenues(s);
+          const allMenus = getAuthoritativeMenus(s);
+          const venue = allVenues.find((v) => v.id === venueId);
           if (!venue) return "This venue is no longer available.";
 
-          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+          const venuePublishedMenus = getVenuePublishedMenus(venue, allMenus, allVenues, {
             includeProtected: true,
           });
           const publishedMenu = venuePublishedMenus.find((m) => m.id === line.menuId);
@@ -469,12 +475,14 @@ export const usePewa = create<PewaState & Actions>()(
             return { error: "Structured requests are paused. Contact the business directly." };
           if (!input.guestName.trim() || !input.guestContact.trim())
             return { error: "Add your name and phone number." };
-          const venue = s.venues.find((v) => v.id === s.cart?.venueId);
+          const allVenues = getAuthoritativeVenues(s);
+          const allMenus = getAuthoritativeMenus(s);
+          const venue = allVenues.find((v) => v.id === s.cart?.venueId);
           if (!venue || !s.cart) return { error: "This venue is no longer available." };
           if (!venue.services.includes(input.service))
             return { error: "Choose a service offered by this business." };
 
-          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+          const venuePublishedMenus = getVenuePublishedMenus(venue, allMenus, allVenues, {
             includeProtected: true,
           });
 
@@ -534,9 +542,10 @@ export const usePewa = create<PewaState & Actions>()(
           )
             return false;
           const policy = { ...s.orderPolicy };
+          const maxRecoverable = policy.overdraftMax ?? 10;
           if (policy.included > 0 && !policy.expired) policy.included -= 1;
           else if (policy.topUp > 0) policy.topUp -= 1;
-          else if (policy.overdraftUsed < 10) policy.overdraftUsed += 1;
+          else if (policy.overdraftUsed < maxRecoverable) policy.overdraftUsed += 1;
           else return false;
           set({
             orderPolicy: policy,
@@ -710,33 +719,37 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         recordPromotionImpression: (campaignId) => {
+          // Simulated non-authoritative exposure accounting per CORR-B:
+          // Prototype simulates an exposure fee ($0.10) per delivered impression, capped at available budget.
+          const SIMULATED_IMPRESSION_COST = 0.1;
           set((s) => ({
             campaigns: s.campaigns.map((c) =>
               c.id === campaignId
                 ? {
                     ...c,
                     impressions: c.impressions + 1,
-                    spent: Math.min(c.budget, +(c.spent + 0.1).toFixed(2)),
+                    spent: Math.min(c.budget, +(c.spent + SIMULATED_IMPRESSION_COST).toFixed(2)),
                   }
                 : c,
             ),
           }));
         },
         recordPromotionClick: (campaignId) => {
+          // Engagement tracking per CORR-B:
+          // Clicks are tracked separately as engagement metrics and MUST NOT draw down promotional budget.
           set((s) => ({
             campaigns: s.campaigns.map((c) =>
               c.id === campaignId
                 ? {
                     ...c,
                     clicks: c.clicks + 1,
-                    spent: Math.min(c.budget, +(c.spent + 0.25).toFixed(2)),
                   }
                 : c,
             ),
           }));
           get().log({
             kind: "promo.clicked",
-            message: `Sponsored offer clicked (campaign: ${campaignId})`,
+            message: `Sponsored offer clicked (campaign: ${campaignId}) — engagement tracked; zero budget charged`,
           });
         },
         setRole: (role) => {

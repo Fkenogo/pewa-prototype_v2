@@ -1,14 +1,47 @@
-import type { CartLine, GuestCart, ModifierGroup, Offering, OrderPolicy, PewaState } from "./types";
+import type {
+  CartLine,
+  GuestCart,
+  Menu,
+  ModifierGroup,
+  Offering,
+  OrderPolicy,
+  PewaState,
+  Venue,
+} from "./types";
 import { getVenuePublishedMenus } from "./taxonomy";
 import { getEffectiveOffering, getEffectiveOfferingAvailability } from "./availability";
+import { PROTOTYPE_DIRECTORY_VENUES, PROTOTYPE_DIRECTORY_MENUS } from "./fixtures";
 
 export const lineTotal = (line: CartLine) =>
   (line.basePrice + line.options.reduce((sum, option) => sum + option.priceDelta, 0)) *
   line.quantity;
 export const cartTotal = (lines: CartLine[]) =>
   lines.reduce((sum, line) => sum + lineTotal(line), 0);
-export const canAdmitOrder = (policy: OrderPolicy) =>
-  !policy.expired && policy.included + policy.topUp > 0;
+export const getAvailableCapacity = (policy: OrderPolicy | null | undefined): number => {
+  if (!policy || policy.expired) return 0;
+  const regular = (policy.included ?? 0) + (policy.topUp ?? 0);
+  const maxRecoverable = policy.overdraftMax ?? 10;
+  const recoverableRemaining = Math.max(0, maxRecoverable - (policy.overdraftUsed ?? 0));
+  return regular + recoverableRemaining;
+};
+
+export const canAdmitOrder = (policy: OrderPolicy | null | undefined): boolean => {
+  if (!policy || policy.expired) return false;
+  const regular = (policy.included ?? 0) + (policy.topUp ?? 0);
+  const maxRecoverable = policy.overdraftMax ?? 10;
+  const recoverableRemaining = Math.max(0, maxRecoverable - (policy.overdraftUsed ?? 0));
+  return regular + recoverableRemaining > 0;
+};
+
+export function getAuthoritativeVenues(state: { venues: Venue[] }): Venue[] {
+  const storeVenueIds = new Set(state.venues.map((v) => v.id));
+  return [...state.venues, ...PROTOTYPE_DIRECTORY_VENUES.filter((dv) => !storeVenueIds.has(dv.id))];
+}
+
+export function getAuthoritativeMenus(state: { menus: Menu[] }): Menu[] {
+  const storeMenuIds = new Set(state.menus.map((m) => m.id));
+  return [...state.menus, ...PROTOTYPE_DIRECTORY_MENUS.filter((dm) => !storeMenuIds.has(dm.id))];
+}
 
 /**
  * Validates a single ModifierGroup configuration authored by a merchant.
@@ -248,9 +281,11 @@ export function validateCart(state: PewaState, cart: GuestCart | null): string |
     return "Offline network connection: Menus and cart remain cached, but order submission requires connection.";
   }
   if (!cart?.lines.length) return "Your cart is empty.";
-  const venue = state.venues.find((v) => v.id === cart.venueId);
+  const allVenues = getAuthoritativeVenues(state);
+  const allMenus = getAuthoritativeMenus(state);
+  const venue = allVenues.find((v) => v.id === cart.venueId);
   if (!venue) return "This venue is no longer available.";
-  const venuePublishedMenus = getVenuePublishedMenus(venue, state.menus, state.venues, {
+  const venuePublishedMenus = getVenuePublishedMenus(venue, allMenus, allVenues, {
     includeProtected: true,
   });
   for (const line of cart.lines) {

@@ -40,6 +40,7 @@ import {
   isOfferingHiddenAtVenue,
   getMenuEffectiveSharedOfferings,
 } from "@/lib/pewa/availability";
+import { getAuthoritativeVenues, getAuthoritativeMenus } from "@/lib/pewa/ordering";
 
 export const Route = createFileRoute("/m/$slug")({
   validateSearch: (search: Record<string, unknown>): { preview?: string | undefined } => ({
@@ -81,7 +82,9 @@ function PublicMenu() {
     verifyGuestSession,
     clearGuestSession,
   } = usePewa();
-  const venue = venues.find((v) => v.slug === slug);
+  const allVenues = getAuthoritativeVenues({ venues });
+  const allMenus = getAuthoritativeMenus({ menus });
+  const venue = allVenues.find((v) => v.slug === slug);
 
   // CORR-A: Controlled draft preview
   // Preview access requires an explicitly authorised simulated merchant role with appropriate organisation/venue scope.
@@ -96,7 +99,7 @@ function PublicMenu() {
           (m) =>
             m.id === previewMenuId &&
             m.orgId === organisation.id &&
-            isMenuEligibleForVenue(m, venue, venues),
+            isMenuEligibleForVenue(m, venue, allVenues),
         )
       : undefined;
 
@@ -107,7 +110,7 @@ function PublicMenu() {
   const live: Menu[] = venue
     ? previewMenu
       ? [previewMenu]
-      : getVenuePublishedMenus(venue, menus, venues, { includeProtected: true })
+      : getVenuePublishedMenus(venue, allMenus, allVenues, { includeProtected: true })
     : [];
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
@@ -478,7 +481,7 @@ function PublicMenu() {
             View cart · {cart.lines.reduce((sum, l) => sum + l.quantity, 0)} items ·{" "}
             {formatPrice(
               cartTotal(cart.lines),
-              venues.find((v) => v.id === cart.venueId)?.currency ?? currency,
+              allVenues.find((v) => v.id === cart.venueId)?.currency ?? currency,
             )}
           </Button>
         ) : null}

@@ -3,7 +3,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { Minus, Plus, Trash2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { usePewa, formatPrice } from "@/lib/pewa/store";
-import { canAdmitOrder, cartTotal, lineTotal, validateCart } from "@/lib/pewa/ordering";
+import {
+  canAdmitOrder,
+  cartTotal,
+  getAuthoritativeVenues,
+  lineTotal,
+  validateCart,
+} from "@/lib/pewa/ordering";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,7 +36,7 @@ export function CartDrawer({
   const [guestContact, setContact] = useState("");
   const [service, setService] = useState("");
   const [note, setNote] = useState("");
-  const venue = state.venues.find((v) => v.id === state.cart?.venueId);
+  const venue = getAuthoritativeVenues(state).find((v) => v.id === state.cart?.venueId);
   const lines = state.cart?.lines ?? [];
   const error = lines.length ? validateCart(state, state.cart) : null;
   const chosenService = venue?.services.includes(service) ? service : (venue?.services[0] ?? "");
