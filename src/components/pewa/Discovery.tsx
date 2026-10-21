@@ -411,17 +411,22 @@ export function Discovery({
             "Precise nearby matching is not available because venue location data is incomplete. You can search by area or select a neighborhood manually.",
           );
         } else {
-          const matchingCount = live.filter(
-            (v) => evaluateVenueProximity(v, coords).isNearby,
-          ).length;
-          if (matchingCount === 0) {
+          const matchingVenues = live.filter((v) => evaluateVenueProximity(v, coords).isNearby);
+          if (matchingVenues.length === 0) {
             setNearbyNotice(
               "No businesses found within your nearby radius (~3 km) based on your current location. You can browse all venues or select an area manually.",
             );
           } else {
-            setNearbyNotice(
-              "Showing businesses within ~3 km of your current location. Delivery kitchens evaluated by designated delivery zones.",
+            const allVerified = matchingVenues.every(
+              (v) => evaluateVenueProximity(v, coords).isVerified,
             );
+            if (allVerified) {
+              setNearbyNotice("Showing verified businesses within ~3 km of your current location.");
+            } else {
+              setNearbyNotice(
+                "Nearby preview using sample business locations (~3 km radius). Delivery coverage is an illustrative prototype estimate, not confirmed merchant delivery coverage or a service guarantee.",
+              );
+            }
           }
         }
       },
@@ -654,7 +659,7 @@ export function Discovery({
           )}
           {nearbyStatus === "granted" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-400 text-[11px]">
-              Nearby Area Active
+              Nearby Preview Active
               <button
                 type="button"
                 onClick={() => {
@@ -701,7 +706,7 @@ export function Discovery({
             <div className="space-y-1">
               <p className="font-semibold">
                 {nearbyStatus === "granted" && results.length > 0
-                  ? "Nearby Discovery Active"
+                  ? "Nearby Preview (Sample Locations)"
                   : "Location Discovery Notice"}
               </p>
               <p className="text-[11px] opacity-90">{nearbyNotice}</p>

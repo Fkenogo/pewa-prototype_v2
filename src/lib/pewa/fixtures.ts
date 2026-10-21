@@ -142,7 +142,11 @@ const greenGardenVenue: Venue = {
   },
   tagline: "Garden-fresh breakfasts & slow coffee",
   currency: "KES",
-  coordinates: { latitude: -1.2841, longitude: 36.8236 },
+  coordinates: {
+    latitude: -1.2841,
+    longitude: 36.8236,
+    verificationStatus: "demonstration",
+  },
 };
 
 const greenGardenMenu = (soldOut: boolean): Menu => ({
@@ -274,7 +278,11 @@ const hotelVenue: Venue = {
   },
   tagline: "Luxury hospitality, rooftop lounge & 24hr in-room dining",
   currency: "KES",
-  coordinates: { latitude: -1.2683, longitude: 36.7972 },
+  coordinates: {
+    latitude: -1.2683,
+    longitude: 36.7972,
+    verificationStatus: "demonstration",
+  },
 };
 
 const hotelPublicMenu: Menu = {
@@ -397,6 +405,7 @@ const cloudBurgerVenue: Venue = {
   address: "",
   deliveryOnly: true,
   serviceArea: "Kilimani, Lavington & Westlands",
+  deliveryCoverageStatus: "approximate_preview",
   services: ["Delivery"],
   contact: {
     phone: "+254722334455",
@@ -456,7 +465,11 @@ const solBakeryVenue: Venue = {
   },
   tagline: "Natural sourdough breads, pastries & morning coffee",
   currency: "KES",
-  coordinates: { latitude: -1.2612, longitude: 36.8044 },
+  coordinates: {
+    latitude: -1.2612,
+    longitude: 36.8044,
+    verificationStatus: "demonstration",
+  },
 };
 
 const gelatoLabVenue: Venue = {
@@ -476,7 +489,11 @@ const gelatoLabVenue: Venue = {
   },
   tagline: "Small-batch Italian gelato churned daily",
   currency: "KES",
-  coordinates: { latitude: -1.2294, longitude: 36.8047 },
+  coordinates: {
+    latitude: -1.2294,
+    longitude: 36.8047,
+    verificationStatus: "demonstration",
+  },
 };
 
 const solBakeryMenu: Menu = {

@@ -4,6 +4,7 @@ import {
   evaluateVenueProximity,
   hasVenueLocationData,
   DEFAULT_NEARBY_RADIUS_KM,
+  NAIROBI_NEIGHBORHOOD_ZONES,
 } from "@/lib/pewa/proximity";
 import type { Venue } from "@/lib/pewa/types";
 
@@ -120,5 +121,97 @@ describe("Proximity and Delivery Coverage Engine", () => {
     });
     expect(evalResult.isNearby).toBe(false);
     expect(evalResult.hasSufficientData).toBe(false);
+    expect(evalResult.isVerified).toBe(false);
+    expect(evalResult.isDemonstrationData).toBe(true);
+  });
+
+  it("CORR-005: explicitly identifies prototype zones as approximations and distinguishes demonstration vs verified venues", () => {
+    // 1. Prototype delivery zones are marked as prototype approximations
+    const cbdZone = NAIROBI_NEIGHBORHOOD_ZONES.find((z) => z.id === "cbd");
+    expect(cbdZone).toBeDefined();
+    expect(cbdZone?.isPrototypeApproximation).toBe(true);
+
+    // 2. Demonstration storefront venue produces isVerified: false, isDemonstrationData: true
+    const demoVenue: Venue = {
+      id: "v_demo",
+      orgId: "org_demo",
+      name: "Demo Café",
+      slug: "demo-cafe",
+      address: "Moi Avenue, CBD",
+      deliveryOnly: false,
+      serviceArea: "",
+      services: ["Dine-in"],
+      contact: { phone: "", whatsapp: "", email: "" },
+      tagline: "",
+      currency: "KES",
+      coordinates: { latitude: -1.2841, longitude: 36.8236, verificationStatus: "demonstration" },
+    };
+    const demoResult = evaluateVenueProximity(demoVenue, {
+      latitude: -1.2841,
+      longitude: 36.8236,
+    });
+    expect(demoResult.isNearby).toBe(true);
+    expect(demoResult.isVerified).toBe(false);
+    expect(demoResult.isDeliveryConfirmed).toBe(false);
+    expect(demoResult.isDemonstrationData).toBe(true);
+    expect(demoResult.verificationNote).toContain("Demonstration reference coordinates");
+
+    // 3. Verified storefront venue produces isVerified: true, isDemonstrationData: false
+    const verifiedVenue: Venue = {
+      ...demoVenue,
+      id: "v_verified",
+      coordinates: { latitude: -1.2841, longitude: 36.8236, verificationStatus: "verified" },
+    };
+    const verifiedResult = evaluateVenueProximity(verifiedVenue, {
+      latitude: -1.2841,
+      longitude: 36.8236,
+    });
+    expect(verifiedResult.isNearby).toBe(true);
+    expect(verifiedResult.isVerified).toBe(true);
+    expect(verifiedResult.isDemonstrationData).toBe(false);
+    expect(verifiedResult.verificationNote).toContain("Verified storefront coordinates");
+
+    // 4. Demonstration delivery kitchen produces isDeliveryConfirmed: false
+    const demoDeliveryVenue: Venue = {
+      id: "v_demo_delivery",
+      orgId: "org_demo_delivery",
+      name: "Demo Cloud Kitchen",
+      slug: "demo-cloud-kitchen",
+      address: "",
+      deliveryOnly: true,
+      serviceArea: "Westlands",
+      deliveryCoverageStatus: "approximate_preview",
+      services: ["Delivery"],
+      contact: { phone: "", whatsapp: "", email: "" },
+      tagline: "",
+      currency: "KES",
+    };
+    const demoDeliveryResult = evaluateVenueProximity(demoDeliveryVenue, {
+      latitude: -1.2612,
+      longitude: 36.8044,
+    });
+    expect(demoDeliveryResult.isNearby).toBe(true);
+    expect(demoDeliveryResult.isVerified).toBe(false);
+    expect(demoDeliveryResult.isDeliveryConfirmed).toBe(false);
+    expect(demoDeliveryResult.verificationNote).toContain(
+      "not confirmed merchant delivery coverage",
+    );
+
+    // 5. Confirmed merchant delivery coverage produces isDeliveryConfirmed: true
+    const confirmedDeliveryVenue: Venue = {
+      ...demoDeliveryVenue,
+      id: "v_confirmed_delivery",
+      deliveryCoverageStatus: "confirmed_merchant_coverage",
+    };
+    const confirmedDeliveryResult = evaluateVenueProximity(confirmedDeliveryVenue, {
+      latitude: -1.2612,
+      longitude: 36.8044,
+    });
+    expect(confirmedDeliveryResult.isNearby).toBe(true);
+    expect(confirmedDeliveryResult.isVerified).toBe(true);
+    expect(confirmedDeliveryResult.isDeliveryConfirmed).toBe(true);
+    expect(confirmedDeliveryResult.verificationNote).toContain(
+      "Verified merchant delivery coverage",
+    );
   });
 });

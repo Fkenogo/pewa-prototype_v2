@@ -19,43 +19,49 @@ export interface NeighborhoodZone {
   center: VenueCoordinates;
   dispatchRadiusKm: number;
   aliases: string[];
+  isPrototypeApproximation: boolean;
 }
 
 export const NAIROBI_NEIGHBORHOOD_ZONES: NeighborhoodZone[] = [
   {
     id: "cbd",
     name: "CBD",
-    center: { latitude: -1.2841, longitude: 36.8236 },
+    center: { latitude: -1.2841, longitude: 36.8236, verificationStatus: "demonstration" },
     dispatchRadiusKm: 2.5,
     aliases: ["cbd", "moi avenue", "moi ave", "city centre", "central business district"],
+    isPrototypeApproximation: true,
   },
   {
     id: "westlands",
     name: "Westlands",
-    center: { latitude: -1.2612, longitude: 36.8044 },
+    center: { latitude: -1.2612, longitude: 36.8044, verificationStatus: "demonstration" },
     dispatchRadiusKm: 3.0,
     aliases: ["westlands", "karuna close", "sarit", "westgate"],
+    isPrototypeApproximation: true,
   },
   {
     id: "riverside",
     name: "Riverside",
-    center: { latitude: -1.2683, longitude: 36.7972 },
+    center: { latitude: -1.2683, longitude: 36.7972, verificationStatus: "demonstration" },
     dispatchRadiusKm: 2.5,
     aliases: ["riverside", "riverside drive"],
+    isPrototypeApproximation: true,
   },
   {
     id: "kilimani",
     name: "Kilimani & Lavington",
-    center: { latitude: -1.295, longitude: 36.785 },
+    center: { latitude: -1.295, longitude: 36.785, verificationStatus: "demonstration" },
     dispatchRadiusKm: 3.5,
     aliases: ["kilimani", "lavington", "hurlingham"],
+    isPrototypeApproximation: true,
   },
   {
     id: "village-market",
     name: "Village Market & Gigiri",
-    center: { latitude: -1.2294, longitude: 36.8047 },
+    center: { latitude: -1.2294, longitude: 36.8047, verificationStatus: "demonstration" },
     dispatchRadiusKm: 3.0,
     aliases: ["village market", "gigiri", "un avenue", "courtyard"],
+    isPrototypeApproximation: true,
   },
 ];
 
@@ -86,6 +92,10 @@ export interface ProximityEvaluation {
   hasSufficientData: boolean;
   distanceKm?: number;
   matchingReason?: "storefront_proximity" | "delivery_service_area";
+  isVerified: boolean;
+  isDeliveryConfirmed: boolean;
+  isDemonstrationData: boolean;
+  verificationNote: string;
 }
 
 /**
@@ -110,7 +120,11 @@ export function hasVenueLocationData(venue: Venue): boolean {
  * - Physical storefronts are evaluated by direct distance to their coordinates.
  * - Delivery-only businesses are evaluated by whether the user's coordinates fall
  *   within their designated dispatch service area.
- * - Venues lacking coordinates or delivery coverage return hasSufficientData: false.
+ * - Demonstration fixture coordinates and approximate dispatch circles are clearly
+ *   flagged as illustrative with isVerified: false and isDemonstrationData: true.
+ * - Verified merchant onboarding data (coordinates.verificationStatus === "verified"
+ *   or venue.deliveryCoverageStatus === "confirmed_merchant_coverage") produces
+ *   isVerified: true and isDemonstrationData: false.
  */
 export function evaluateVenueProximity(
   venue: Venue,
@@ -120,7 +134,14 @@ export function evaluateVenueProximity(
   if (venue.deliveryOnly) {
     const areaLower = (venue.serviceArea || "").toLowerCase().trim();
     if (!areaLower) {
-      return { isNearby: false, hasSufficientData: false };
+      return {
+        isNearby: false,
+        hasSufficientData: false,
+        isVerified: false,
+        isDeliveryConfirmed: false,
+        isDemonstrationData: true,
+        verificationNote: "No delivery dispatch area defined.",
+      };
     }
 
     // Identify which defined delivery zones match this venue's serviceArea text
@@ -130,8 +151,17 @@ export function evaluateVenueProximity(
 
     if (coveredZones.length === 0) {
       // Service area text exists but doesn't map to known coordinate boundaries
-      return { isNearby: false, hasSufficientData: false };
+      return {
+        isNearby: false,
+        hasSufficientData: false,
+        isVerified: false,
+        isDeliveryConfirmed: false,
+        isDemonstrationData: true,
+        verificationNote: "Service area does not map to known demonstration dispatch boundaries.",
+      };
     }
+
+    const isConfirmed = venue.deliveryCoverageStatus === "confirmed_merchant_coverage";
 
     // Check if user is within the dispatch delivery radius of any covered zone
     for (const zone of coveredZones) {
@@ -147,6 +177,12 @@ export function evaluateVenueProximity(
           hasSufficientData: true,
           distanceKm: dist,
           matchingReason: "delivery_service_area",
+          isVerified: isConfirmed,
+          isDeliveryConfirmed: isConfirmed,
+          isDemonstrationData: !isConfirmed,
+          verificationNote: isConfirmed
+            ? "Verified merchant delivery coverage."
+            : "Prototype approximate delivery zone. Delivery coverage is an illustrative estimate, not confirmed merchant delivery coverage or a service guarantee.",
         };
       }
     }
@@ -155,6 +191,12 @@ export function evaluateVenueProximity(
       isNearby: false,
       hasSufficientData: true,
       matchingReason: "delivery_service_area",
+      isVerified: isConfirmed,
+      isDeliveryConfirmed: isConfirmed,
+      isDemonstrationData: !isConfirmed,
+      verificationNote: isConfirmed
+        ? "Outside verified delivery service area."
+        : "Outside prototype approximate delivery zone.",
     };
   }
 
@@ -164,7 +206,14 @@ export function evaluateVenueProximity(
     typeof venue.coordinates.latitude !== "number" ||
     typeof venue.coordinates.longitude !== "number"
   ) {
-    return { isNearby: false, hasSufficientData: false };
+    return {
+      isNearby: false,
+      hasSufficientData: false,
+      isVerified: false,
+      isDeliveryConfirmed: false,
+      isDemonstrationData: true,
+      verificationNote: "Incomplete venue location data.",
+    };
   }
 
   const dist = haversineDistanceKm(
@@ -174,10 +223,18 @@ export function evaluateVenueProximity(
     venue.coordinates.longitude,
   );
 
+  const isVerifiedStorefront = venue.coordinates.verificationStatus === "verified";
+
   return {
     isNearby: dist <= radiusKm,
     hasSufficientData: true,
     distanceKm: dist,
     matchingReason: "storefront_proximity",
+    isVerified: isVerifiedStorefront,
+    isDeliveryConfirmed: false,
+    isDemonstrationData: !isVerifiedStorefront,
+    verificationNote: isVerifiedStorefront
+      ? "Verified storefront coordinates."
+      : "Demonstration reference coordinates. Storefront distance is an illustrative prototype estimate, not verified storefront coordinates.",
   };
 }

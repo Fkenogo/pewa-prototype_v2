@@ -31,9 +31,14 @@ export interface Organisation {
   statusNote?: string | undefined;
 }
 
+export type LocationVerificationStatus = "demonstration" | "verified";
+
+export type DeliveryCoverageStatus = "approximate_preview" | "confirmed_merchant_coverage";
+
 export interface VenueCoordinates {
   latitude: number;
   longitude: number;
+  verificationStatus?: LocationVerificationStatus | undefined;
 }
 
 export interface Venue {
@@ -52,6 +57,7 @@ export interface Venue {
   businessCategory?: string | undefined;
   timezone?: string | undefined;
   coordinates?: VenueCoordinates | undefined;
+  deliveryCoverageStatus?: DeliveryCoverageStatus | undefined;
 }
 
 export interface ModifierOption {

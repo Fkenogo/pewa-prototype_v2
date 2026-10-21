@@ -727,8 +727,10 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       });
 
       fireEvent.click(seeNearbyBtn);
-      expect(screen.getByText(/Showing businesses within ~3 km/i)).toBeInTheDocument();
-      expect(screen.getByText(/Nearby Area Active/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Nearby preview using sample business locations/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Nearby Preview Active/i)).toBeInTheDocument();
     });
 
     it("Filters dialog: opens, allows refining by tags, service, and clearing all filters", () => {
@@ -817,9 +819,9 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       // Gelato Craft Lab (Village Market, ~3.54km) is outside 3km radius
       expect(screen.queryByText("Gelato Craft Lab")).not.toBeInTheDocument();
 
-      // Notice explains grounded radius
+      // Notice explains grounded radius and illustrative prototype preview
       expect(
-        screen.getByText(/Showing businesses within ~3 km of your current location/i),
+        screen.getByText(/Nearby preview using sample business locations/i),
       ).toBeInTheDocument();
 
       unmount();
@@ -1064,6 +1066,105 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       expect(localStorage.getItem("pewa_user_coords")).toBeNull();
       expect(localStorage.getItem("pewa_customer_coords")).toBeNull();
       expect(localStorage.getItem("coords")).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // PEWA-R2-A-CORR-005: Illustrative Location Data Truthfulness
+  // =========================================================================
+  describe("PEWA-R2-A-CORR-005: Illustrative Location Data Truthfulness", () => {
+    beforeEach(() => {
+      usePewa.getState().reset();
+      usePewa.getState().loadScenario("new-cafe");
+    });
+
+    it("displays prototype preview notice and avoids claiming verified distance or confirmed delivery", () => {
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn((success: PositionCallback) => {
+          success({
+            coords: {
+              latitude: -1.2612,
+              longitude: 36.8044,
+              accuracy: 10,
+              altitude: null,
+              altitudeAccuracy: null,
+              heading: null,
+              speed: null,
+            },
+            timestamp: Date.now(),
+          } as GeolocationPosition);
+        }),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Required prototype messaging per Founder directive:
+      // “Nearby preview using sample business locations.”
+      expect(
+        screen.getByText(/Nearby preview using sample business locations/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Nearby Preview (Sample Locations)")).toBeInTheDocument();
+      expect(screen.getByText("Nearby Preview Active")).toBeInTheDocument();
+
+      // Does NOT claim storefront distances are verified
+      expect(screen.queryByText(/verified distance/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/verified storefront location/i)).not.toBeInTheDocument();
+
+      // Does NOT claim delivery eligibility is confirmed or guaranteed
+      expect(screen.queryByText(/confirmed delivery/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/guaranteed delivery/i)).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/not confirmed merchant delivery coverage or a service guarantee/i),
+      ).toBeInTheDocument();
+    });
+
+    it("preserves a future verified-data path when venue onboarding provides verified location", () => {
+      // Configure verified venue in state
+      const verifiedVenue = {
+        ...PROTOTYPE_DIRECTORY_VENUES[0]!,
+        coordinates: {
+          latitude: -1.2841,
+          longitude: 36.8236,
+          verificationStatus: "verified" as const,
+        },
+      };
+
+      usePewa.setState({
+        venues: [verifiedVenue],
+        menus: PROTOTYPE_DIRECTORY_MENUS.filter((m) => m.venueId === verifiedVenue.id),
+      });
+
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn((success: PositionCallback) => {
+          success({
+            coords: {
+              latitude: -1.2841,
+              longitude: 36.8236,
+              accuracy: 10,
+              altitude: null,
+              altitudeAccuracy: null,
+              heading: null,
+              speed: null,
+            },
+            timestamp: Date.now(),
+          } as GeolocationPosition);
+        }),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      render(<Discovery />);
+      fireEvent.click(screen.getByRole("button", { name: /See nearby/i }));
+
+      // Cleanly switches to verified notice when genuine verified onboarding data is provided
+      expect(screen.getByText(/Showing verified businesses within ~3 km/i)).toBeInTheDocument();
     });
   });
 });
