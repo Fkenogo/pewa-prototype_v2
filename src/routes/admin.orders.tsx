@@ -2,10 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { AlertTriangle, Bell, Check, ClipboardList, Fuel } from "lucide-react";
 import { toast } from "sonner";
-import { usePewa, canManageOrders, canManageBilling } from "@/lib/pewa/store";
+import { usePewa, canManageOrders, canManageBilling, ROLE_LABELS } from "@/lib/pewa/store";
 import { pageHead } from "@/lib/pewa/metadata";
 import { OrderSnapshot, STATUS_LABELS } from "@/components/pewa/OrderSnapshot";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/orders")({
   head: () =>
@@ -15,21 +16,47 @@ export const Route = createFileRoute("/admin/orders")({
     ),
   component: OrderCockpit,
 });
+
 function OrderCockpit() {
-  const { orders, organisation, role, orderPolicy, acceptOrder, declineOrder, markOrderReady } =
-    usePewa();
+  const {
+    orders,
+    organisation,
+    venues,
+    role,
+    orderPolicy,
+    acceptOrder,
+    declineOrder,
+    markOrderReady,
+  } = usePewa();
   const [tab, setTab] = useState("pending");
   const [declining, setDeclining] = useState<string | null>(null);
   const [reason, setReason] = useState("Unable to fulfil this request");
-  const mine = orders.filter((o) => o.orgId === organisation?.id);
-  const pending = mine.filter((o) => o.status === "pending").length;
-  const visible = mine.filter((o) =>
+  const [selectedStationVenueId, setSelectedStationVenueId] = useState<string>("all");
+
+  const orgVenues = venues.filter((v) => v.orgId === organisation?.id);
+  const orgOrders = orders.filter((o) => o.orgId === organisation?.id);
+  const venueFilteredOrders =
+    selectedStationVenueId === "all"
+      ? orgOrders
+      : orgOrders.filter((o) => o.venueId === selectedStationVenueId);
+
+  const pendingCount = venueFilteredOrders.filter((o) => o.status === "pending").length;
+  const preparingCount = venueFilteredOrders.filter((o) => o.status === "accepted").length;
+  const readyCount = venueFilteredOrders.filter((o) => o.status === "ready").length;
+  const historyCount = venueFilteredOrders.filter((o) =>
+    ["ready", "declined", "withdrawn"].includes(o.status),
+  ).length;
+
+  const visible = venueFilteredOrders.filter((o) =>
     tab === "pending"
       ? o.status === "pending"
       : tab === "accepted"
         ? o.status === "accepted"
-        : ["ready", "declined", "withdrawn"].includes(o.status),
+        : tab === "ready"
+          ? o.status === "ready"
+          : ["ready", "declined", "withdrawn"].includes(o.status),
   );
+
   const act = (success: boolean) => {
     if (!success)
       toast.error(
@@ -41,11 +68,60 @@ function OrderCockpit() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 pt-16 md:pt-6">
-      <p className="text-sm text-muted-foreground">{organisation?.name}</p>
-      <div className="mt-1 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Orders</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {organisation?.name}
+          </p>
+          <h1 className="mt-0.5 text-3xl font-bold">Orders Queue</h1>
+        </div>
         <ClipboardList className="h-6 w-6 text-primary" />
       </div>
+
+      {/* Operational Staff / Merchant Station Scope Header */}
+      <div className="mt-3 rounded-xl border bg-card p-3 shadow-xs space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+              {role === "staff" ? "Operational Staff Workspace" : ROLE_LABELS[role]}
+            </span>
+            <span className="text-xs font-medium text-foreground">
+              {orgVenues.find((v) => v.id === selectedStationVenueId)?.name ||
+                (selectedStationVenueId === "all"
+                  ? `${orgVenues.length} service station${orgVenues.length > 1 ? "s" : ""}`
+                  : "All Stations")}
+            </span>
+          </div>
+
+          {orgVenues.length > 1 && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground font-medium">Service station:</span>
+              <select
+                aria-label="Filter by service station"
+                value={selectedStationVenueId}
+                onChange={(e) => setSelectedStationVenueId(e.target.value)}
+                className="h-8 rounded-md border bg-background px-2 text-xs font-semibold"
+              >
+                <option value="all">All stations ({orgVenues.length})</option>
+                {orgVenues.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {orgVenues.length > 1 && (
+          <p className="text-[11px] text-muted-foreground italic border-t pt-2">
+            Prototype note: In this demonstration prototype, staff can switch their active service
+            point across organisation venues. A production deployment will bind staff credentials to
+            a verified single service station.
+          </p>
+        )}
+      </div>
+
       {role !== "staff" && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-card border p-3 text-xs">
           <div className="flex items-center gap-2">
@@ -70,6 +146,7 @@ function OrderCockpit() {
           )}
         </div>
       )}
+
       {isZeroUnits && canManageBilling(role) && (
         <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-50/60 p-3 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-200">
           <div className="flex items-center gap-2">
@@ -88,41 +165,78 @@ function OrderCockpit() {
           </Button>
         </div>
       )}
+
       <div
         aria-live="polite"
-        className="mt-5 flex items-center gap-2 border-y py-3 font-semibold text-primary"
+        className="mt-4 flex items-center gap-2 border-y py-3 font-semibold text-primary"
       >
-        <Bell className={pending ? "motion-safe:animate-pulse" : ""} />
-        {pending} {pending === 1 ? "request awaiting decision" : "requests awaiting decision"}
+        <Bell className={pendingCount ? "motion-safe:animate-pulse" : ""} />
+        {pendingCount}{" "}
+        {pendingCount === 1 ? "request awaiting decision" : "requests awaiting decision"}
       </div>
-      <div className="my-4 grid grid-cols-3 gap-2" role="tablist" aria-label="Order status">
+
+      <div
+        className="my-4 grid grid-cols-4 gap-1.5 sm:gap-2"
+        role="tablist"
+        aria-label="Order status"
+      >
         {[
-          { key: "pending", label: "Incoming" },
-          { key: "accepted", label: "Preparing" },
-          { key: "history", label: "History" },
-        ].map(({ key, label }) => (
+          { key: "pending", label: "Incoming", count: pendingCount },
+          { key: "accepted", label: "Preparing", count: preparingCount },
+          { key: "ready", label: "Ready", count: readyCount },
+          { key: "history", label: "History", count: historyCount },
+        ].map(({ key, label, count }) => (
           <Button
             key={key}
             role="tab"
+            size="sm"
             aria-selected={tab === key}
             variant={tab === key ? "default" : "outline"}
             onClick={() => setTab(key)}
+            className="flex items-center justify-center gap-1 text-xs px-2"
           >
-            {label}
+            <span>{label}</span>
+            {count > 0 && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.2 text-[10px] font-bold",
+                  tab === key
+                    ? "bg-primary-foreground text-primary"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {count}
+              </span>
+            )}
           </Button>
         ))}
       </div>
+
       {!visible.length && (
-        <p className="py-12 text-center text-muted-foreground">
-          No{" "}
-          {tab === "pending"
-            ? "incoming requests"
-            : tab === "accepted"
-              ? "orders preparing"
-              : "completed requests"}
-          .
-        </p>
+        <div className="rounded-xl border border-dashed py-12 text-center text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">
+            No{" "}
+            {tab === "pending"
+              ? "incoming requests awaiting decision"
+              : tab === "accepted"
+                ? "orders currently preparing"
+                : tab === "ready"
+                  ? "orders ready for pickup or dispatch"
+                  : "completed past requests"}
+            .
+          </p>
+          <p className="text-xs">
+            {tab === "pending"
+              ? "New customer requests will show up here in real time."
+              : tab === "accepted"
+                ? "Accepted orders in preparation will appear here."
+                : tab === "ready"
+                  ? "Orders marked ready will wait here until handed over."
+                  : "Resolved, ready, and declined orders are recorded in history."}
+          </p>
+        </div>
       )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         {visible.map((order) => (
           <article key={order.id} className="rounded-lg border bg-card p-4">
@@ -159,7 +273,12 @@ function OrderCockpit() {
                         variant="destructive"
                         className="flex-1"
                         onClick={() => {
-                          act(declineOrder(order.id, reason));
+                          const ok = declineOrder(order.id, reason);
+                          if (ok) {
+                            toast.success("Order request declined. Guest notified.");
+                          } else {
+                            act(false);
+                          }
                           setDeclining(null);
                         }}
                       >
@@ -172,7 +291,19 @@ function OrderCockpit() {
                   </>
                 ) : (
                   <div className="flex gap-2">
-                    <Button className="h-11 flex-1" onClick={() => act(acceptOrder(order.id))}>
+                    <Button
+                      className="h-11 flex-1"
+                      onClick={() => {
+                        const ok = acceptOrder(order.id);
+                        if (ok) {
+                          toast.success(
+                            "Order request accepted. 1 acceptance unit deducted and sent to prep.",
+                          );
+                        } else {
+                          act(false);
+                        }
+                      }}
+                    >
                       <Check />
                       Accept order
                     </Button>
@@ -188,7 +319,17 @@ function OrderCockpit() {
               </div>
             )}
             {canManageOrders(role) && order.status === "accepted" && (
-              <Button className="mt-4 h-11 w-full" onClick={() => act(markOrderReady(order.id))}>
+              <Button
+                className="mt-4 h-11 w-full"
+                onClick={() => {
+                  const ok = markOrderReady(order.id);
+                  if (ok) {
+                    toast.success("Order marked Ready for guest pickup/dispatch.");
+                  } else {
+                    act(false);
+                  }
+                }}
+              >
                 <Check />
                 Mark as ready
               </Button>

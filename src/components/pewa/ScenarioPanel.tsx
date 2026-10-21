@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { FlaskConical, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
-import { ROLE_LABELS, usePewa } from "@/lib/pewa/store";
+import { ROLE_LABELS, canAccessOperatorConsole, usePewa } from "@/lib/pewa/store";
 import { SCENARIOS } from "@/lib/pewa/fixtures";
 import type { Role } from "@/lib/pewa/types";
 import { cn } from "@/lib/utils";
@@ -54,6 +54,29 @@ export function ScenarioPanel() {
               </button>
             </div>
 
+            {/* Operational Staff Workspace Shortcut */}
+            {role === "staff" && (
+              <div className="mb-5 rounded-xl border border-accent/40 bg-accent/20 p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span>Operational Staff Active</span>
+                  <span className="rounded bg-accent/30 px-1.5 py-0.5 text-[10px]">Staff Mode</span>
+                </div>
+                <p className="text-xs text-proto-foreground/80">
+                  Assigned to <b>{organisation?.name}</b>
+                  {myVenue && ` · Station: ${myVenue.name}`}
+                </p>
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    navigate({ to: "/admin/orders" });
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-accent py-2 text-xs font-bold text-accent-foreground hover:bg-accent/80 transition-colors"
+                >
+                  Open Staff Orders Workspace →
+                </button>
+              </div>
+            )}
+
             <section className="mb-5">
               <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">
                 Acting as
@@ -86,13 +109,23 @@ export function ScenarioPanel() {
                 >
                   Customer home
                 </Link>
-                <Link
-                  to="/admin"
-                  onClick={() => setOpen(false)}
-                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
-                >
-                  Business workspace
-                </Link>
+                {role === "staff" ? (
+                  <Link
+                    to="/admin/orders"
+                    onClick={() => setOpen(false)}
+                    className="rounded-full bg-accent text-accent-foreground px-3 py-2 font-bold"
+                  >
+                    Staff orders workspace
+                  </Link>
+                ) : (
+                  <Link
+                    to="/admin"
+                    onClick={() => setOpen(false)}
+                    className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                  >
+                    Business workspace
+                  </Link>
+                )}
                 <Link
                   to="/directory"
                   onClick={() => setOpen(false)}
@@ -100,13 +133,15 @@ export function ScenarioPanel() {
                 >
                   Directory
                 </Link>
-                <Link
-                  to="/admin/orders"
-                  onClick={() => setOpen(false)}
-                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
-                >
-                  Merchant orders
-                </Link>
+                {role !== "staff" && (
+                  <Link
+                    to="/admin/orders"
+                    onClick={() => setOpen(false)}
+                    className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                  >
+                    Merchant orders
+                  </Link>
+                )}
                 <Link
                   to="/orders"
                   onClick={() => setOpen(false)}
@@ -132,13 +167,15 @@ export function ScenarioPanel() {
                 >
                   /m/green-garden-cafe
                 </Link>
-                <Link
-                  to="/operator"
-                  onClick={() => setOpen(false)}
-                  className="rounded-full bg-proto-foreground/20 px-3 py-2 font-semibold"
-                >
-                  Operator console
-                </Link>
+                {canAccessOperatorConsole(role) && (
+                  <Link
+                    to="/operator"
+                    onClick={() => setOpen(false)}
+                    className="rounded-full bg-proto-foreground/20 px-3 py-2 font-semibold"
+                  >
+                    Operator console
+                  </Link>
+                )}
                 <Link
                   to="/docs"
                   onClick={() => setOpen(false)}

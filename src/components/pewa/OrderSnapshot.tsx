@@ -12,9 +12,9 @@ export function OrderSnapshot({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-        <span>{order.service}</span>
-        <span>{order.guestName}</span>
-        {merchant && <span>{order.guestContact}</span>}
+        <span className="font-semibold text-foreground">Service: {order.service}</span>
+        <span>Guest: {order.guestName}</span>
+        {merchant && <span className="text-muted-foreground">Contact: {order.guestContact}</span>}
       </div>
       <ul className="divide-y border-y">
         {order.lines.map((line) => (
@@ -26,9 +26,17 @@ export function OrderSnapshot({
               <p className="font-semibold">
                 {line.quantity} × {line.name}
               </p>
-              <p className="text-sm text-muted-foreground">
-                {line.options.map((o) => o.name).join(" · ")}
-              </p>
+              {line.options.length > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {line.options
+                    .map((o) =>
+                      o.priceDelta > 0
+                        ? `${o.name} (+${formatPrice(o.priceDelta, order.currency)})`
+                        : o.name,
+                    )
+                    .join(" · ")}
+                </p>
+              )}
               {line.note && <p className="break-words text-sm">{line.note}</p>}
             </div>
             <span className="shrink-0 text-sm font-semibold">

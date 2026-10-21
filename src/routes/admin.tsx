@@ -1,4 +1,5 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { useMemo } from "react";
 import {
   Activity,
   BookOpen,
@@ -8,7 +9,16 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
-import { ROLE_LABELS, isBusinessRole, usePewa } from "@/lib/pewa/store";
+import {
+  ROLE_LABELS,
+  isBusinessRole,
+  canAuthorMenus,
+  canManageOrders,
+  canManagePromotions,
+  canManageBilling,
+  canViewActivity,
+  usePewa,
+} from "@/lib/pewa/store";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/admin")({
@@ -31,17 +41,35 @@ export const Route = createFileRoute("/admin")({
   component: AdminLayout,
 });
 
-const NAV = [
-  { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
-  { label: "Menus", icon: BookOpen, to: "/admin", ready: true },
-  { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: true },
-  { label: "Promos", icon: Sparkles, to: "/admin/promotions", ready: true },
-  { label: "Activity", icon: Activity, to: "/admin/activity", ready: true },
-  { label: "Billing", icon: CreditCard, to: "/admin/billing", ready: true },
-];
-
 function AdminLayout() {
-  const { role, organisation } = usePewa();
+  const { role, organisation, venues } = usePewa();
+  const orgVenues = venues.filter((v) => v.orgId === organisation?.id);
+  const primaryVenue = orgVenues[0];
+
+  const navItems = useMemo(() => {
+    if (role === "staff") {
+      return [
+        { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: true },
+        { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
+        { label: "Activity", icon: Activity, to: "/admin/activity", ready: true },
+      ];
+    }
+    const items = [
+      { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
+      { label: "Menus", icon: BookOpen, to: "/admin", ready: canAuthorMenus(role) },
+      { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: canManageOrders(role) },
+    ];
+    if (canManagePromotions(role)) {
+      items.push({ label: "Promos", icon: Sparkles, to: "/admin/promotions", ready: true });
+    }
+    if (canViewActivity(role)) {
+      items.push({ label: "Activity", icon: Activity, to: "/admin/activity", ready: true });
+    }
+    if (canManageBilling(role)) {
+      items.push({ label: "Billing", icon: CreditCard, to: "/admin/billing", ready: true });
+    }
+    return items;
+  }, [role]);
 
   if (!isBusinessRole(role)) {
     return (
@@ -81,9 +109,17 @@ function AdminLayout() {
     <div className="min-h-screen md:flex">
       <aside className="hidden w-60 shrink-0 border-r bg-sidebar p-4 md:block">
         <p className="font-display text-2xl font-bold text-primary">pewa</p>
-        <p className="mt-1 truncate text-sm text-muted-foreground">{organisation.name}</p>
-        <nav className="mt-6 space-y-1">
-          {NAV.map((n) => (
+        <p className="mt-1 truncate text-sm font-semibold text-foreground">{organisation.name}</p>
+        <div className="mt-2 rounded-lg border bg-card/60 p-2 text-xs space-y-0.5">
+          <p className="font-medium text-foreground">{ROLE_LABELS[role]}</p>
+          {primaryVenue && (
+            <p className="text-[11px] text-muted-foreground truncate">
+              Station: {primaryVenue.name}
+            </p>
+          )}
+        </div>
+        <nav className="mt-5 space-y-1">
+          {navItems.map((n) => (
             <NavItem key={n.label} {...n} desktop />
           ))}
         </nav>
@@ -91,8 +127,14 @@ function AdminLayout() {
       <div className="flex-1 pb-24 md:pb-8">
         <Outlet />
       </div>
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t bg-card pb-safe pt-1 md:hidden">
-        {NAV.map((n) => (
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t bg-card pb-safe pt-1 md:hidden"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {navItems.map((n) => (
           <NavItem key={n.label} {...n} />
         ))}
       </nav>
