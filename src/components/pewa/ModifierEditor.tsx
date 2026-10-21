@@ -445,6 +445,8 @@ export function ModifierEditor({
                           <Input
                             type="number"
                             min={0}
+                            step={1}
+                            aria-label="Price adjustment (non-negative)"
                             value={opt.priceDelta || ""}
                             onChange={(e) =>
                               updateOption(group.id, opt.id, {

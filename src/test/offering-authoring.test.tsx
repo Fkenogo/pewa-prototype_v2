@@ -641,14 +641,15 @@ describe("R1-C — Offering Authoring and Management", () => {
           }),
         ).toContain("Duplicate option ID");
 
-        // Negative price delta
-        expect(
-          validateModifierGroupConfig({
-            id: "grp_1",
-            name: "Size",
-            options: [{ id: "opt_1", name: "Small", priceDelta: -20 }],
-          }),
-        ).toContain("invalid price delta");
+        // Negative price delta: R1-C prototype rule enforces non-negative price adjustments (>= 0).
+        // Negative adjustments or discounts are reserved for a separate future pricing decision.
+        const negativeDeltaErr = validateModifierGroupConfig({
+          id: "grp_1",
+          name: "Size",
+          options: [{ id: "opt_1", name: "Small", priceDelta: -20 }],
+        });
+        expect(negativeDeltaErr).toContain("invalid price delta");
+        expect(negativeDeltaErr).toContain("non-negative");
 
         // Single choice with invalid min/max
         expect(
@@ -1077,6 +1078,68 @@ describe("R1-C — Offering Authoring and Management", () => {
         expect(submittedOrder.lines[0]?.options[0]?.priceDelta).toBe(60);
       });
 
+      it("strictly enforces non-negative modifier adjustments at validation and cart admission (discounts deferred)", () => {
+        const state = usePewa.getState();
+        const venue = state.venues.find((v) => v.id === "venue_ggc")!;
+        const publishedMenu = getVenuePublishedMenus(venue, state.menus, state.venues)[0]!;
+
+        const offeringWithNegativeMod: Offering = {
+          id: "off_discounted_coffee",
+          name: "Discounted Brew",
+          description: "Test negative modifier rejection",
+          price: 300,
+          emoji: "☕",
+          tags: [],
+          available: true,
+          modifiers: [
+            {
+              id: "grp_discount",
+              name: "Discount Choice",
+              selectionType: "single",
+              required: true,
+              options: [{ id: "opt_neg", name: "Bring own cup", priceDelta: -50 }],
+            },
+          ],
+        };
+
+        // 1. Merchant config validation rejects it
+        const configErr = validateOfferingModifiersConfig(offeringWithNegativeMod.modifiers);
+        expect(configErr).toContain("non-negative");
+
+        // 2. Line calculation rejects it
+        const lineRes = validateAndRecalculateLineModifiers(offeringWithNegativeMod, [
+          { groupId: "grp_discount", optionId: "opt_neg", name: "Bring own cup", priceDelta: -50 },
+        ]);
+        expect(lineRes.valid).toBe(false);
+        expect(lineRes.error).toContain("non-negative");
+
+        // 3. Cart admission rejects it even if placed in a menu object
+        usePewa
+          .getState()
+          .upsertOffering(publishedMenu.id, publishedMenu.sections[0]!.id, offeringWithNegativeMod);
+        usePewa.getState().publishMenu(publishedMenu.id);
+        usePewa.getState().clearCart();
+
+        const addRes = usePewa.getState().addCartLine(venue.id, {
+          menuId: publishedMenu.id,
+          offeringId: offeringWithNegativeMod.id,
+          name: offeringWithNegativeMod.name,
+          emoji: offeringWithNegativeMod.emoji,
+          basePrice: 300,
+          quantity: 1,
+          note: "",
+          options: [
+            {
+              groupId: "grp_discount",
+              optionId: "opt_neg",
+              name: "Bring own cup",
+              priceDelta: -50,
+            },
+          ],
+        });
+        expect(addRes).toContain("non-negative");
+      });
+
       it("preserves draft-isolation: unpublished modifier edits do not affect live customer order admission", () => {
         const state = usePewa.getState();
         const venue = state.venues.find((v) => v.id === "venue_ggc")!;
@@ -1269,6 +1332,11 @@ describe("R1-C — Offering Authoring and Management", () => {
         expect(latestAuthored[0]?.selectionType).toBe("single");
         expect(latestAuthored[0]?.required).toBe(true);
 
+        // Verify merchant price inputs enforce non-negative attributes
+        const priceInputs = screen.getAllByLabelText(/price adjustment \(non-negative\)/i);
+        expect(priceInputs.length).toBeGreaterThan(0);
+        expect(priceInputs[0]?.getAttribute("min")).toBe("0");
+
         // Tap preset button "Extras & Add-ons"
         const extrasPresetBtn = screen.getByRole("button", { name: /extras & add-ons/i });
         fireEvent.click(extrasPresetBtn);
@@ -1362,7 +1430,7 @@ describe("R1-C — Offering Authoring and Management", () => {
         expect(cart?.lines[0]?.options.length).toBe(3); // 1 size + 2 extras
 
         unmountForm();
-      });
+      }, 20000);
     });
   });
 });

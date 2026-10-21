@@ -33,7 +33,7 @@ export function validateModifierGroupConfig(group: ModifierGroup): string | null
     }
     optionIds.add(opt.id);
     if (typeof opt.priceDelta !== "number" || isNaN(opt.priceDelta) || opt.priceDelta < 0) {
-      return `Option "${opt.name}" in group "${name}" has an invalid price delta.`;
+      return `Option "${opt.name}" in group "${name}" has an invalid price delta. Modifier price adjustments must be non-negative (>= 0).`;
     }
   }
 
@@ -215,6 +215,16 @@ export function validateAndRecalculateLineModifiers(
     // Build authoritative option entries
     for (const opt of selectedForGroup) {
       const realOpt = group.options.find((o) => o.id === opt.optionId)!;
+      if (
+        typeof realOpt.priceDelta !== "number" ||
+        isNaN(realOpt.priceDelta) ||
+        realOpt.priceDelta < 0
+      ) {
+        return {
+          valid: false,
+          error: `Option "${realOpt.name}" in group "${group.name}" has an invalid negative price delta. Modifier price adjustments must be non-negative (>= 0).`,
+        };
+      }
       authoritativeOptions.push({
         groupId: group.id,
         optionId: realOpt.id,
