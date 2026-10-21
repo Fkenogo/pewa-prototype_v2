@@ -1,5 +1,6 @@
 import type { CartLine, GuestCart, ModifierGroup, Offering, OrderPolicy, PewaState } from "./types";
 import { getVenuePublishedMenus } from "./taxonomy";
+import { getEffectiveOffering, getEffectiveOfferingAvailability } from "./availability";
 
 export const lineTotal = (line: CartLine) =>
   (line.basePrice + line.options.reduce((sum, option) => sum + option.priceDelta, 0)) *
@@ -171,7 +172,7 @@ export function validateModifierSelection(
  */
 export function validateAndRecalculateLineModifiers(
   offering: Offering,
-  lineOptions: CartLine["options"],
+  lineOptions: CartLine["options"] = [],
 ): {
   valid: boolean;
   error?: string;
@@ -257,11 +258,20 @@ export function validateCart(state: PewaState, cart: GuestCart | null): string |
     if (!menu) {
       return "Orders cannot be placed for unpublished draft, hidden or archived menus.";
     }
-    const offering = menu.sections
+    const rawOffering = menu.sections
       .flatMap((s) => s.offerings)
       .find((o) => o.id === line.offeringId);
-    if (!offering?.available)
-      return `${line.name} is no longer available. Remove it before submitting.`;
+    if (!rawOffering) {
+      return `${line.name} is no longer available on this menu.`;
+    }
+    const availability = getEffectiveOfferingAvailability(rawOffering, cart.venueId, {
+      simulatedTime: state.simulatedTime,
+      sharedOfferings: state.sharedOfferings,
+    });
+    if (!availability.available) {
+      return `${line.name} is no longer available (${availability.message || "Unavailable"}). Remove it before submitting.`;
+    }
+    const offering = getEffectiveOffering(rawOffering, cart.venueId, state.sharedOfferings);
     if (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 99)
       return "Choose a quantity between 1 and 99.";
     if (offering.price !== line.basePrice)

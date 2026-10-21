@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { Offering, Venue } from "@/lib/pewa/types";
 import { formatPrice, usePewa, validateModifierSelection } from "@/lib/pewa/store";
 import { canAdmitOrder } from "@/lib/pewa/ordering";
+import { getEffectiveOfferingAvailability } from "@/lib/pewa/availability";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -23,10 +24,15 @@ export function OfferingOrderForm({
   onAdded: () => void;
   onOpenContact?: () => void;
 }) {
-  const { menus, addCartLine, orderPolicy } = usePewa();
+  const { menus, addCartLine, orderPolicy, simulatedTime, sharedOfferings } = usePewa();
   const parentMenu = menus.find((m) => m.id === menuId);
   const isUnpublishedOrPreview =
     isPreview || (parentMenu ? parentMenu.status !== "published" : false);
+
+  const availability = getEffectiveOfferingAvailability(offering, venue.id, {
+    simulatedTime,
+    sharedOfferings,
+  });
 
   // Single choice state: groupId -> optionId (never silently pre-selected)
   const [selectedSingle, setSelectedSingle] = useState<Record<string, string>>({});
@@ -294,10 +300,19 @@ export function OfferingOrderForm({
             Ordering disabled in draft preview
           </Button>
         </div>
-      ) : !offering.available ? (
+      ) : !availability.available ? (
         <div className="space-y-2">
-          <p className="rounded-lg bg-status-soldout/15 p-2.5 text-center text-xs font-semibold text-status-soldout">
-            This item is currently sold out. You can contact the business directly.
+          <p
+            className={cn(
+              "rounded-lg p-2.5 text-center text-xs font-semibold",
+              availability.reason === "sold_out_manual"
+                ? "bg-status-soldout/15 text-status-soldout"
+                : "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+            )}
+          >
+            {availability.reason === "sold_out_manual"
+              ? "This item is currently sold out. You can contact the business directly."
+              : `Currently outside scheduled service hours (${availability.scheduleDetails || "Scheduled hours"}). You can contact the business directly.`}
           </p>
           <Button
             type="button"

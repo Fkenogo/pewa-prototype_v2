@@ -6,10 +6,50 @@ import type {
   PewaState,
   PromotionCampaign,
   ScenarioId,
+  SharedOffering,
   UsageDisputeCase,
   Venue,
 } from "./types";
 import { getCuratedLibraryImageUrl } from "./taxonomy";
+
+export const sampleSharedOfferings: SharedOffering[] = [
+  {
+    id: "sh_artisan_cappuccino",
+    orgId: "org_multi_brand",
+    name: "Artisan Cappuccino",
+    description: "Double-shot espresso with silky steamed microfoam",
+    price: 280,
+    emoji: "☕",
+    tags: ["Coffee", "Artisan"],
+    modifiers: [
+      {
+        id: "mod_milk_choice",
+        name: "Milk Choice",
+        selectionType: "single",
+        required: true,
+        options: [
+          { id: "opt_whole", name: "Whole Milk", priceDelta: 0 },
+          { id: "opt_oat", name: "Oat Milk", priceDelta: 50 },
+          { id: "opt_almond", name: "Almond Milk", priceDelta: 50 },
+        ],
+      },
+    ],
+    image: getCuratedLibraryImageUrl("img_cappuccino"),
+    imageSource: "library",
+  },
+  {
+    id: "sh_signature_burger",
+    orgId: "org_multi_brand",
+    name: "Signature Gourmet Burger",
+    description: "Grilled beef patty, cheddar, house pickles, garlic aioli on brioche.",
+    price: 950,
+    emoji: "🍔",
+    tags: ["Chef's Special"],
+    modifiers: [],
+    image: getCuratedLibraryImageUrl("img_burger_combo"),
+    imageSource: "library",
+  },
+];
 
 export const SCENARIOS: { id: ScenarioId; label: string; ready: boolean; hint: string }[] = [
   { id: "new-cafe", label: "New café", ready: true, hint: "Empty workspace — start onboarding" },
@@ -172,6 +212,13 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
           emoji: "🥑",
           image: getCuratedLibraryImageUrl("img_avo_toast"),
           imageSource: "library",
+          schedule: {
+            enabled: true,
+            name: "Breakfast Only",
+            startTime: "07:00",
+            endTime: "11:30",
+            days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+          },
           modifiers: [
             {
               id: "mod_egg",
@@ -179,6 +226,18 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
               options: [{ id: "o5", name: "Poached egg", priceDelta: 100 }],
             },
           ],
+        },
+        {
+          id: "off_croissant_almond",
+          name: "Almond Croissant",
+          description: "Twice-baked butter croissant filled with frangipane and toasted almonds.",
+          price: 360,
+          tags: ["Freshly Baked", "Vegetarian"],
+          available: true,
+          emoji: "🥐",
+          image: getCuratedLibraryImageUrl("img_croissant"),
+          imageSource: "library",
+          modifiers: [],
         },
         {
           id: "off_mandazi",
@@ -293,6 +352,34 @@ const hotelProtectedMenu: Menu = {
           available: true,
           emoji: "🥪",
           modifiers: [],
+        },
+        {
+          id: "off_steak_room",
+          name: "Prime Aged Ribeye (In-Room Dining)",
+          description: "250g grass-fed beef, herb butter, hand-cut frites delivered to your room.",
+          price: 2800,
+          tags: ["Chef's Special", "Gluten-Free"],
+          specialBadge: "In-Room",
+          available: true,
+          emoji: "🥩",
+          image: getCuratedLibraryImageUrl("img_steak_frites"),
+          imageSource: "library",
+          modifiers: [
+            {
+              id: "mod_tray_service",
+              name: "Tray Service Setup",
+              selectionType: "single",
+              required: true,
+              options: [
+                { id: "opt_standard_tray", name: "Standard Room Tray Setup", priceDelta: 150 },
+                {
+                  id: "opt_luxury_setup",
+                  name: "White Linen & Warm Cloche Setup",
+                  priceDelta: 350,
+                },
+              ],
+            },
+          ],
         },
       ],
     },
@@ -434,6 +521,37 @@ const solBakeryMenu: Menu = {
         },
       ],
     },
+    {
+      id: "sec_bakery_coffee",
+      name: "Coffee & Drinks",
+      offerings: [
+        {
+          id: "off_cappuccino_sol",
+          sharedOfferingId: "sh_artisan_cappuccino",
+          name: "Artisan Cappuccino",
+          description: "Double-shot espresso with silky steamed microfoam",
+          price: 280,
+          tags: ["Coffee", "Artisan"],
+          available: true,
+          emoji: "☕",
+          image: getCuratedLibraryImageUrl("img_cappuccino"),
+          imageSource: "library",
+          modifiers: [
+            {
+              id: "mod_milk_choice",
+              name: "Milk Choice",
+              selectionType: "single",
+              required: true,
+              options: [
+                { id: "opt_whole", name: "Whole Milk", priceDelta: 0 },
+                { id: "opt_oat", name: "Oat Milk", priceDelta: 50 },
+                { id: "opt_almond", name: "Almond Milk", priceDelta: 50 },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   ],
 };
 
@@ -441,7 +559,7 @@ const gelatoLabMenu: Menu = {
   id: "menu_gelato_lab",
   orgId: "org_multi_brand",
   venueId: "venue_gelato",
-  name: "Gelato & Sorbet Menu",
+  name: "Gelato & Espresso Menu",
   status: "published",
   isProtected: false,
   updatedAt: "2026-10-19T10:30:00.000Z",
@@ -461,6 +579,62 @@ const gelatoLabMenu: Menu = {
           emoji: "🍨",
           image: getCuratedLibraryImageUrl("img_pistachio_gelato"),
           imageSource: "library",
+          modifiers: [],
+        },
+      ],
+    },
+    {
+      id: "sec_gelato_coffee",
+      name: "Espresso Bar",
+      offerings: [
+        {
+          id: "off_cappuccino_gelato",
+          sharedOfferingId: "sh_artisan_cappuccino",
+          name: "Artisan Cappuccino",
+          description: "Double-shot espresso with silky steamed microfoam",
+          price: 280,
+          tags: ["Coffee", "Artisan"],
+          available: true,
+          emoji: "☕",
+          image: getCuratedLibraryImageUrl("img_cappuccino"),
+          imageSource: "library",
+          venueOverrides: {
+            venue_gelato: {
+              venueId: "venue_gelato",
+              price: 350,
+              description: "Quick grab-and-go roast with steamed microfoam",
+            },
+          },
+          modifiers: [
+            {
+              id: "mod_milk_choice",
+              name: "Milk Choice",
+              selectionType: "single",
+              required: true,
+              options: [
+                { id: "opt_whole", name: "Whole Milk", priceDelta: 0 },
+                { id: "opt_oat", name: "Oat Milk", priceDelta: 50 },
+                { id: "opt_almond", name: "Almond Milk", priceDelta: 50 },
+              ],
+            },
+          ],
+        },
+        {
+          id: "off_strawberry_brioche_exclusion",
+          name: "Fresh Strawberry Brioche",
+          description: "Warm brioche filled with sweet strawberry compote.",
+          price: 380,
+          tags: ["Freshly Baked", "Vegetarian"],
+          available: true,
+          emoji: "🍓",
+          image: getCuratedLibraryImageUrl("img_croissant"),
+          imageSource: "library",
+          venueOverrides: {
+            venue_gelato: {
+              venueId: "venue_gelato",
+              hidden: true,
+            },
+          },
           modifiers: [],
         },
       ],
@@ -528,6 +702,8 @@ export function buildScenario(
       },
     ] as ModerationCase[],
     simulatedOffline: false,
+    sharedOfferings: sampleSharedOfferings,
+    simulatedTime: "10:00",
   };
   if (id === "zero-units" || id === "admitted-pending") common.orderPolicy.included = 0;
 

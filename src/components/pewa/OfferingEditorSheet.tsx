@@ -11,8 +11,17 @@ import {
   Copy,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Menu, ModifierGroup, Offering, Section } from "@/lib/pewa/types";
+import type {
+  Menu,
+  ModifierGroup,
+  Offering,
+  OfferingSchedule,
+  Section,
+  Venue,
+  VenueOfferingOverride,
+} from "@/lib/pewa/types";
 import { formatPrice, validateOfferingModifiersConfig } from "@/lib/pewa/store";
+import { ALL_DAYS, formatSchedule } from "@/lib/pewa/availability";
 import {
   getExistingMenuTags,
   getGroupedTagSuggestionsForCategory,
@@ -38,6 +47,7 @@ import { cn } from "@/lib/utils";
 
 export interface OfferingDraft {
   id?: string;
+  sharedOfferingId?: string | undefined;
   name: string;
   price: number;
   description: string;
@@ -48,6 +58,8 @@ export interface OfferingDraft {
   tags: string[];
   modifiers: ModifierGroup[];
   specialBadge?: string | undefined;
+  schedule?: OfferingSchedule | undefined;
+  venueOverrides?: Record<string, VenueOfferingOverride> | undefined;
 }
 
 export const defaultOfferingDraft: OfferingDraft = {
@@ -68,6 +80,7 @@ export function OfferingEditorSheet({
   initialOffering,
   currency = "KES",
   categoryContext = "",
+  venues,
   onSave,
   onDelete,
   onDuplicate,
@@ -79,6 +92,7 @@ export function OfferingEditorSheet({
   initialOffering?: Offering | null;
   currency?: string;
   categoryContext?: string;
+  venues?: Venue[];
   onSave: (targetSectionId: string, offering: OfferingDraft, continueAdding?: boolean) => void;
   onDelete?: (sectionId: string, offeringId: string) => void;
   onDuplicate?: (sectionId: string, offeringId: string) => void;
@@ -87,13 +101,16 @@ export function OfferingEditorSheet({
   const [targetSectionId, setTargetSectionId] = useState<string>(sectionId);
   const [customTagInput, setCustomTagInput] = useState("");
   const [imageModalOpen, setImageModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"details" | "tags" | "modifiers">("details");
+  const [activeTab, setActiveTab] = useState<
+    "details" | "tags" | "modifiers" | "schedule" | "variations"
+  >("details");
 
   useEffect(() => {
     if (open) {
       if (initialOffering) {
         setDraft({
           id: initialOffering.id,
+          sharedOfferingId: initialOffering.sharedOfferingId,
           name: initialOffering.name,
           price: initialOffering.price,
           description: initialOffering.description || "",
@@ -106,6 +123,12 @@ export function OfferingEditorSheet({
             ? JSON.parse(JSON.stringify(initialOffering.modifiers))
             : [],
           specialBadge: initialOffering.specialBadge,
+          schedule: initialOffering.schedule
+            ? structuredClone(initialOffering.schedule)
+            : undefined,
+          venueOverrides: initialOffering.venueOverrides
+            ? structuredClone(initialOffering.venueOverrides)
+            : undefined,
         });
       } else {
         setDraft({ ...defaultOfferingDraft, emoji: "🍽️" });
@@ -186,24 +209,24 @@ export function OfferingEditorSheet({
 
           <div className="space-y-4 pt-2 pb-safe">
             {/* Top Navigation Tabs for Faster Authoring */}
-            <div className="flex rounded-xl border bg-muted/40 p-1">
+            <div className="flex rounded-xl border bg-muted/40 p-1 overflow-x-auto no-scrollbar">
               <button
                 type="button"
                 onClick={() => setActiveTab("details")}
                 className={cn(
-                  "flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all",
+                  "flex-1 min-w-[70px] rounded-lg py-1.5 text-xs font-semibold transition-all text-center shrink-0",
                   activeTab === "details"
                     ? "bg-primary text-primary-foreground shadow-2xs"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                1. Basic Info
+                1. Info
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab("tags")}
                 className={cn(
-                  "flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all flex items-center justify-center gap-1",
+                  "flex-1 min-w-[70px] rounded-lg py-1.5 text-xs font-semibold transition-all text-center shrink-0",
                   activeTab === "tags"
                     ? "bg-primary text-primary-foreground shadow-2xs"
                     : "text-muted-foreground hover:text-foreground",
@@ -215,7 +238,7 @@ export function OfferingEditorSheet({
                 type="button"
                 onClick={() => setActiveTab("modifiers")}
                 className={cn(
-                  "flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all flex items-center justify-center gap-1",
+                  "flex-1 min-w-[75px] rounded-lg py-1.5 text-xs font-semibold transition-all text-center shrink-0",
                   activeTab === "modifiers"
                     ? "bg-primary text-primary-foreground shadow-2xs"
                     : "text-muted-foreground hover:text-foreground",
@@ -223,11 +246,52 @@ export function OfferingEditorSheet({
               >
                 3. Options {draft.modifiers.length > 0 && `(${draft.modifiers.length})`}
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("schedule")}
+                className={cn(
+                  "flex-1 min-w-[70px] rounded-lg py-1.5 text-xs font-semibold transition-all text-center shrink-0",
+                  activeTab === "schedule"
+                    ? "bg-primary text-primary-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                4. Hours {draft.schedule?.enabled && "•"}
+              </button>
+              {venues && venues.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("variations")}
+                  className={cn(
+                    "flex-1 min-w-[80px] rounded-lg py-1.5 text-xs font-semibold transition-all text-center shrink-0",
+                    activeTab === "variations"
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  5. Branches{" "}
+                  {draft.venueOverrides &&
+                    Object.keys(draft.venueOverrides).length > 0 &&
+                    `(${Object.keys(draft.venueOverrides).length})`}
+                </button>
+              )}
             </div>
 
             {/* TAB 1: BASIC INFORMATION (ESSENTIAL FIRST WORKFLOW) */}
             {activeTab === "details" && (
               <div className="space-y-4">
+                {draft.sharedOfferingId && (
+                  <div className="flex items-center justify-between rounded-xl border border-primary/25 bg-primary/5 p-2.5 text-xs">
+                    <span className="font-semibold text-primary">Linked to Shared Master</span>
+                    <button
+                      type="button"
+                      onClick={() => setDraft({ ...draft, sharedOfferingId: undefined })}
+                      className="text-[11px] font-semibold text-muted-foreground hover:text-foreground underline"
+                    >
+                      Unlink to make local copy
+                    </button>
+                  </div>
+                )}
                 {/* 1. Offering Name */}
                 <div>
                   <Label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -593,6 +657,250 @@ export function OfferingEditorSheet({
                 onChange={(mods) => setDraft({ ...draft, modifiers: mods })}
                 currency={currency}
               />
+            )}
+
+            {/* TAB 4: SERVING HOURS AND SCHEDULING */}
+            {activeTab === "schedule" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3 py-2.5">
+                  <div>
+                    <p className="text-xs font-semibold">Enable serving hours</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Restrict when this item is available for ordering (e.g. Breakfast only).
+                    </p>
+                  </div>
+                  <Switch
+                    checked={draft.schedule?.enabled ?? false}
+                    onCheckedChange={(val) =>
+                      setDraft({
+                        ...draft,
+                        schedule: {
+                          enabled: val,
+                          name: draft.schedule?.name || "Breakfast Only",
+                          startTime: draft.schedule?.startTime || "07:00",
+                          endTime: draft.schedule?.endTime || "11:30",
+                          days: draft.schedule?.days || [
+                            "mon",
+                            "tue",
+                            "wed",
+                            "thu",
+                            "fri",
+                            "sat",
+                            "sun",
+                          ],
+                        },
+                      })
+                    }
+                    aria-label="Enable serving schedule"
+                  />
+                </div>
+
+                {draft.schedule?.enabled && (
+                  <div className="space-y-3 rounded-2xl border bg-card p-3.5">
+                    <div>
+                      <Label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                        Schedule Label (Optional)
+                      </Label>
+                      <Input
+                        value={draft.schedule.name || ""}
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            schedule: { ...draft.schedule!, name: e.target.value },
+                          })
+                        }
+                        placeholder="e.g. Breakfast Only, Lunch Special"
+                        className="h-10 text-sm"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                          Start Time (24h)
+                        </Label>
+                        <Input
+                          type="time"
+                          value={draft.schedule.startTime || "07:00"}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              schedule: { ...draft.schedule!, startTime: e.target.value },
+                            })
+                          }
+                          className="h-10 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                          End Time (24h)
+                        </Label>
+                        <Input
+                          type="time"
+                          value={draft.schedule.endTime || "11:30"}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              schedule: { ...draft.schedule!, endTime: e.target.value },
+                            })
+                          }
+                          className="h-10 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                        Active Days of the Week
+                      </Label>
+                      <div className="grid grid-cols-7 gap-1">
+                        {ALL_DAYS.map((day) => {
+                          const isDayActive = draft.schedule?.days?.includes(day.id) ?? true;
+                          return (
+                            <button
+                              key={day.id}
+                              type="button"
+                              onClick={() => {
+                                const currentDays = draft.schedule?.days || [
+                                  "mon",
+                                  "tue",
+                                  "wed",
+                                  "thu",
+                                  "fri",
+                                  "sat",
+                                  "sun",
+                                ];
+                                const nextDays = isDayActive
+                                  ? currentDays.filter((d) => d !== day.id)
+                                  : [...currentDays, day.id];
+                                setDraft({
+                                  ...draft,
+                                  schedule: { ...draft.schedule!, days: nextDays },
+                                });
+                              }}
+                              className={cn(
+                                "h-8 rounded-lg text-xs font-semibold transition-all border",
+                                isDayActive
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "bg-muted/40 text-muted-foreground border-border",
+                              )}
+                            >
+                              {day.short}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground italic">
+                      Current rule: {formatSchedule(draft.schedule)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 5: BRANCH/VENUE VARIATIONS */}
+            {activeTab === "variations" && venues && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Override prices, descriptions, or availability for specific branch locations
+                  without affecting master settings.
+                </p>
+                {venues.map((v) => {
+                  const ov = draft.venueOverrides?.[v.id] || { venueId: v.id };
+                  const isHidden = Boolean(ov.hidden);
+                  return (
+                    <div key={v.id} className="rounded-xl border bg-card p-3 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">{v.name}</span>
+                        <label className="flex items-center gap-1 text-[11px] cursor-pointer text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={isHidden}
+                            onChange={(e) => {
+                              const nextOv = {
+                                ...(draft.venueOverrides || {}),
+                                [v.id]: { ...ov, hidden: e.target.checked },
+                              };
+                              setDraft({ ...draft, venueOverrides: nextOv });
+                            }}
+                            className="accent-primary"
+                          />
+                          <span>Exclude at this branch</span>
+                        </label>
+                      </div>
+
+                      {!isHidden && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div>
+                            <Label className="text-[10px] font-semibold text-muted-foreground">
+                              Branch Price ({currency})
+                            </Label>
+                            <Input
+                              type="number"
+                              placeholder={`Master: ${draft.price}`}
+                              value={ov.price ?? ""}
+                              onChange={(e) => {
+                                const val =
+                                  e.target.value === "" ? undefined : Number(e.target.value);
+                                const nextOv = {
+                                  ...(draft.venueOverrides || {}),
+                                  [v.id]: { ...ov, price: val },
+                                };
+                                setDraft({ ...draft, venueOverrides: nextOv });
+                              }}
+                              className="h-9 text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[10px] font-semibold text-muted-foreground">
+                              Branch Availability
+                            </Label>
+                            <select
+                              value={ov.available === false ? "sold_out" : "default"}
+                              onChange={(e) => {
+                                const avail = e.target.value === "sold_out" ? false : undefined;
+                                const nextOv = {
+                                  ...(draft.venueOverrides || {}),
+                                  [v.id]: { ...ov, available: avail },
+                                };
+                                setDraft({ ...draft, venueOverrides: nextOv });
+                              }}
+                              className="h-9 w-full rounded-md border bg-background px-2 text-xs"
+                            >
+                              <option value="default">
+                                Use Master ({draft.available ? "Available" : "Sold out"})
+                              </option>
+                              <option value="sold_out">Sold Out at this branch</option>
+                            </select>
+                          </div>
+
+                          <div className="col-span-2">
+                            <Label className="text-[10px] font-semibold text-muted-foreground">
+                              Branch Description Override (Optional)
+                            </Label>
+                            <Input
+                              placeholder={draft.description || "Master description"}
+                              value={ov.description ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? undefined : e.target.value;
+                                const nextOv = {
+                                  ...(draft.venueOverrides || {}),
+                                  [v.id]: { ...ov, description: val },
+                                };
+                                setDraft({ ...draft, venueOverrides: nextOv });
+                              }}
+                              className="h-9 text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
             {/* Sticky Action Footer */}

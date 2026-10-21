@@ -63,8 +63,45 @@ export interface ModifierGroup {
   maxSelections?: number | undefined;
 }
 
+export type DayOfWeek = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface OfferingSchedule {
+  enabled: boolean;
+  days?: DayOfWeek[] | undefined;
+  startTime?: string | undefined; // "HH:MM" e.g. "07:00"
+  endTime?: string | undefined; // "HH:MM" e.g. "11:30"
+  name?: string | undefined; // e.g. "Breakfast Only"
+}
+
+export interface VenueOfferingOverride {
+  venueId: string;
+  price?: number | undefined;
+  description?: string | undefined;
+  available?: boolean | undefined;
+  hidden?: boolean | undefined; // local visibility exclusion
+  specialBadge?: string | undefined;
+}
+
+export interface SharedOffering {
+  id: string;
+  orgId: string;
+  name: string;
+  category?: string | undefined;
+  description: string;
+  price: number;
+  tags: string[];
+  emoji: string;
+  modifiers: ModifierGroup[];
+  image?: string | undefined;
+  imageSource?: "library" | "upload" | undefined;
+  specialBadge?: string | undefined;
+  schedule?: OfferingSchedule | undefined;
+  venueOverrides?: Record<string, VenueOfferingOverride> | undefined;
+}
+
 export interface Offering {
   id: string;
+  sharedOfferingId?: string | undefined;
   name: string;
   description: string;
   price: number;
@@ -75,6 +112,8 @@ export interface Offering {
   specialBadge?: string | undefined;
   image?: string | undefined;
   imageSource?: "library" | "upload" | undefined;
+  schedule?: OfferingSchedule | undefined;
+  venueOverrides?: Record<string, VenueOfferingOverride> | undefined;
 }
 
 export interface Section {
@@ -185,6 +224,8 @@ export interface PewaState {
   disputes: UsageDisputeCase[];
   moderationCases: ModerationCase[];
   simulatedOffline: boolean;
+  sharedOfferings?: SharedOffering[] | undefined;
+  simulatedTime?: string | undefined; // "HH:MM" e.g. "09:30" or ISO string
 }
 
 export interface CartLine {
