@@ -6,6 +6,7 @@ import type {
   MenuPublishedSnapshot,
   MenuStatus,
   Offering,
+  OfferingSchedule,
   PewaState,
   Role,
   ScenarioId,
@@ -15,8 +16,10 @@ import type {
   PromotionCampaign,
   GuestSession,
   OrgStatus,
+  SharedOffering,
   UsageDisputeCase,
   ModerationCase,
+  VenueOfferingOverride,
 } from "./types";
 import { buildScenario } from "./fixtures";
 import { getVenuePublishedMenus } from "./taxonomy";
@@ -29,6 +32,17 @@ import {
   validateModifierSelection,
   validateAndRecalculateLineModifiers,
 } from "./ordering";
+import {
+  getEffectiveOffering,
+  getEffectiveOfferingAvailability,
+  isOfferingHiddenAtVenue,
+  getMenuEffectiveSharedOfferings,
+  isOfferingInSchedule,
+  formatSchedule,
+  getSharedOfferingUsage,
+  parseScheduleReferenceTime,
+  getVenueLocalTime,
+} from "./availability";
 
 export {
   canAdmitOrder,
@@ -95,6 +109,35 @@ type Actions = {
   ) => void;
   removeOffering: (menuId: string, sectionId: string, offeringId: string) => void;
   toggleAvailability: (menuId: string, sectionId: string, offeringId: string) => void;
+  setOfferingSchedule: (
+    menuId: string,
+    sectionId: string,
+    offeringId: string,
+    schedule?: OfferingSchedule,
+  ) => void;
+  setOfferingVenueOverride: (
+    menuId: string,
+    sectionId: string,
+    offeringId: string,
+    venueId: string,
+    override: Partial<VenueOfferingOverride>,
+  ) => void;
+  removeOfferingVenueOverride: (
+    menuId: string,
+    sectionId: string,
+    offeringId: string,
+    venueId: string,
+  ) => void;
+  toggleOfferingVenueAvailability: (
+    menuId: string,
+    sectionId: string,
+    offeringId: string,
+    venueId: string,
+  ) => void;
+  setSimulatedTime: (time?: string) => void;
+  upsertSharedOffering: (sharedOffering: SharedOffering) => void;
+  deleteSharedOffering: (sharedOfferingId: string) => void;
+  addSharedOfferingToMenu: (menuId: string, sectionId: string, sharedOfferingId: string) => string;
   setMenuStatus: (menuId: string, status: MenuStatus) => void;
   publishMenu: (menuId: string) => boolean;
   unpublishMenu: (menuId: string) => void;
@@ -177,12 +220,51 @@ export {
   searchImageLibrary,
   cropAndCompressImage,
 } from "./taxonomy";
+export {
+  getMenuEffectiveSharedOfferings,
+  getEffectiveOffering,
+  getEffectiveOfferingAvailability,
+  isOfferingHiddenAtVenue,
+  isOfferingInSchedule,
+  formatSchedule,
+  getSharedOfferingUsage,
+  parseScheduleReferenceTime,
+  getVenueLocalTime,
+} from "./availability";
+
+/**
+ * Sanitizes venue overrides to reject negative or non-finite prices while preserving explicit zero.
+ */
+export function sanitizeVenueOverrides(
+  overrides?: Record<string, VenueOfferingOverride>,
+): Record<string, VenueOfferingOverride> | undefined {
+  if (!overrides) return undefined;
+  const sanitized: Record<string, VenueOfferingOverride> = {};
+  for (const [vid, ov] of Object.entries(overrides)) {
+    const validPrice =
+      ov.price !== undefined &&
+      typeof ov.price === "number" &&
+      Number.isFinite(ov.price) &&
+      ov.price >= 0
+        ? ov.price
+        : undefined;
+    sanitized[vid] = {
+      ...ov,
+      price: validPrice,
+    };
+  }
+  return sanitized;
+}
 
 /**
  * Checks whether a published menu has pending draft changes that differ from its live snapshot.
  * Availability changes (sold out) take effect immediately and do not count as draft changes.
+ * Also checks if any shared offerings linked in this menu have pending catalogue changes.
  */
-export function hasUnpublishedDraftChanges(menu: Menu): boolean {
+export function hasUnpublishedDraftChanges(
+  menu: Menu,
+  sharedOfferings?: SharedOffering[],
+): boolean {
   if (menu.status !== "published" || !menu.publishedSnapshot) return false;
   const snap = menu.publishedSnapshot;
 
@@ -208,28 +290,70 @@ export function hasUnpublishedDraftChanges(menu: Menu): boolean {
         tags: (o.tags || []).slice().sort(),
         modifiers: o.modifiers,
         specialBadge: o.specialBadge,
+        schedule: o.schedule,
+        venueOverrides: o.venueOverrides,
+        sharedOfferingId: o.sharedOfferingId,
       })),
     }));
 
-  return JSON.stringify(normSec(menu.sections)) !== JSON.stringify(normSec(snap.sections));
+  if (JSON.stringify(normSec(menu.sections)) !== JSON.stringify(normSec(snap.sections))) {
+    return true;
+  }
+
+  // Check if any shared offering linked in this menu has been updated in the catalogue
+  if (sharedOfferings && snap.sharedOfferingsSnapshot) {
+    const usedSharedIds = new Set<string>();
+    for (const sec of menu.sections) {
+      for (const off of sec.offerings) {
+        if (off.sharedOfferingId) {
+          usedSharedIds.add(off.sharedOfferingId);
+        }
+      }
+    }
+    for (const sharedId of usedSharedIds) {
+      const currentShared = sharedOfferings.find((s) => s.id === sharedId);
+      const snapShared = snap.sharedOfferingsSnapshot.find((s) => s.id === sharedId);
+      if (!currentShared && !snapShared) continue;
+      if (!currentShared || !snapShared) return true;
+      if (JSON.stringify(currentShared) !== JSON.stringify(snapShared)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
-const ensurePublishedSnapshots = (menus: Menu[]): Menu[] =>
+const ensurePublishedSnapshots = (menus: Menu[], sharedOfferings?: SharedOffering[]): Menu[] =>
   menus.map((m) => {
-    if (m.status === "published" && !m.publishedSnapshot) {
-      return {
-        ...m,
-        publishedSnapshot: {
-          name: m.name,
-          description: m.description,
-          coverImage: m.coverImage,
-          venueId: m.venueId,
-          venueIds: m.venueIds ? [...m.venueIds] : undefined,
-          isProtected: m.isProtected,
-          sections: JSON.parse(JSON.stringify(m.sections)),
-          publishedAt: m.publishedAt || now(),
-        },
-      };
+    if (m.status === "published") {
+      if (!m.publishedSnapshot) {
+        return {
+          ...m,
+          publishedSnapshot: {
+            name: m.name,
+            description: m.description,
+            coverImage: m.coverImage,
+            venueId: m.venueId,
+            venueIds: m.venueIds ? [...m.venueIds] : undefined,
+            isProtected: m.isProtected,
+            sections: JSON.parse(JSON.stringify(m.sections)),
+            publishedAt: m.publishedAt || now(),
+            sharedOfferingsSnapshot: sharedOfferings
+              ? JSON.parse(JSON.stringify(sharedOfferings))
+              : undefined,
+          },
+        };
+      }
+      if (!m.publishedSnapshot.sharedOfferingsSnapshot && sharedOfferings) {
+        return {
+          ...m,
+          publishedSnapshot: {
+            ...m.publishedSnapshot,
+            sharedOfferingsSnapshot: JSON.parse(JSON.stringify(sharedOfferings)),
+          },
+        };
+      }
     }
     return m;
   });
@@ -246,7 +370,7 @@ export const usePewa = create<PewaState & Actions>()(
       const initialSeed = buildScenario("new-cafe");
       return {
         ...initialSeed,
-        menus: ensurePublishedSnapshots(initialSeed.menus),
+        menus: ensurePublishedSnapshots(initialSeed.menus, initialSeed.sharedOfferings),
         visitVenue: (id) =>
           set((s) => ({ recents: [id, ...s.recents.filter((v) => v !== id)].slice(0, 12) })),
         toggleFavourite: (id) =>
@@ -277,17 +401,31 @@ export const usePewa = create<PewaState & Actions>()(
           if (!publishedMenu) {
             return "Cannot add items from an unpublished draft or archived menu.";
           }
-          const publishedOffering = publishedMenu.sections
+          const rawOffering = publishedMenu.sections
             .flatMap((sec) => sec.offerings)
             .find((o) => o.id === line.offeringId);
-          if (!publishedOffering) {
+          if (!rawOffering) {
             return "This offering is not found on the published menu.";
           }
-          if (!publishedOffering.available) {
-            return `${publishedOffering.name} is currently sold out.`;
+          const effectiveShared =
+            publishedMenu.publishedSnapshot?.sharedOfferingsSnapshot || s.sharedOfferings;
+          if (isOfferingHiddenAtVenue(rawOffering, venueId, effectiveShared)) {
+            return `${rawOffering.name} is not available at this service location.`;
+          }
+          const availability = getEffectiveOfferingAvailability(rawOffering, venueId, {
+            simulatedTime: s.simulatedTime,
+            sharedOfferings: effectiveShared,
+            venue,
+          });
+          if (!availability.available) {
+            return availability.reason === "sold_out_manual"
+              ? `${rawOffering.name} is currently sold out.`
+              : `${rawOffering.name} is currently outside scheduled hours (${availability.scheduleDetails || "Scheduled hours"}).`;
           }
 
-          const modCheck = validateAndRecalculateLineModifiers(publishedOffering, line.options);
+          const effectiveOffering = getEffectiveOffering(rawOffering, venueId, effectiveShared);
+          const optionsList = line.options || [];
+          const modCheck = validateAndRecalculateLineModifiers(effectiveOffering, optionsList);
           if (!modCheck.valid) {
             return modCheck.error || "Invalid option selection.";
           }
@@ -295,8 +433,11 @@ export const usePewa = create<PewaState & Actions>()(
           const authoritativeLine: CartLine = {
             ...line,
             id: uid("line"),
-            basePrice: publishedOffering.price,
-            options: modCheck.authoritativeOptions || line.options,
+            name: line.name || rawOffering.name,
+            emoji: line.emoji || rawOffering.emoji || "🍽️",
+            basePrice: effectiveOffering.price,
+            options: modCheck.authoritativeOptions || optionsList,
+            note: line.note || "",
           };
 
           const cart = { venueId, lines: [...(s.cart?.lines ?? []), authoritativeLine] };
@@ -340,12 +481,15 @@ export const usePewa = create<PewaState & Actions>()(
           // Authoritatively recalculate lines and prices from the effective published snapshot
           const authoritativeLines: CartLine[] = s.cart.lines.map((line) => {
             const menu = venuePublishedMenus.find((m) => m.id === line.menuId);
-            const offering = menu?.sections
+            const rawOffering = menu?.sections
               .flatMap((sec) => sec.offerings)
               .find((o) => o.id === line.offeringId);
-            if (!offering) {
+            if (!rawOffering) {
               return structuredClone(line);
             }
+            const effectiveShared =
+              menu?.publishedSnapshot?.sharedOfferingsSnapshot || s.sharedOfferings;
+            const offering = getEffectiveOffering(rawOffering, venue.id, effectiveShared);
             const modCheck = validateAndRecalculateLineModifiers(offering, line.options);
             return {
               ...line,
@@ -601,11 +745,19 @@ export const usePewa = create<PewaState & Actions>()(
         },
         loadScenario: (id) => {
           const sc = buildScenario(id);
-          set({ ...sc, menus: ensurePublishedSnapshots(sc.menus), role: get().role });
+          set({
+            ...sc,
+            menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
+            role: get().role,
+          });
         },
         reset: () => {
           const sc = buildScenario(get().scenario);
-          set({ ...sc, menus: ensurePublishedSnapshots(sc.menus), role: get().role });
+          set({
+            ...sc,
+            menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
+            role: get().role,
+          });
         },
         log: (e) =>
           set((s) => ({
@@ -902,19 +1054,26 @@ export const usePewa = create<PewaState & Actions>()(
         },
         upsertOffering: (menuId, sectionId, o) => {
           let isNew = false;
+          const sanitizedOffering: Partial<Offering> = {
+            ...o,
+            venueOverrides: sanitizeVenueOverrides(o.venueOverrides),
+          };
           mutateMenu(menuId, (ss) =>
             ss.map((x) => {
               if (x.id !== sectionId) return x;
               const exists = o.id ? x.offerings.some((y) => y.id === o.id) : false;
               if (!exists) {
                 isNew = true;
-                const newItem: Offering = { ...o, id: o.id || uid("off") } as Offering;
+                const newItem: Offering = {
+                  ...sanitizedOffering,
+                  id: o.id || uid("off"),
+                } as Offering;
                 return { ...x, offerings: [...x.offerings, newItem] };
               }
               return {
                 ...x,
                 offerings: x.offerings.map((y) =>
-                  y.id === o.id ? ({ ...y, ...o } as Offering) : y,
+                  y.id === o.id ? ({ ...y, ...sanitizedOffering } as Offering) : y,
                 ),
               };
             }),
@@ -1034,6 +1193,238 @@ export const usePewa = create<PewaState & Actions>()(
             message: `“${name}” marked ${avail ? "available" : "sold out"}`,
           });
         },
+        setOfferingSchedule: (menuId, sectionId, offeringId, schedule) => {
+          let offName = "";
+          mutateMenu(menuId, (ss) =>
+            ss.map((sec) => {
+              if (sectionId && sec.id !== sectionId) return sec;
+              return {
+                ...sec,
+                offerings: sec.offerings.map((o) => {
+                  if (o.id !== offeringId) return o;
+                  offName = o.name;
+                  return { ...o, schedule };
+                }),
+              };
+            }),
+          );
+          get().log({
+            kind: "offering.updated",
+            message: `Updated schedule for “${offName || "offering"}”`,
+          });
+        },
+        setOfferingVenueOverride: (menuId, sectionId, offeringId, venueId, override) => {
+          let offName = "";
+          mutateMenu(menuId, (ss) =>
+            ss.map((sec) => {
+              if (sectionId && sec.id !== sectionId) return sec;
+              return {
+                ...sec,
+                offerings: sec.offerings.map((o) => {
+                  if (o.id !== offeringId) return o;
+                  offName = o.name;
+                  const currentOverrides = o.venueOverrides || {};
+                  const existing = currentOverrides[venueId] || { venueId };
+                  return {
+                    ...o,
+                    venueOverrides: {
+                      ...currentOverrides,
+                      [venueId]: { ...existing, ...override, venueId },
+                    },
+                  };
+                }),
+              };
+            }),
+          );
+          get().log({
+            kind: "offering.updated",
+            message: `Updated venue override for “${offName || "offering"}”`,
+          });
+        },
+        removeOfferingVenueOverride: (menuId, sectionId, offeringId, venueId) => {
+          mutateMenu(menuId, (ss) =>
+            ss.map((sec) => {
+              if (sectionId && sec.id !== sectionId) return sec;
+              return {
+                ...sec,
+                offerings: sec.offerings.map((o) => {
+                  if (o.id !== offeringId || !o.venueOverrides) return o;
+                  const nextOverrides = { ...o.venueOverrides };
+                  delete nextOverrides[venueId];
+                  return {
+                    ...o,
+                    venueOverrides:
+                      Object.keys(nextOverrides).length > 0 ? nextOverrides : undefined,
+                  };
+                }),
+              };
+            }),
+          );
+        },
+        toggleOfferingVenueAvailability: (menuId, sectionId, offeringId, venueId) => {
+          let offName = "";
+          let newAvail = false;
+          mutateMenu(menuId, (ss) =>
+            ss.map((sec) => {
+              if (sectionId && sec.id !== sectionId) return sec;
+              return {
+                ...sec,
+                offerings: sec.offerings.map((o) => {
+                  if (o.id !== offeringId) return o;
+                  offName = o.name;
+                  const currentOverrides = o.venueOverrides || {};
+                  const existing = currentOverrides[venueId] || { venueId };
+                  const currentAvail =
+                    existing.available !== undefined ? existing.available : o.available;
+                  newAvail = !currentAvail;
+                  return {
+                    ...o,
+                    venueOverrides: {
+                      ...currentOverrides,
+                      [venueId]: { ...existing, available: newAvail, venueId },
+                    },
+                  };
+                }),
+              };
+            }),
+          );
+          // Immediate venue availability changes apply to publishedSnapshot as well
+          set((s) => ({
+            menus: s.menus.map((m) => {
+              if (m.id !== menuId || !m.publishedSnapshot) return m;
+              return {
+                ...m,
+                publishedSnapshot: {
+                  ...m.publishedSnapshot,
+                  sections: m.publishedSnapshot.sections.map((sec) => {
+                    const hasOff = sec.offerings.some((o) => o.id === offeringId);
+                    if (!hasOff) return sec;
+                    return {
+                      ...sec,
+                      offerings: sec.offerings.map((off) => {
+                        if (off.id !== offeringId) return off;
+                        const curOv = off.venueOverrides || {};
+                        const existOv = curOv[venueId] || { venueId };
+                        return {
+                          ...off,
+                          venueOverrides: {
+                            ...curOv,
+                            [venueId]: { ...existOv, available: newAvail, venueId },
+                          },
+                        };
+                      }),
+                    };
+                  }),
+                },
+              };
+            }),
+          }));
+          get().log({
+            kind: "offering.availability",
+            message: `“${offName}” marked ${newAvail ? "available" : "sold out"} at venue`,
+          });
+        },
+        setSimulatedTime: (time) => {
+          set({ simulatedTime: time });
+          get().log({
+            kind: "scenario.loaded",
+            message: time
+              ? `Simulated time set to ${time}`
+              : "Simulated time cleared (using system time)",
+          });
+        },
+        upsertSharedOffering: (sharedOffering) => {
+          const s = get();
+          const currentOrgId = s.organisation?.id;
+          const list = s.sharedOfferings || [];
+          const existing = list.find((x) => x.id === sharedOffering.id);
+
+          // Enforce organisation isolation: cannot create or modify shared offerings for another organisation
+          if (existing && currentOrgId && existing.orgId && existing.orgId !== currentOrgId) {
+            return;
+          }
+          if (currentOrgId && sharedOffering.orgId && sharedOffering.orgId !== currentOrgId) {
+            return;
+          }
+
+          const sanitized: SharedOffering = {
+            ...sharedOffering,
+            orgId: sharedOffering.orgId || currentOrgId || "",
+            venueOverrides: sanitizeVenueOverrides(sharedOffering.venueOverrides),
+          };
+
+          set((state) => {
+            const curList = state.sharedOfferings || [];
+            const idx = curList.findIndex((x) => x.id === sanitized.id);
+            const nextList =
+              idx >= 0
+                ? curList.map((x) => (x.id === sanitized.id ? sanitized : x))
+                : [...curList, sanitized];
+            return { sharedOfferings: nextList };
+          });
+          get().log({
+            kind: "shared_offering.updated",
+            message: `Shared offering “${sanitized.name}” saved to catalogue`,
+          });
+        },
+        deleteSharedOffering: (sharedOfferingId) => {
+          const s = get();
+          const currentOrgId = s.organisation?.id;
+          const existing = (s.sharedOfferings || []).find((x) => x.id === sharedOfferingId);
+          if (!existing) return;
+          // Enforce organisation isolation: cannot delete another organisation's shared offering
+          if (currentOrgId && existing.orgId && existing.orgId !== currentOrgId) {
+            return;
+          }
+
+          set((state) => ({
+            sharedOfferings: (state.sharedOfferings || []).filter((x) => x.id !== sharedOfferingId),
+          }));
+          get().log({
+            kind: "shared_offering.deleted",
+            message: `Deleted shared offering ${sharedOfferingId}`,
+          });
+        },
+        addSharedOfferingToMenu: (menuId, sectionId, sharedOfferingId) => {
+          const s = get();
+          const menu = s.menus.find((m) => m.id === menuId);
+          if (!menu) return "";
+          const shared = (s.sharedOfferings || []).find((x) => x.id === sharedOfferingId);
+          if (!shared) return "";
+
+          // Enforce organisation isolation: shared offering must belong to the active menu's organisation
+          if (shared.orgId && menu.orgId && shared.orgId !== menu.orgId) {
+            return "";
+          }
+
+          const newId = uid("off");
+          const newOffering: Offering = {
+            id: newId,
+            sharedOfferingId: shared.id,
+            name: shared.name,
+            description: shared.description || "",
+            price: shared.price,
+            tags: [...(shared.tags || [])],
+            emoji: shared.emoji || "🍽️",
+            image: shared.image,
+            imageSource: shared.imageSource,
+            modifiers: JSON.parse(JSON.stringify(shared.modifiers || [])),
+            specialBadge: shared.specialBadge,
+            schedule: shared.schedule ? structuredClone(shared.schedule) : undefined,
+            venueOverrides: sanitizeVenueOverrides(shared.venueOverrides),
+            available: true,
+          };
+          mutateMenu(menuId, (ss) =>
+            ss.map((sec) =>
+              sec.id === sectionId ? { ...sec, offerings: [...sec.offerings, newOffering] } : sec,
+            ),
+          );
+          get().log({
+            kind: "offering.created",
+            message: `Added shared offering “${shared.name}” to menu`,
+          });
+          return newId;
+        },
         publishMenu: (menuId) => {
           const m = get().menus.find((x) => x.id === menuId);
           if (!m) return false;
@@ -1049,6 +1440,11 @@ export const usePewa = create<PewaState & Actions>()(
             isProtected: m.isProtected,
             sections: JSON.parse(JSON.stringify(m.sections)),
             publishedAt: now(),
+            sharedOfferingsSnapshot: JSON.parse(
+              JSON.stringify(
+                (get().sharedOfferings || []).filter((so) => !so.orgId || so.orgId === m.orgId),
+              ),
+            ),
           };
           set((s) => ({
             menus: s.menus.map((x) =>

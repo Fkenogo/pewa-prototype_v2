@@ -12,6 +12,11 @@ import {
 import { formatPrice, usePewa } from "@/lib/pewa/store";
 import type { Offering, Venue } from "@/lib/pewa/types";
 import { getVenuePublishedMenus } from "@/lib/pewa/taxonomy";
+import {
+  getEffectiveOffering,
+  getEffectiveOfferingAvailability,
+  isOfferingHiddenAtVenue,
+} from "@/lib/pewa/availability";
 import { Button } from "@/components/ui/button";
 import { CustomerNav } from "./CustomerNav";
 import { cn } from "@/lib/utils";
@@ -30,7 +35,16 @@ export interface VenueSearchResult {
 }
 
 export function Discovery({ directory = false }: { directory?: boolean }) {
-  const { venues, menus, recents, favourites, campaigns, recordPromotionClick } = usePewa();
+  const {
+    venues,
+    menus,
+    sharedOfferings,
+    simulatedTime,
+    recents,
+    favourites,
+    campaigns,
+    recordPromotionClick,
+  } = usePewa();
   const [q, setQ] = useState("");
   const [service, setService] = useState("");
   const [category, setCategory] = useState("");
@@ -91,13 +105,20 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     const qualifyingOfferings: QualifyingOfferingMatch[] = [];
 
     for (const m of venueMenus) {
+      const effectiveShared = m.publishedSnapshot?.sharedOfferingsSnapshot || sharedOfferings;
       for (const s of m.sections) {
         if (isSectionCategory && s.name.toLowerCase() !== category.toLowerCase()) {
           continue;
         }
-        for (const o of s.offerings) {
-          // Protected, unpublished, hidden, or sold-out offerings do not satisfy search criteria
-          if (!o.available) continue;
+        for (const rawOffering of s.offerings) {
+          if (isOfferingHiddenAtVenue(rawOffering, v.id, effectiveShared)) continue;
+          const availability = getEffectiveOfferingAvailability(rawOffering, v.id, {
+            simulatedTime,
+            sharedOfferings: effectiveShared,
+            venue: v,
+          });
+          if (!availability.available) continue;
+          const o = getEffectiveOffering(rawOffering, v.id, effectiveShared);
 
           // Check tag filter
           if (tagFilter && !o.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase())) {

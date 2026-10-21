@@ -56,6 +56,7 @@ import {
   getImageSource,
 } from "@/lib/pewa/taxonomy";
 import { OfferingEditorSheet, type OfferingDraft } from "@/components/pewa/OfferingEditorSheet";
+import { formatSchedule } from "@/lib/pewa/availability";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/menus/$menuId")({
@@ -81,7 +82,7 @@ function MenuEditor() {
 
   const currency = primaryVenue?.currency || s.organisation?.currency || "KES";
   const author = canAuthorMenus(s.role);
-  const hasDraftChanges = menu ? hasUnpublishedDraftChanges(menu) : false;
+  const hasDraftChanges = menu ? hasUnpublishedDraftChanges(menu, s.sharedOfferings) : false;
 
   // Local State
   const [customSectionInput, setCustomSectionInput] = useState("");
@@ -98,6 +99,7 @@ function MenuEditor() {
     fromSectionId: string;
     offeringName: string;
   } | null>(null);
+  const [pickSharedSectionId, setPickSharedSectionId] = useState<string | null>(null);
 
   // Settings Draft State
   const [settingsDraft, setSettingsDraft] = useState({
@@ -176,6 +178,7 @@ function MenuEditor() {
       // Update item
       s.upsertOffering(menu.id, origSectionId, {
         id: draft.id,
+        sharedOfferingId: draft.sharedOfferingId,
         name: draft.name.trim(),
         price: draft.price,
         description: draft.description.trim(),
@@ -186,6 +189,8 @@ function MenuEditor() {
         tags: draft.tags,
         modifiers: draft.modifiers,
         specialBadge: draft.specialBadge,
+        schedule: draft.schedule,
+        venueOverrides: draft.venueOverrides,
       });
 
       if (targetSectionId !== origSectionId) {
@@ -195,6 +200,7 @@ function MenuEditor() {
     } else {
       // Create new item in target section
       s.upsertOffering(menu.id, targetSectionId, {
+        sharedOfferingId: draft.sharedOfferingId,
         name: draft.name.trim(),
         price: draft.price,
         description: draft.description.trim(),
@@ -205,6 +211,8 @@ function MenuEditor() {
         tags: draft.tags,
         modifiers: draft.modifiers,
         specialBadge: draft.specialBadge,
+        schedule: draft.schedule,
+        venueOverrides: draft.venueOverrides,
       });
       toast.success(`Added “${draft.name}”`);
     }
@@ -677,9 +685,25 @@ function MenuEditor() {
                           ` · ${o.modifiers.length} option group${o.modifiers.length > 1 ? "s" : ""}`}
                       </p>
 
-                      {o.tags && o.tags.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {o.tags.map((t) => (
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        {o.sharedOfferingId && (
+                          <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-400">
+                            Shared
+                          </span>
+                        )}
+                        {o.schedule?.enabled && (
+                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                            🕒 {formatSchedule(o.schedule)}
+                          </span>
+                        )}
+                        {o.venueOverrides && Object.keys(o.venueOverrides).length > 0 && (
+                          <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-400">
+                            {Object.keys(o.venueOverrides).length} Branch Override
+                            {Object.keys(o.venueOverrides).length > 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {o.tags &&
+                          o.tags.map((t) => (
                             <span
                               key={t}
                               className={cn(
@@ -692,8 +716,7 @@ function MenuEditor() {
                               {t}
                             </span>
                           ))}
-                        </div>
-                      )}
+                      </div>
                     </div>
 
                     {/* Quick Move Offering to Another Section */}
@@ -771,18 +794,30 @@ function MenuEditor() {
             </ul>
 
             {author && (
-              <button
-                type="button"
-                onClick={() =>
-                  setEditingOffering({
-                    sectionId: sec.id,
-                    offering: null,
-                  })
-                }
-                className="flex min-h-12 w-full items-center justify-center gap-2 border-t text-sm font-semibold text-primary hover:bg-muted/40 transition-colors"
-              >
-                <Plus className="h-4 w-4" /> Add item to {sec.name}
-              </button>
+              <div className="flex border-t divide-x">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingOffering({
+                      sectionId: sec.id,
+                      offering: null,
+                    })
+                  }
+                  className="flex-1 flex min-h-12 items-center justify-center gap-2 text-sm font-semibold text-primary hover:bg-muted/40 transition-colors"
+                >
+                  <Plus className="h-4 w-4" /> Add item
+                </button>
+                {s.sharedOfferings && s.sharedOfferings.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPickSharedSectionId(sec.id)}
+                    className="px-4 flex min-h-12 items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors shrink-0"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    <span>From Library</span>
+                  </button>
+                )}
+              </div>
             )}
           </section>
         ))}
@@ -909,10 +944,81 @@ function MenuEditor() {
           initialOffering={editingOffering.offering}
           currency={currency}
           categoryContext={categoryContext}
+          venues={orgVenues}
           onSave={handleSaveOffering}
           onDelete={handleDeleteOffering}
           onDuplicate={handleDuplicateOffering}
         />
+      )}
+
+      {/* Pick Shared Offering Sheet */}
+      {pickSharedSectionId && (
+        <Sheet
+          open={!!pickSharedSectionId}
+          onOpenChange={(open) => !open && setPickSharedSectionId(null)}
+        >
+          <SheetContent
+            side="bottom"
+            className="max-h-[85vh] overflow-y-auto rounded-t-3xl sm:mx-auto sm:max-w-lg focus:outline-none"
+          >
+            <SheetHeader className="text-left pb-2">
+              <SheetTitle className="font-display text-2xl">Shared Catalogue</SheetTitle>
+              <SheetDescription className="text-xs">
+                Pick an existing shared offering to add to this menu section.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-2 pt-3 pb-safe">
+              {(() => {
+                const eligibleShared = (s.sharedOfferings || []).filter(
+                  (shared) => shared.orgId === menu.orgId,
+                );
+                if (eligibleShared.length === 0) {
+                  return (
+                    <p className="rounded-xl border border-dashed p-6 text-center text-xs text-muted-foreground">
+                      No shared offerings found for this organisation. Create master offerings in
+                      the Shared Catalogue first.
+                    </p>
+                  );
+                }
+                return eligibleShared.map((shared) => (
+                  <div
+                    key={shared.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3 hover:border-primary/50 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-sm truncate">{shared.name}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {shared.description}
+                      </p>
+                      <p className="text-xs font-semibold text-primary mt-0.5">
+                        {formatPrice(shared.price, currency)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs font-semibold shrink-0"
+                      onClick={() => {
+                        const addedId = s.addSharedOfferingToMenu(
+                          menu.id,
+                          pickSharedSectionId,
+                          shared.id,
+                        );
+                        if (addedId) {
+                          toast.success(`Added “${shared.name}” from shared catalogue`);
+                        } else {
+                          toast.error("Could not add shared offering to menu.");
+                        }
+                        setPickSharedSectionId(null);
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                ));
+              })()}
+            </div>
+          </SheetContent>
+        </Sheet>
       )}
 
       {/* MODAL 2: Menu Settings Drawer */}
