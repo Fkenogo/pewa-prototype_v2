@@ -40,7 +40,7 @@ import {
   isOfferingHiddenAtVenue,
   getMenuEffectiveSharedOfferings,
 } from "@/lib/pewa/availability";
-import { PROTOTYPE_DIRECTORY_VENUES, PROTOTYPE_DIRECTORY_MENUS } from "@/lib/pewa/fixtures";
+import { getAuthoritativeVenues, getAuthoritativeMenus } from "@/lib/pewa/ordering";
 
 export const Route = createFileRoute("/m/$slug")({
   validateSearch: (search: Record<string, unknown>): { preview?: string | undefined } => ({
@@ -82,14 +82,8 @@ function PublicMenu() {
     verifyGuestSession,
     clearGuestSession,
   } = usePewa();
-  const allVenues = [
-    ...venues,
-    ...PROTOTYPE_DIRECTORY_VENUES.filter((dv) => !venues.some((v) => v.id === dv.id)),
-  ];
-  const allMenus = [
-    ...menus,
-    ...PROTOTYPE_DIRECTORY_MENUS.filter((dm) => !menus.some((m) => m.id === dm.id)),
-  ];
+  const allVenues = getAuthoritativeVenues({ venues });
+  const allMenus = getAuthoritativeMenus({ menus });
   const venue = allVenues.find((v) => v.slug === slug);
 
   // CORR-A: Controlled draft preview
@@ -487,7 +481,7 @@ function PublicMenu() {
             View cart · {cart.lines.reduce((sum, l) => sum + l.quantity, 0)} items ·{" "}
             {formatPrice(
               cartTotal(cart.lines),
-              venues.find((v) => v.id === cart.venueId)?.currency ?? currency,
+              allVenues.find((v) => v.id === cart.venueId)?.currency ?? currency,
             )}
           </Button>
         ) : null}

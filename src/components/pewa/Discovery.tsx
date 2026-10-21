@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   Heart,
   MapPin,
@@ -18,11 +18,7 @@ import {
   getEffectiveOfferingAvailability,
   isOfferingHiddenAtVenue,
 } from "@/lib/pewa/availability";
-import {
-  PROTOTYPE_DIRECTORY_VENUES,
-  PROTOTYPE_DIRECTORY_MENUS,
-  promoSeedCampaign,
-} from "@/lib/pewa/fixtures";
+import { canAdmitOrder, getAuthoritativeVenues, getAuthoritativeMenus } from "@/lib/pewa/ordering";
 import { Button } from "@/components/ui/button";
 import { CustomerNav } from "./CustomerNav";
 import { cn } from "@/lib/utils";
@@ -65,12 +61,32 @@ const PRIMARY_CATEGORIES = [
 ];
 
 const NEIGHBORHOOD_FILTERS = [
-  { id: "all", label: "All Areas", match: "" },
-  { id: "cbd", label: "CBD", match: "Moi" },
-  { id: "westlands", label: "Westlands", match: "Westlands" },
-  { id: "riverside", label: "Riverside", match: "Riverside" },
-  { id: "kilimani", label: "Kilimani & Lavington", match: "Kilimani" },
-  { id: "village-market", label: "Village Market", match: "Village Market" },
+  { id: "all", label: "All Areas", matches: [] as string[] },
+  {
+    id: "cbd",
+    label: "CBD",
+    matches: ["cbd", "moi avenue", "moi ave", "city centre", "central business district"],
+  },
+  {
+    id: "westlands",
+    label: "Westlands",
+    matches: ["westlands", "karuna close"],
+  },
+  {
+    id: "riverside",
+    label: "Riverside",
+    matches: ["riverside", "riverside drive"],
+  },
+  {
+    id: "kilimani",
+    label: "Kilimani & Lavington",
+    matches: ["kilimani", "lavington"],
+  },
+  {
+    id: "village-market",
+    label: "Village Market",
+    matches: ["village market", "gigiri", "courtyard"],
+  },
 ];
 
 const CURATED_QUICK_TAGS = [
@@ -92,6 +108,7 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     favourites,
     campaigns,
     recordPromotionClick,
+    recordPromotionImpression,
   } = usePewa();
   const [q, setQ] = useState("");
   const [service, setService] = useState("");
@@ -100,16 +117,9 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
   const [area, setArea] = useState("");
   const [savedOnly, setSavedOnly] = useState(false);
 
-  // Merge store venues with standard prototype directory venues so customers discover all sample venues
-  const allVenues = useMemo(() => {
-    const storeVenueIds = new Set(venues.map((v) => v.id));
-    return [...venues, ...PROTOTYPE_DIRECTORY_VENUES.filter((dv) => !storeVenueIds.has(dv.id))];
-  }, [venues]);
-
-  const allMenus = useMemo(() => {
-    const storeMenuIds = new Set(menus.map((m) => m.id));
-    return [...menus, ...PROTOTYPE_DIRECTORY_MENUS.filter((dm) => !storeMenuIds.has(dm.id))];
-  }, [menus]);
+  // Authoritative catalogue representation shared with cart and order submission
+  const allVenues = useMemo(() => getAuthoritativeVenues({ venues }), [venues]);
+  const allMenus = useMemo(() => getAuthoritativeMenus({ menus }), [menus]);
 
   // Eligible public menus for each venue (published and not protected, evaluated against effective published snapshot)
   const getVenuePublicMenus = (v: Venue) =>
@@ -138,14 +148,22 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     if (area) {
       const venueLoc = (v.deliveryOnly ? v.serviceArea : v.address).toLowerCase();
       const areaFilter = NEIGHBORHOOD_FILTERS.find((f) => f.id === area || f.label === area);
-      const matchTerm = areaFilter ? areaFilter.match.toLowerCase() : area.toLowerCase();
-      if (matchTerm && !venueLoc.includes(matchTerm)) {
-        return [];
+      if (areaFilter && areaFilter.matches.length > 0) {
+        const matchesAny = areaFilter.matches.some((term) => venueLoc.includes(term.toLowerCase()));
+        if (!matchesAny) return [];
+      } else if (!areaFilter && area.toLowerCase() !== "all") {
+        if (!venueLoc.includes(area.toLowerCase())) return [];
       }
     }
 
+    const isBusinessCategory =
+      Boolean(category) &&
+      businessCategories.some((c) => c.toLowerCase() === category.toLowerCase());
+
     const isSectionCategory =
-      Boolean(category) && sections.some((s) => s.toLowerCase() === category.toLowerCase());
+      Boolean(category) &&
+      !isBusinessCategory &&
+      sections.some((s) => s.toLowerCase() === category.toLowerCase());
 
     if (category && !isSectionCategory) {
       const cat = category.toLowerCase();
@@ -249,10 +267,20 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     return v ? [v] : [];
   });
 
-  const activeCampaigns =
-    campaigns.length > 0 ? campaigns.filter((c) => c.active) : [promoSeedCampaign];
-
+  const activeCampaigns = campaigns.filter((c) => c.active);
   const hasActiveFilters = Boolean(q || category || area || tagFilter || service || savedOnly);
+
+  const recordedImpressionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!directory && !hasActiveFilters && activeCampaigns.length > 0) {
+      for (const camp of activeCampaigns) {
+        if (!recordedImpressionsRef.current.has(camp.id)) {
+          recordedImpressionsRef.current.add(camp.id);
+          recordPromotionImpression(camp.id);
+        }
+      }
+    }
+  }, [directory, hasActiveFilters, activeCampaigns, recordPromotionImpression]);
 
   const clearAllFilters = () => {
     setQ("");
@@ -659,7 +687,7 @@ function VenueCard({
     includeProtected: false,
   })[0];
   const previewImage = venueMenu?.sections.flatMap((s) => s.offerings).find((o) => o.image)?.image;
-  const isMenuOnly = orderPolicy?.included === 0;
+  const isMenuOnly = !canAdmitOrder(orderPolicy);
 
   return (
     <article className="relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-sm">

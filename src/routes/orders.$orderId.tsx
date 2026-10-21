@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Check, Clock, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { usePewa } from "@/lib/pewa/store";
+import { getAuthoritativeVenues } from "@/lib/pewa/ordering";
 import { pageHead } from "@/lib/pewa/metadata";
 import { OrderSnapshot, STATUS_LABELS } from "@/components/pewa/OrderSnapshot";
 import { ContactDrawer } from "@/components/pewa/ContactDrawer";
@@ -23,7 +24,7 @@ function Tracking() {
   const [contact, setContact] = useState(false);
   const [confirmWithdrawal, setConfirmWithdrawal] = useState(false);
   const order = orders.find((o) => o.id === orderId);
-  const venue = venues.find((v) => v.id === order?.venueId);
+  const venue = getAuthoritativeVenues({ venues }).find((v) => v.id === order?.venueId);
   if (!order)
     return (
       <main className="mx-auto max-w-lg px-4 pt-20">

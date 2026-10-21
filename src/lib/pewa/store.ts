@@ -31,6 +31,8 @@ import {
   validateOfferingModifiersConfig,
   validateModifierSelection,
   validateAndRecalculateLineModifiers,
+  getAuthoritativeVenues,
+  getAuthoritativeMenus,
 } from "./ordering";
 import {
   getEffectiveOffering,
@@ -52,6 +54,8 @@ export {
   validateOfferingModifiersConfig,
   validateModifierSelection,
   validateAndRecalculateLineModifiers,
+  getAuthoritativeVenues,
+  getAuthoritativeMenus,
 };
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -391,14 +395,8 @@ export const usePewa = create<PewaState & Actions>()(
           if (s.cart?.lines.length && s.cart.venueId !== venueId)
             return "Your cart belongs to another business. Clear it before starting a new cart.";
 
-          const allVenues = [
-            ...s.venues,
-            ...PROTOTYPE_DIRECTORY_VENUES.filter((dv) => !s.venues.some((v) => v.id === dv.id)),
-          ];
-          const allMenus = [
-            ...s.menus,
-            ...PROTOTYPE_DIRECTORY_MENUS.filter((dm) => !s.menus.some((m) => m.id === dm.id)),
-          ];
+          const allVenues = getAuthoritativeVenues(s);
+          const allMenus = getAuthoritativeMenus(s);
           const venue = allVenues.find((v) => v.id === venueId);
           if (!venue) return "This venue is no longer available.";
 
@@ -477,12 +475,14 @@ export const usePewa = create<PewaState & Actions>()(
             return { error: "Structured requests are paused. Contact the business directly." };
           if (!input.guestName.trim() || !input.guestContact.trim())
             return { error: "Add your name and phone number." };
-          const venue = s.venues.find((v) => v.id === s.cart?.venueId);
+          const allVenues = getAuthoritativeVenues(s);
+          const allMenus = getAuthoritativeMenus(s);
+          const venue = allVenues.find((v) => v.id === s.cart?.venueId);
           if (!venue || !s.cart) return { error: "This venue is no longer available." };
           if (!venue.services.includes(input.service))
             return { error: "Choose a service offered by this business." };
 
-          const venuePublishedMenus = getVenuePublishedMenus(venue, s.menus, s.venues, {
+          const venuePublishedMenus = getVenuePublishedMenus(venue, allMenus, allVenues, {
             includeProtected: true,
           });
 

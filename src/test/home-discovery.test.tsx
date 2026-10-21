@@ -3,6 +3,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
 import { formatPrice, usePewa } from "@/lib/pewa/store";
 import { Discovery } from "@/components/pewa/Discovery";
+import {
+  canAdmitOrder,
+  validateCart,
+  getAuthoritativeVenues,
+  getAuthoritativeMenus,
+} from "@/lib/pewa/ordering";
+import { cloudBurgerVenue, cloudBurgerMenu } from "@/lib/pewa/fixtures";
 
 // Mock @tanstack/react-router Link for testing
 vi.mock("@tanstack/react-router", () => ({
@@ -282,6 +289,263 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       fireEvent.change(searchInput, { target: { value: "Burger" } });
 
       expect(screen.queryByText("Featured Offers")).not.toBeInTheDocument();
+    });
+  });
+
+  // =========================================================================
+  // PEWA-R2-A-CORR-001 — Five Findings Verification
+  // =========================================================================
+  describe("PEWA-R2-A-CORR-001 — Five Review Findings Verification", () => {
+    it("Finding 1 (P1): allows adding and submitting orders for directory venues outside the current scenario", () => {
+      // Default new-cafe scenario only has greenGardenVenue in state.venues
+      usePewa.getState().loadScenario("new-cafe");
+      const s = usePewa.getState();
+      expect(s.venues.some((v) => v.id === cloudBurgerVenue.id)).toBe(false);
+
+      const wagyuOffering = cloudBurgerMenu.sections[0]?.offerings[0];
+      expect(wagyuOffering).toBeDefined();
+
+      // Add to cart from CloudBurger Kitchen
+      const addErr = usePewa.getState().addCartLine(cloudBurgerVenue.id, {
+        offeringId: wagyuOffering!.id,
+        menuId: cloudBurgerMenu.id,
+        quantity: 1,
+        options: [],
+      });
+      expect(addErr).toBeNull();
+
+      const cart = usePewa.getState().cart;
+      expect(cart).not.toBeNull();
+      expect(cart?.venueId).toBe(cloudBurgerVenue.id);
+
+      // Validate cart authoritatively
+      const valErr = validateCart(usePewa.getState(), cart);
+      expect(valErr).toBeNull();
+
+      // Submit order request
+      const submitRes = usePewa.getState().submitOrder({
+        guestName: "Alice Mwangi",
+        guestContact: "+254711000111",
+        service: "Delivery",
+      });
+      expect(submitRes.error).toBeUndefined();
+      expect(submitRes.id).toBeDefined();
+
+      const submittedOrder = usePewa.getState().orders.find((o) => o.id === submitRes.id);
+      expect(submittedOrder).toBeDefined();
+      expect(submittedOrder?.venueId).toBe(cloudBurgerVenue.id);
+      expect(submittedOrder?.venueName).toBe("CloudBurger Kitchen");
+      expect(submittedOrder?.status).toBe("pending");
+
+      // Verify authoritative lookup resolves the venue for tracking and contact
+      const trackingVenue = getAuthoritativeVenues(usePewa.getState()).find(
+        (v) => v.id === submittedOrder?.venueId,
+      );
+      expect(trackingVenue).toBeDefined();
+      expect(trackingVenue?.name).toBe("CloudBurger Kitchen");
+    });
+
+    it("Finding 1 (P1): rejects cart line and submission when admission policy blocks ordering", () => {
+      usePewa.getState().loadScenario("zero-units");
+      const wagyuOffering = cloudBurgerMenu.sections[0]?.offerings[0];
+
+      const addErr = usePewa.getState().addCartLine(cloudBurgerVenue.id, {
+        offeringId: wagyuOffering!.id,
+        menuId: cloudBurgerMenu.id,
+        quantity: 1,
+        options: [],
+      });
+      expect(addErr).toContain("Structured requests are paused");
+    });
+
+    it("Finding 2 (P2): persists campaign in store and tracks impressions and clicks with live spend", () => {
+      usePewa.getState().loadScenario("new-cafe");
+      const initialCampaigns = usePewa.getState().campaigns;
+      expect(initialCampaigns.length).toBeGreaterThan(0);
+
+      const camp = initialCampaigns[0]!;
+      expect(camp.active).toBe(true);
+      const initialClicks = camp.clicks;
+      const initialSpent = camp.spent;
+
+      // Render Home discovery, which mounts and records impression
+      render(<Discovery />);
+
+      // Click the featured offer
+      usePewa.getState().recordPromotionClick(camp.id);
+
+      const updated = usePewa.getState().campaigns.find((c) => c.id === camp.id);
+      expect(updated?.clicks).toBe(initialClicks + 1);
+      expect(updated?.spent).toBeGreaterThan(initialSpent);
+    });
+
+    it("Finding 3 (P2): derives menu-only badge using !canAdmitOrder(orderPolicy) predicate", () => {
+      usePewa.getState().loadScenario("units-available");
+
+      // 1. With top-up units and 0 included units, canAdmitOrder is true, so no menu-only badge
+      usePewa.setState({
+        orderPolicy: {
+          included: 0,
+          includedMax: 200,
+          topUp: 10,
+          overdraftUsed: 0,
+          overdraftMax: 10,
+          expired: false,
+          cycleRenewsAt: "2026-11-19T00:00:00.000Z",
+          tier: "Base Monthly Tier",
+        },
+      });
+      expect(canAdmitOrder(usePewa.getState().orderPolicy)).toBe(true);
+      const { unmount } = render(<Discovery />);
+      expect(screen.queryByText(/📖 Menu & Direct Contact/i)).not.toBeInTheDocument();
+      unmount();
+
+      // 2. Expired subscription with remaining included units fails canAdmitOrder, so menu-only badge appears
+      usePewa.setState({
+        orderPolicy: {
+          included: 50,
+          includedMax: 200,
+          topUp: 0,
+          overdraftUsed: 0,
+          overdraftMax: 10,
+          expired: true,
+          cycleRenewsAt: "2026-10-01T00:00:00.000Z",
+          tier: "Base Monthly Tier",
+        },
+      });
+      expect(canAdmitOrder(usePewa.getState().orderPolicy)).toBe(false);
+      render(<Discovery />);
+      expect(screen.getAllByText(/📖 Menu & Direct Contact/i).length).toBeGreaterThan(0);
+    });
+
+    it("Finding 4 (P2): area chips match multi-term aliases (CBD, Westlands, Kilimani & Lavington)", () => {
+      usePewa.getState().loadScenario("new-cafe");
+      const s = usePewa.getState();
+      const cbdVenue: (typeof s.venues)[0] = {
+        id: "venue_cbd_test",
+        orgId: "org_cbd_test",
+        name: "Nairobi City Espresso Bar",
+        slug: "nairobi-city-espresso",
+        category: "Café",
+        address: "Corner House, CBD, Nairobi",
+        deliveryOnly: false,
+        serviceArea: "",
+        services: ["Dine-in", "Takeaway"],
+        contact: { phone: "+254700000001", whatsapp: "+254700000001", email: "city@example.com" },
+        tagline: "Quick espresso in the city centre",
+        currency: "KES",
+      };
+      const lavingtonVenue: (typeof s.venues)[0] = {
+        id: "venue_lavington_test",
+        orgId: "org_lavington_test",
+        name: "Lavington Green Eatery",
+        slug: "lavington-green-eatery",
+        category: "Café",
+        address: "15 James Gichuru Road, Lavington",
+        deliveryOnly: false,
+        serviceArea: "",
+        services: ["Dine-in"],
+        contact: {
+          phone: "+254700000002",
+          whatsapp: "+254700000002",
+          email: "lavington@example.com",
+        },
+        tagline: "Relaxed dining in Lavington",
+        currency: "KES",
+      };
+      const cbdMenu = {
+        ...s.menus[0]!,
+        id: "menu_cbd_test",
+        orgId: "org_cbd_test",
+        venueId: "venue_cbd_test",
+        status: "published" as const,
+        publishedSnapshot: undefined,
+      };
+      const lavingtonMenu = {
+        ...s.menus[0]!,
+        id: "menu_lavington_test",
+        orgId: "org_lavington_test",
+        venueId: "venue_lavington_test",
+        status: "published" as const,
+        publishedSnapshot: undefined,
+      };
+
+      usePewa.setState((prev) => ({
+        venues: [...prev.venues, cbdVenue, lavingtonVenue],
+        menus: [...prev.menus, cbdMenu, lavingtonMenu],
+      }));
+
+      const { unmount } = render(<Discovery />);
+
+      // CBD chip matches venue with 'CBD, Nairobi' address and 'Moi Avenue' address
+      const cbdChip = screen.getByRole("button", { name: "CBD" });
+      fireEvent.click(cbdChip);
+      expect(screen.getByText("Nairobi City Espresso Bar")).toBeInTheDocument();
+      expect(screen.getByText("Green Garden Café")).toBeInTheDocument();
+      expect(screen.queryByText("Gelato Craft Lab")).not.toBeInTheDocument();
+
+      // Westlands chip matches Karuna Close / Westlands
+      const westlandsChip = screen.getByRole("button", { name: "Westlands" });
+      fireEvent.click(westlandsChip);
+      expect(screen.getByText("Sol Artisan Bakery")).toBeInTheDocument();
+      expect(screen.queryByText("Nairobi City Espresso Bar")).not.toBeInTheDocument();
+
+      // Kilimani & Lavington matches Lavington venue
+      const kilimaniChip = screen.getByRole("button", { name: "Kilimani & Lavington" });
+      fireEvent.click(kilimaniChip);
+      expect(screen.getByText("Lavington Green Eatery")).toBeInTheDocument();
+      expect(screen.queryByText("Sol Artisan Bakery")).not.toBeInTheDocument();
+      unmount();
+    });
+
+    it("Finding 5 (P2): preserves business-category precedence over section names", () => {
+      usePewa.getState().loadScenario("new-cafe");
+      const s = usePewa.getState();
+
+      // Create a business with category "Coffee Roastery"
+      // and a separate venue whose menu has section "Coffee Roastery"
+      const coffeeRoasteryVenue: (typeof s.venues)[0] = {
+        id: "venue_roastery",
+        orgId: "org_roastery",
+        name: "Highland Specialty Roasters",
+        slug: "highland-roasters",
+        category: "Coffee Roastery",
+        address: "Ngong Road, Kilimani",
+        deliveryOnly: false,
+        serviceArea: "",
+        services: ["Takeaway"],
+        contact: { phone: "+254700000003", whatsapp: "+254700000003", email: "roast@example.com" },
+        tagline: "Single origin specialty coffee",
+        currency: "KES",
+      };
+      const roasteryMenu = {
+        ...s.menus[0]!,
+        id: "menu_roastery",
+        orgId: "org_roastery",
+        venueId: "venue_roastery",
+        status: "published" as const,
+        publishedSnapshot: undefined,
+        sections: [
+          {
+            id: "sec_beans",
+            name: "Whole Beans",
+            offerings: s.menus[0]!.sections[0]!.offerings,
+          },
+        ],
+      };
+
+      usePewa.setState((prev) => ({
+        venues: [...prev.venues, coffeeRoasteryVenue],
+        menus: [...prev.menus, roasteryMenu],
+      }));
+
+      render(<Discovery directory />);
+
+      const categorySelect = screen.getByLabelText("Cuisine or category");
+      fireEvent.change(categorySelect, { target: { value: "Coffee Roastery" } });
+
+      // The business in the Coffee Roastery category must be matched and visible
+      expect(screen.getByText("Highland Specialty Roasters")).toBeInTheDocument();
     });
   });
 });

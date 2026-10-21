@@ -709,7 +709,7 @@ export function buildScenario(
       cycleRenewsAt: "2026-11-19T00:00:00.000Z",
       tier: "Base Monthly Tier",
     },
-    campaigns: [] as PromotionCampaign[],
+    campaigns: [promoSeedCampaign] as PromotionCampaign[],
     guestSession: null as GuestSession | null,
     disputes: [
       {
