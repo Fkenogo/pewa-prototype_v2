@@ -116,22 +116,36 @@ export function getEffectiveOffering(
   if (offering.sharedOfferingId && sharedOfferings) {
     const master = sharedOfferings.find((s) => s.id === offering.sharedOfferingId);
     if (master) {
+      // Deep merge venueOverrides per venueId so master venue overrides (e.g. hidden: true)
+      // are not wiped out if offering specifies other properties for the same venueId.
+      const mergedVenueOverrides: Record<string, VenueOfferingOverride> = {};
+      const allVenueIds = new Set([
+        ...Object.keys(master.venueOverrides || {}),
+        ...Object.keys(offering.venueOverrides || {}),
+      ]);
+      for (const vid of allVenueIds) {
+        mergedVenueOverrides[vid] = {
+          venueId: vid,
+          ...(master.venueOverrides?.[vid] || {}),
+          ...(offering.venueOverrides?.[vid] || {}),
+        };
+      }
+
       base = {
         ...offering,
         name: master.name || offering.name,
-        description: master.description || offering.description,
+        // Preserve intentionally cleared optional attributes from master (e.g. empty description)
+        description: master.description !== undefined ? master.description : offering.description,
         price: master.price ?? offering.price,
-        tags: master.tags?.length ? [...master.tags] : offering.tags,
-        emoji: master.emoji || offering.emoji,
-        image: master.image || offering.image,
-        imageSource: master.imageSource || offering.imageSource,
-        modifiers: master.modifiers?.length ? master.modifiers : offering.modifiers,
-        schedule: master.schedule || offering.schedule,
-        specialBadge: master.specialBadge || offering.specialBadge,
-        venueOverrides: {
-          ...(master.venueOverrides || {}),
-          ...(offering.venueOverrides || {}),
-        },
+        tags: master.tags !== undefined ? [...master.tags] : offering.tags,
+        emoji: master.emoji !== undefined ? master.emoji : offering.emoji,
+        image: master.image !== undefined ? master.image : offering.image,
+        imageSource: master.imageSource !== undefined ? master.imageSource : offering.imageSource,
+        modifiers: master.modifiers !== undefined ? master.modifiers : offering.modifiers,
+        schedule: master.schedule !== undefined ? master.schedule : offering.schedule,
+        specialBadge:
+          master.specialBadge !== undefined ? master.specialBadge : offering.specialBadge,
+        venueOverrides: mergedVenueOverrides,
       };
     }
   }
@@ -139,9 +153,18 @@ export function getEffectiveOffering(
   // If a venueId is provided, resolve venue-specific overrides
   if (venueId && base.venueOverrides?.[venueId]) {
     const override = base.venueOverrides[venueId];
+    // Reject negative, NaN, or non-finite prices; preserve explicit zero
+    const validPrice =
+      override.price !== undefined &&
+      typeof override.price === "number" &&
+      Number.isFinite(override.price) &&
+      override.price >= 0
+        ? override.price
+        : undefined;
+
     return {
       ...base,
-      price: override.price !== undefined ? override.price : base.price,
+      price: validPrice !== undefined ? validPrice : base.price,
       description: override.description !== undefined ? override.description : base.description,
       available: override.available !== undefined ? override.available : base.available,
       specialBadge: override.specialBadge !== undefined ? override.specialBadge : base.specialBadge,
@@ -255,6 +278,21 @@ export function parseScheduleReferenceTime(
       return { valid: true, day: venueNow.day, minutes: venueNow.minutes };
     }
 
+    // Check for ISO 8601 date-time string (e.g. "2026-10-21T14:30:00Z", "2026-10-21 14:30", etc.)
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      const parsedDate = new Date(ref);
+      if (!isNaN(parsedDate.getTime())) {
+        const venueTime = getVenueLocalTime(venueOrTz, parsedDate);
+        return { valid: true, day: venueTime.day, minutes: venueTime.minutes };
+      }
+      return {
+        valid: false,
+        day: "mon",
+        minutes: 0,
+        error: `Invalid ISO date-time string "${ref}".`,
+      };
+    }
+
     // Check for day prefix (e.g. "mon 09:00", "tue 22:30", "monday 09:00")
     const parts = trimmed.split(/\s+/);
     if (parts.length >= 2) {
@@ -280,7 +318,7 @@ export function parseScheduleReferenceTime(
       return { valid: true, day: dayRaw, minutes };
     }
 
-    // Single token: must be HH:MM
+    // Single token: must be strict HH:MM
     if (trimmed.includes(":")) {
       const minutes = parseTimeToMinutes(trimmed);
       if (minutes === null) {
@@ -299,7 +337,7 @@ export function parseScheduleReferenceTime(
       valid: false,
       day: "mon",
       minutes: 0,
-      error: `Malformed schedule reference "${ref}". Expected "HH:MM" or "[day] HH:MM".`,
+      error: `Malformed schedule reference "${ref}". Expected "HH:MM", "[day] HH:MM", or ISO date string.`,
     };
   }
 
@@ -317,6 +355,11 @@ export function isOfferingInSchedule(
   venueOrTz?: Venue | string,
 ): boolean {
   if (!schedule || !schedule.enabled) return true;
+
+  // If merchant explicitly configured an empty days list (days: []), offering is inactive/unavailable
+  if (schedule.days !== undefined && schedule.days.length === 0) {
+    return false;
+  }
 
   const parsed = parseScheduleReferenceTime(simulatedTimeOrDate, venueOrTz);
   if (!parsed.valid) {
@@ -483,6 +526,7 @@ export function getSharedOfferingUsage(
   sharedOfferingId: string,
   menus: Menu[],
   venues: Venue[],
+  options?: { orgId?: string | undefined },
 ): {
   menuId: string;
   menuName: string;
@@ -498,6 +542,7 @@ export function getSharedOfferingUsage(
 
   for (const menu of menus) {
     if (menu.status === "archived") continue;
+    if (options?.orgId && menu.orgId && menu.orgId !== options.orgId) continue;
     for (const section of menu.sections) {
       const match = section.offerings.find(
         (o) => o.id === sharedOfferingId || o.sharedOfferingId === sharedOfferingId,

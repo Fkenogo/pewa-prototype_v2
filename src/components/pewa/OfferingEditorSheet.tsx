@@ -172,6 +172,23 @@ export function OfferingEditorSheet({
       return;
     }
 
+    if (draft.venueOverrides) {
+      for (const ov of Object.values(draft.venueOverrides)) {
+        if (ov.price !== undefined) {
+          if (
+            typeof ov.price !== "number" ||
+            isNaN(ov.price) ||
+            !Number.isFinite(ov.price) ||
+            ov.price < 0
+          ) {
+            toast.error("Please enter a valid branch price (>= 0) for venue overrides.");
+            setActiveTab("variations");
+            return;
+          }
+        }
+      }
+    }
+
     onSave(targetSectionId, draft, continueAdding);
     if (continueAdding) {
       setDraft({ ...defaultOfferingDraft, emoji: "🍽️" });

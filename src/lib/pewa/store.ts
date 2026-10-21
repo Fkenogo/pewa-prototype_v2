@@ -233,6 +233,30 @@ export {
 } from "./availability";
 
 /**
+ * Sanitizes venue overrides to reject negative or non-finite prices while preserving explicit zero.
+ */
+export function sanitizeVenueOverrides(
+  overrides?: Record<string, VenueOfferingOverride>,
+): Record<string, VenueOfferingOverride> | undefined {
+  if (!overrides) return undefined;
+  const sanitized: Record<string, VenueOfferingOverride> = {};
+  for (const [vid, ov] of Object.entries(overrides)) {
+    const validPrice =
+      ov.price !== undefined &&
+      typeof ov.price === "number" &&
+      Number.isFinite(ov.price) &&
+      ov.price >= 0
+        ? ov.price
+        : undefined;
+    sanitized[vid] = {
+      ...ov,
+      price: validPrice,
+    };
+  }
+  return sanitized;
+}
+
+/**
  * Checks whether a published menu has pending draft changes that differ from its live snapshot.
  * Availability changes (sold out) take effect immediately and do not count as draft changes.
  * Also checks if any shared offerings linked in this menu have pending catalogue changes.
@@ -1030,19 +1054,26 @@ export const usePewa = create<PewaState & Actions>()(
         },
         upsertOffering: (menuId, sectionId, o) => {
           let isNew = false;
+          const sanitizedOffering: Partial<Offering> = {
+            ...o,
+            venueOverrides: sanitizeVenueOverrides(o.venueOverrides),
+          };
           mutateMenu(menuId, (ss) =>
             ss.map((x) => {
               if (x.id !== sectionId) return x;
               const exists = o.id ? x.offerings.some((y) => y.id === o.id) : false;
               if (!exists) {
                 isNew = true;
-                const newItem: Offering = { ...o, id: o.id || uid("off") } as Offering;
+                const newItem: Offering = {
+                  ...sanitizedOffering,
+                  id: o.id || uid("off"),
+                } as Offering;
                 return { ...x, offerings: [...x.offerings, newItem] };
               }
               return {
                 ...x,
                 offerings: x.offerings.map((y) =>
-                  y.id === o.id ? ({ ...y, ...o } as Offering) : y,
+                  y.id === o.id ? ({ ...y, ...sanitizedOffering } as Offering) : y,
                 ),
               };
             }),
@@ -1303,23 +1334,51 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         upsertSharedOffering: (sharedOffering) => {
-          set((s) => {
-            const list = s.sharedOfferings || [];
-            const idx = list.findIndex((x) => x.id === sharedOffering.id);
+          const s = get();
+          const currentOrgId = s.organisation?.id;
+          const list = s.sharedOfferings || [];
+          const existing = list.find((x) => x.id === sharedOffering.id);
+
+          // Enforce organisation isolation: cannot create or modify shared offerings for another organisation
+          if (existing && currentOrgId && existing.orgId && existing.orgId !== currentOrgId) {
+            return;
+          }
+          if (currentOrgId && sharedOffering.orgId && sharedOffering.orgId !== currentOrgId) {
+            return;
+          }
+
+          const sanitized: SharedOffering = {
+            ...sharedOffering,
+            orgId: sharedOffering.orgId || currentOrgId || "",
+            venueOverrides: sanitizeVenueOverrides(sharedOffering.venueOverrides),
+          };
+
+          set((state) => {
+            const curList = state.sharedOfferings || [];
+            const idx = curList.findIndex((x) => x.id === sanitized.id);
             const nextList =
               idx >= 0
-                ? list.map((x) => (x.id === sharedOffering.id ? sharedOffering : x))
-                : [...list, sharedOffering];
+                ? curList.map((x) => (x.id === sanitized.id ? sanitized : x))
+                : [...curList, sanitized];
             return { sharedOfferings: nextList };
           });
           get().log({
             kind: "shared_offering.updated",
-            message: `Shared offering “${sharedOffering.name}” saved to catalogue`,
+            message: `Shared offering “${sanitized.name}” saved to catalogue`,
           });
         },
         deleteSharedOffering: (sharedOfferingId) => {
-          set((s) => ({
-            sharedOfferings: (s.sharedOfferings || []).filter((x) => x.id !== sharedOfferingId),
+          const s = get();
+          const currentOrgId = s.organisation?.id;
+          const existing = (s.sharedOfferings || []).find((x) => x.id === sharedOfferingId);
+          if (!existing) return;
+          // Enforce organisation isolation: cannot delete another organisation's shared offering
+          if (currentOrgId && existing.orgId && existing.orgId !== currentOrgId) {
+            return;
+          }
+
+          set((state) => ({
+            sharedOfferings: (state.sharedOfferings || []).filter((x) => x.id !== sharedOfferingId),
           }));
           get().log({
             kind: "shared_offering.deleted",
@@ -1328,25 +1387,31 @@ export const usePewa = create<PewaState & Actions>()(
         },
         addSharedOfferingToMenu: (menuId, sectionId, sharedOfferingId) => {
           const s = get();
+          const menu = s.menus.find((m) => m.id === menuId);
+          if (!menu) return "";
           const shared = (s.sharedOfferings || []).find((x) => x.id === sharedOfferingId);
           if (!shared) return "";
+
+          // Enforce organisation isolation: shared offering must belong to the active menu's organisation
+          if (shared.orgId && menu.orgId && shared.orgId !== menu.orgId) {
+            return "";
+          }
+
           const newId = uid("off");
           const newOffering: Offering = {
             id: newId,
             sharedOfferingId: shared.id,
             name: shared.name,
-            description: shared.description,
+            description: shared.description || "",
             price: shared.price,
-            tags: [...shared.tags],
-            emoji: shared.emoji,
+            tags: [...(shared.tags || [])],
+            emoji: shared.emoji || "🍽️",
             image: shared.image,
             imageSource: shared.imageSource,
             modifiers: JSON.parse(JSON.stringify(shared.modifiers || [])),
             specialBadge: shared.specialBadge,
             schedule: shared.schedule ? structuredClone(shared.schedule) : undefined,
-            venueOverrides: shared.venueOverrides
-              ? structuredClone(shared.venueOverrides)
-              : undefined,
+            venueOverrides: sanitizeVenueOverrides(shared.venueOverrides),
             available: true,
           };
           mutateMenu(menuId, (ss) =>
@@ -1375,7 +1440,11 @@ export const usePewa = create<PewaState & Actions>()(
             isProtected: m.isProtected,
             sections: JSON.parse(JSON.stringify(m.sections)),
             publishedAt: now(),
-            sharedOfferingsSnapshot: JSON.parse(JSON.stringify(get().sharedOfferings || [])),
+            sharedOfferingsSnapshot: JSON.parse(
+              JSON.stringify(
+                (get().sharedOfferings || []).filter((so) => !so.orgId || so.orgId === m.orgId),
+              ),
+            ),
           };
           set((s) => ({
             menus: s.menus.map((x) =>

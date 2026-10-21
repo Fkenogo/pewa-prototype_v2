@@ -873,4 +873,237 @@ describe("R1-D — Menu Management, Shared Offerings, Venue Variations and Avail
       expect(gelatoUsage.venueNames).toContain("Gelato Craft Lab");
     });
   });
+
+  describe("Scenario J: CORR-002 Review Findings & Integration Readiness", () => {
+    it("enforces organisation isolation across shared offering store operations", () => {
+      usePewa.getState().loadScenario("established-restaurant"); // org_ggc
+      const state = usePewa.getState();
+      expect(state.organisation?.id).toBe("org_ggc");
+
+      const ggcMenu = state.menus.find((m) => m.orgId === "org_ggc");
+      expect(ggcMenu).toBeDefined();
+      if (!ggcMenu) return;
+
+      const ggcSection = ggcMenu.sections[0]!;
+
+      // 1. Attempting to add multi-brand shared item to org_ggc menu is rejected
+      const addedId = usePewa
+        .getState()
+        .addSharedOfferingToMenu(ggcMenu.id, ggcSection.id, "sh_artisan_cappuccino");
+      expect(addedId).toBe(""); // Rejected!
+
+      // Verify no item was added to section
+      const refreshedMenu = usePewa.getState().menus.find((m) => m.id === ggcMenu.id)!;
+      expect(
+        refreshedMenu.sections[0]?.offerings.some(
+          (o) => o.sharedOfferingId === "sh_artisan_cappuccino",
+        ),
+      ).toBe(false);
+
+      // 2. Attempting to modify multi-brand shared item while logged in as org_ggc is rejected
+      usePewa.getState().upsertSharedOffering({
+        id: "sh_artisan_cappuccino",
+        orgId: "org_multi_brand",
+        name: "Hacked Cappuccino",
+        description: "Hacked Description",
+        price: 9999,
+        tags: [],
+        emoji: "☕",
+        modifiers: [],
+      });
+      const unchangedShared = usePewa
+        .getState()
+        .sharedOfferings?.find((s) => s.id === "sh_artisan_cappuccino");
+      expect(unchangedShared?.name).toBe("Artisan Cappuccino"); // Kept original!
+
+      // 3. Attempting to delete multi-brand shared item while logged in as org_ggc is rejected
+      usePewa.getState().deleteSharedOffering("sh_artisan_cappuccino");
+      expect(
+        usePewa.getState().sharedOfferings?.some((s) => s.id === "sh_artisan_cappuccino"),
+      ).toBe(true); // Preserved!
+
+      // 4. Usage reporting with orgId filter excludes foreign menus
+      const filteredUsages = getSharedOfferingUsage(
+        "sh_artisan_cappuccino",
+        state.menus,
+        state.venues,
+        { orgId: "org_ggc" },
+      );
+      expect(filteredUsages.length).toBe(0);
+    });
+
+    it("rejects invalid branch prices, preserves explicit zero, and enforces consistent effective pricing", () => {
+      const baseOffering: Offering = {
+        id: "off_test_price",
+        name: "Espresso Tonic",
+        description: "Double espresso poured over crisp craft tonic.",
+        price: 350,
+        tags: [],
+        available: true,
+        emoji: "🍸",
+        modifiers: [],
+        venueOverrides: {
+          venue_negative: {
+            venueId: "venue_negative",
+            price: -100, // Negative!
+          },
+          venue_nan: {
+            venueId: "venue_nan",
+            price: NaN, // NaN!
+          },
+          venue_inf: {
+            venueId: "venue_inf",
+            price: Infinity, // Infinity!
+          },
+          venue_free: {
+            venueId: "venue_free",
+            price: 0, // Explicit valid zero!
+          },
+          venue_branch: {
+            venueId: "venue_branch",
+            price: 420, // Valid branch price!
+          },
+        },
+      };
+
+      // Negative falls back to base price
+      const effNegative = getEffectiveOffering(baseOffering, "venue_negative");
+      expect(effNegative.price).toBe(350);
+
+      // NaN falls back to base price
+      const effNaN = getEffectiveOffering(baseOffering, "venue_nan");
+      expect(effNaN.price).toBe(350);
+
+      // Infinity falls back to base price
+      const effInf = getEffectiveOffering(baseOffering, "venue_inf");
+      expect(effInf.price).toBe(350);
+
+      // Explicit zero is preserved
+      const effFree = getEffectiveOffering(baseOffering, "venue_free");
+      expect(effFree.price).toBe(0);
+
+      // Branch price is applied
+      const effBranch = getEffectiveOffering(baseOffering, "venue_branch");
+      expect(effBranch.price).toBe(420);
+    });
+
+    it("treats empty active-day selection (days: []) as unavailable and parses ISO date-times strictly", () => {
+      // 1. Empty days array
+      const emptyDaysSchedule: OfferingSchedule = {
+        enabled: true,
+        days: [], // Merchant deselected all days
+        startTime: "08:00",
+        endTime: "20:00",
+      };
+      // Should be unavailable at any time
+      expect(isOfferingInSchedule(emptyDaysSchedule, "mon 12:00")).toBe(false);
+      expect(isOfferingInSchedule(emptyDaysSchedule, "wed 10:00")).toBe(false);
+
+      // 2. Strict ISO date-time parsing
+      // In Africa/Nairobi (UTC+3), 2026-10-21T07:00:00Z is 10:00 (Wednesday)
+      const parsedIso = parseScheduleReferenceTime("2026-10-21T07:00:00Z", "Africa/Nairobi");
+      expect(parsedIso.valid).toBe(true);
+      expect(parsedIso.day).toBe("wed");
+      expect(parsedIso.minutes).toBe(10 * 60);
+
+      // Malformed ISO string fails closed
+      const malformedIso = parseScheduleReferenceTime("2026-99-99T99:99:99Z");
+      expect(malformedIso.valid).toBe(false);
+      expect(
+        isOfferingInSchedule(
+          { enabled: true, startTime: "08:00", endTime: "12:00" },
+          "2026-99-99T99:99:99Z",
+        ),
+      ).toBe(false);
+
+      // 3. Overnight schedule across weekday boundary
+      // Friday 22:00 to Saturday 04:00 with days: ["fri"]
+      const overnightFri: OfferingSchedule = {
+        enabled: true,
+        days: ["fri"],
+        startTime: "22:00",
+        endTime: "04:00",
+      };
+      // Friday 23:30 -> active
+      expect(isOfferingInSchedule(overnightFri, "fri 23:30")).toBe(true);
+      // Saturday 01:30 -> active (carried from Friday night)
+      expect(isOfferingInSchedule(overnightFri, "sat 01:30")).toBe(true);
+      // Saturday 04:30 -> inactive (outside window)
+      expect(isOfferingInSchedule(overnightFri, "sat 04:30")).toBe(false);
+      // Friday 02:00 -> inactive (Thursday was not active)
+      expect(isOfferingInSchedule(overnightFri, "fri 02:00")).toBe(false);
+      // Sunday 01:30 -> inactive
+      expect(isOfferingInSchedule(overnightFri, "sun 01:30")).toBe(false);
+    });
+
+    it("propagates cleared master descriptions and preserves master venue exclusions across merged overrides", () => {
+      const masterOffering: SharedOffering = {
+        id: "sh_cleared_test",
+        orgId: "org_multi_brand",
+        name: "House Filter Roast",
+        description: "", // Intentionally cleared description
+        price: 250,
+        emoji: "☕",
+        tags: ["Drip"],
+        modifiers: [],
+        venueOverrides: {
+          venue_sol: {
+            venueId: "venue_sol",
+            hidden: true, // Master exclusion at Sol
+          },
+        },
+      };
+
+      const linkedOffering: Offering = {
+        id: "off_linked_1",
+        sharedOfferingId: "sh_cleared_test",
+        name: "House Filter Roast",
+        description: "Stale description that should not be restored",
+        price: 250,
+        emoji: "☕",
+        tags: ["Drip"],
+        available: true,
+        modifiers: [],
+        venueOverrides: {
+          venue_sol: {
+            venueId: "venue_sol",
+            price: 280, // Local price override, without defining hidden
+          },
+        },
+      };
+
+      // 1. Cleared description propagates (does not fall back to stale linked offering text)
+      const effective = getEffectiveOffering(linkedOffering, "venue_sol", [masterOffering]);
+      expect(effective.description).toBe("");
+
+      // 2. Master exclusion is preserved in merged venue overrides
+      expect(isOfferingHiddenAtVenue(linkedOffering, "venue_sol", [masterOffering])).toBe(true);
+
+      // 3. Explicit local inclusion takes precedence
+      const locallyIncluded: Offering = {
+        ...linkedOffering,
+        venueOverrides: {
+          venue_sol: {
+            venueId: "venue_sol",
+            price: 280,
+            hidden: false, // Explicit local inclusion
+          },
+        },
+      };
+      expect(isOfferingHiddenAtVenue(locallyIncluded, "venue_sol", [masterOffering])).toBe(false);
+
+      // 4. Removing local hidden override cleanly restores master exclusion
+      const overrideRemoved: Offering = {
+        ...linkedOffering,
+        venueOverrides: {
+          venue_sol: {
+            venueId: "venue_sol",
+            price: 280,
+            // hidden removed
+          },
+        },
+      };
+      expect(isOfferingHiddenAtVenue(overrideRemoved, "venue_sol", [masterOffering])).toBe(true);
+    });
+  });
 });

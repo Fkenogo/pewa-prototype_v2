@@ -968,33 +968,54 @@ function MenuEditor() {
               </SheetDescription>
             </SheetHeader>
             <div className="space-y-2 pt-3 pb-safe">
-              {(s.sharedOfferings || []).map((shared) => (
-                <div
-                  key={shared.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3 hover:border-primary/50 transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="font-bold text-sm truncate">{shared.name}</p>
-                    <p className="text-xs text-muted-foreground line-clamp-1">
-                      {shared.description}
+              {(() => {
+                const eligibleShared = (s.sharedOfferings || []).filter(
+                  (shared) => shared.orgId === menu.orgId,
+                );
+                if (eligibleShared.length === 0) {
+                  return (
+                    <p className="rounded-xl border border-dashed p-6 text-center text-xs text-muted-foreground">
+                      No shared offerings found for this organisation. Create master offerings in
+                      the Shared Catalogue first.
                     </p>
-                    <p className="text-xs font-semibold text-primary mt-0.5">
-                      {formatPrice(shared.price, currency)}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    className="h-8 text-xs font-semibold shrink-0"
-                    onClick={() => {
-                      s.addSharedOfferingToMenu(menu.id, pickSharedSectionId, shared.id);
-                      toast.success(`Added “${shared.name}” from shared catalogue`);
-                      setPickSharedSectionId(null);
-                    }}
+                  );
+                }
+                return eligibleShared.map((shared) => (
+                  <div
+                    key={shared.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3 hover:border-primary/50 transition-colors"
                   >
-                    Add
-                  </Button>
-                </div>
-              ))}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-sm truncate">{shared.name}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {shared.description}
+                      </p>
+                      <p className="text-xs font-semibold text-primary mt-0.5">
+                        {formatPrice(shared.price, currency)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs font-semibold shrink-0"
+                      onClick={() => {
+                        const addedId = s.addSharedOfferingToMenu(
+                          menu.id,
+                          pickSharedSectionId,
+                          shared.id,
+                        );
+                        if (addedId) {
+                          toast.success(`Added “${shared.name}” from shared catalogue`);
+                        } else {
+                          toast.error("Could not add shared offering to menu.");
+                        }
+                        setPickSharedSectionId(null);
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                ));
+              })()}
             </div>
           </SheetContent>
         </Sheet>

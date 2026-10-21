@@ -5,6 +5,7 @@ import type { Offering, Venue } from "@/lib/pewa/types";
 import { formatPrice, usePewa, validateModifierSelection } from "@/lib/pewa/store";
 import { canAdmitOrder } from "@/lib/pewa/ordering";
 import {
+  getEffectiveOffering,
   getEffectiveOfferingAvailability,
   getMenuEffectiveSharedOfferings,
 } from "@/lib/pewa/availability";
@@ -36,6 +37,8 @@ export function OfferingOrderForm({
     isPreview,
   });
 
+  const effectiveOffering = getEffectiveOffering(offering, venue.id, effectiveShared);
+
   const availability = getEffectiveOfferingAvailability(offering, venue.id, {
     simulatedTime,
     sharedOfferings: effectiveShared,
@@ -65,7 +68,7 @@ export function OfferingOrderForm({
   };
 
   // Resolve selected options with full metadata
-  const options = offering.modifiers.flatMap((group) => {
+  const options = effectiveOffering.modifiers.flatMap((group) => {
     const isSingle = (group.selectionType ?? "single") === "single";
     if (isSingle) {
       const optId = selectedSingle[group.id];
@@ -99,7 +102,7 @@ export function OfferingOrderForm({
   });
 
   // Reusable validation checks across all groups
-  const groupValidations = offering.modifiers.map((group) => {
+  const groupValidations = effectiveOffering.modifiers.map((group) => {
     const isSingle = (group.selectionType ?? "single") === "single";
     const singleVal = selectedSingle[group.id];
     const selectedIds: string[] = isSingle
@@ -119,11 +122,12 @@ export function OfferingOrderForm({
   const firstValidationError = groupValidations.find((v) => v.error !== null)?.error || null;
   const isSelectionValid = !firstValidationError;
 
-  const total = (offering.price + options.reduce((sum, o) => sum + o.priceDelta, 0)) * quantity;
+  const total =
+    (effectiveOffering.price + options.reduce((sum, o) => sum + o.priceDelta, 0)) * quantity;
 
   return (
     <div className="space-y-4">
-      {offering.modifiers.map((group) => {
+      {effectiveOffering.modifiers.map((group) => {
         const isSingle = (group.selectionType ?? "single") === "single";
         const validation = groupValidations.find((v) => v.group.id === group.id);
         const selectedCount = validation ? validation.count : 0;
@@ -362,9 +366,9 @@ export function OfferingOrderForm({
             const error = addCartLine(venue.id, {
               menuId,
               offeringId: offering.id,
-              name: offering.name,
-              emoji: offering.emoji,
-              basePrice: offering.price,
+              name: effectiveOffering.name,
+              emoji: effectiveOffering.emoji,
+              basePrice: effectiveOffering.price,
               options,
               quantity,
               note,

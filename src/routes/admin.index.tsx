@@ -97,9 +97,7 @@ function Overview() {
   const activeQrVenue = orgVenues.find((v) => v.id === filterVenueId) || orgVenues[0];
 
   const orgMenus = menus.filter((m) => m.orgId === organisation?.id);
-  const orgSharedOfferings = (sharedOfferings || []).filter(
-    (so) => !so.orgId || so.orgId === organisation?.id,
-  );
+  const orgSharedOfferings = (sharedOfferings || []).filter((so) => so.orgId === organisation?.id);
 
   // Filtered menus based on venue selection
   const displayedMenus = filterVenueId
@@ -740,7 +738,9 @@ function Overview() {
           ) : (
             <div className="space-y-3">
               {orgSharedOfferings.map((so) => {
-                const usages = getSharedOfferingUsage(so.id, menus, venues);
+                const usages = getSharedOfferingUsage(so.id, orgMenus, orgVenues, {
+                  orgId: organisation?.id,
+                });
                 return (
                   <article
                     key={so.id}
