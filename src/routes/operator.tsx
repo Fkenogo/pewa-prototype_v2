@@ -29,6 +29,7 @@ import {
 import { toast } from "sonner";
 import {
   ROLE_LABELS,
+  canAccessOperatorConsole,
   canAuthorMenus,
   canManageOrders,
   formatPrice,
@@ -146,6 +147,42 @@ export function OperatorConsolePage() {
   // Moderation modal state
   const [selectedModCase, setSelectedModCase] = useState<ModerationCase | null>(null);
   const [modActionText, setModActionText] = useState("");
+
+  // Access check for platform operators
+  if (!canAccessOperatorConsole(role)) {
+    return (
+      <main className="mx-auto min-h-screen max-w-lg px-4 py-16">
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center space-y-4 shadow-xs">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <ShieldAlert className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Access Restricted</h1>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The Operator Console is reserved for PEWA platform operations and compliance.
+              {role === "staff"
+                ? " Operational staff should use the Orders Workspace."
+                : " Your current role does not have platform-operator authorization."}
+            </p>
+          </div>
+          <div className="pt-2 flex flex-col gap-2">
+            {role === "staff" ? (
+              <Button asChild className="w-full font-semibold">
+                <Link to="/admin/orders">Go to Staff Orders Workspace</Link>
+              </Button>
+            ) : (
+              <Button asChild className="w-full font-semibold">
+                <Link to="/admin">Go to Business Workspace</Link>
+              </Button>
+            )}
+            <Button asChild variant="outline" className="w-full">
+              <Link to="/">Back to Home</Link>
+            </Button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   // Current tenant status (default to active if undefined)
   const currentOrgStatus: OrgStatus = organisation?.status || "active";

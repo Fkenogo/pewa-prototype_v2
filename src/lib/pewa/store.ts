@@ -1674,8 +1674,7 @@ export const canManageBilling = (r: Role) => r === "owner" || r === "admin";
 export const canManagePromotions = (r: Role) => r === "owner" || r === "admin" || r === "manager";
 export const canViewActivity = (r: Role) => isBusinessRole(r);
 export const isBusinessRole = (r: Role) => r !== "customer" && r !== "operator";
-export const canAccessOperatorConsole = (r: Role) =>
-  r === "operator" || r === "admin" || r === "owner";
+export const canAccessOperatorConsole = (r: Role) => r === "operator";
 
 export const formatPrice = (amount: number, currency: string) => {
   try {

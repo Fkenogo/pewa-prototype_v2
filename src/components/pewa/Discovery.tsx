@@ -38,12 +38,14 @@ export interface QualifyingOfferingMatch {
   offering: Offering;
   menuName: string;
   sectionName: string;
+  score?: number;
 }
 
 export interface VenueSearchResult {
   venue: Venue;
   matchingOfferings: QualifyingOfferingMatch[];
   isVenueMatch: boolean;
+  score?: number;
 }
 
 export const PRIMARY_CATEGORIES = [
@@ -233,11 +235,15 @@ export function Discovery({
       .join(" ")
       .toLowerCase();
 
-    // Query tokens match venue text or area aliases
-    const venueMatchesQuery =
-      queryTokens.length > 0 &&
-      queryTokens.every((tok) => {
-        if (venueText.includes(tok)) return true;
+    // Map which query tokens match venue text, delivery mode, or area aliases
+    const venueMatchedTokens = new Set<string>();
+    for (const tok of queryTokens) {
+      if (
+        venueText.includes(tok) ||
+        (v.deliveryOnly && (tok === "delivery" || tok === "kitchen" || tok === "cloud"))
+      ) {
+        venueMatchedTokens.add(tok);
+      } else {
         const matchingAreaFilter = NEIGHBORHOOD_FILTERS.find(
           (f) =>
             f.id.includes(tok) ||
@@ -245,10 +251,12 @@ export function Discovery({
             f.matches.some((m) => m.includes(tok)),
         );
         if (matchingAreaFilter && matchingAreaFilter.matches.some((m) => venueLoc.includes(m))) {
-          return true;
+          venueMatchedTokens.add(tok);
         }
-        return false;
-      });
+      }
+    }
+    const venueMatchesAllTokens =
+      queryTokens.length > 0 && queryTokens.every((tok) => venueMatchedTokens.has(tok));
 
     // 2. Offering-level analysis across eligible public menus
     const venueMenus = getVenuePublicMenus(v);
@@ -275,24 +283,69 @@ export function Discovery({
             continue;
           }
 
-          // Check offering query match
-          const offText = [o.name, o.description, s.name, ...(o.tags || []), o.specialBadge || ""]
-            .join(" ")
-            .toLowerCase();
+          // Check offering query tokens match
+          const offNameLower = o.name.toLowerCase();
+          const offDescLower = (o.description || "").toLowerCase();
+          const sNameLower = s.name.toLowerCase();
+          const offTagsLower = (o.tags || []).map((t) => t.toLowerCase());
 
-          const offMatchesQuery =
-            queryTokens.length === 0 || queryTokens.every((tok) => offText.includes(tok));
+          const offMatchedTokens = new Set<string>();
+          for (const tok of queryTokens) {
+            if (
+              offNameLower.includes(tok) ||
+              offDescLower.includes(tok) ||
+              sNameLower.includes(tok) ||
+              offTagsLower.some((t) => t.includes(tok)) ||
+              (o.specialBadge && o.specialBadge.toLowerCase().includes(tok))
+            ) {
+              offMatchedTokens.add(tok);
+            }
+          }
 
-          if (offMatchesQuery) {
+          // Check if offering satisfies query (directly or via compound match with venue)
+          const directMatch =
+            queryTokens.length === 0 || queryTokens.every((tok) => offMatchedTokens.has(tok));
+          const compoundMatch =
+            queryTokens.length > 0 &&
+            offMatchedTokens.size > 0 &&
+            queryTokens.every((tok) => venueMatchedTokens.has(tok) || offMatchedTokens.has(tok));
+
+          if (directMatch || compoundMatch) {
+            // Calculate deterministic offering score
+            let offScore = 0;
+            if (query && offNameLower === query) offScore += 120;
+            else if (query && offNameLower.startsWith(query)) offScore += 90;
+            else if (query && offNameLower.includes(query)) offScore += 60;
+
+            for (const tok of queryTokens) {
+              if (offNameLower === tok) offScore += 50;
+              else if (offNameLower.startsWith(tok)) offScore += 35;
+              else if (offNameLower.includes(tok)) offScore += 20;
+
+              if (offTagsLower.some((t) => t === tok)) offScore += 40;
+              else if (offTagsLower.some((t) => t.includes(tok))) offScore += 25;
+
+              if (sNameLower.includes(tok)) offScore += 20;
+              if (offDescLower.includes(tok)) offScore += 10;
+            }
+
             qualifyingOfferings.push({
               offering: o,
               menuName: m.name,
               sectionName: s.name,
+              score: offScore,
             });
           }
         }
       }
     }
+
+    // Sort qualifying offerings deterministically by score descending, then offering name
+    qualifyingOfferings.sort((a, b) => {
+      const scoreDiff = (b.score || 0) - (a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.offering.name.localeCompare(b.offering.name);
+    });
 
     // 3. Determine if the business qualifies:
     if (tagFilter && qualifyingOfferings.length === 0) {
@@ -303,18 +356,58 @@ export function Discovery({
       return [];
     }
 
-    const isVenueMatch = Boolean(queryTokens.length > 0 && venueMatchesQuery);
+    const isVenueMatch = Boolean(queryTokens.length > 0 && venueMatchesAllTokens);
     if (queryTokens.length > 0) {
-      const hasQualifyingItem = qualifyingOfferings.length > 0;
-      const directVenueMatch = venueMatchesQuery && (!tagFilter || qualifyingOfferings.length > 0);
+      const hasQualifyingItem =
+        qualifyingOfferings.length > 0 && qualifyingOfferings.some((item) => (item.score || 0) > 0);
+      const directVenueMatch = isVenueMatch && (!tagFilter || qualifyingOfferings.length > 0);
 
       if (!hasQualifyingItem && !directVenueMatch) {
         return [];
       }
     }
 
-    return [{ venue: v, matchingOfferings: qualifyingOfferings, isVenueMatch }];
+    // Calculate deterministic venue score
+    let venueScore = 0;
+    const vNameLower = v.name.toLowerCase();
+    if (query && vNameLower === query) venueScore += 200;
+    else if (query && vNameLower.startsWith(query)) venueScore += 150;
+    else if (query && vNameLower.includes(query)) venueScore += 100;
+
+    for (const tok of queryTokens) {
+      if (vNameLower === tok) venueScore += 60;
+      else if (vNameLower.startsWith(tok)) venueScore += 45;
+      else if (vNameLower.includes(tok)) venueScore += 30;
+
+      if ((v.category || "").toLowerCase().includes(tok)) venueScore += 35;
+      if (venueLoc.includes(tok)) venueScore += 30;
+      if ((v.tagline || "").toLowerCase().includes(tok)) venueScore += 15;
+      if (v.services.some((srv) => srv.toLowerCase().includes(tok))) venueScore += 15;
+      if (v.deliveryOnly && (tok === "delivery" || tok === "cloud" || tok === "kitchen")) {
+        venueScore += 35;
+      }
+    }
+
+    // Add top offering score contribution
+    const topOffScore = qualifyingOfferings.length > 0 ? qualifyingOfferings[0]?.score || 0 : 0;
+    venueScore += topOffScore;
+
+    // Compound bonus: if multiple tokens and both venue & offering matched
+    if (queryTokens.length > 1 && venueMatchedTokens.size > 0 && qualifyingOfferings.length > 0) {
+      venueScore += 25;
+    }
+
+    return [{ venue: v, matchingOfferings: qualifyingOfferings, isVenueMatch, score: venueScore }];
   });
+
+  // Sort overall results deterministically by score when a query is present
+  if (queryTokens.length > 0) {
+    results.sort((a, b) => {
+      const scoreDiff = (b.score || 0) - (a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.venue.name.localeCompare(b.venue.name);
+    });
+  }
 
   const recentVenues = recents.flatMap((id) => {
     const v = live.find((x) => x.id === id);
