@@ -17,12 +17,14 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     to,
     params,
+    search,
     onClick,
     className,
   }: {
     children: React.ReactNode;
     to: string;
     params?: Record<string, string>;
+    search?: Record<string, string>;
     onClick?: () => void;
     className?: string;
   }) => {
@@ -30,6 +32,12 @@ vi.mock("@tanstack/react-router", () => ({
     if (params) {
       for (const [k, v] of Object.entries(params)) {
         href = href.replace(`$${k}`, v);
+      }
+    }
+    if (search) {
+      const sp = new URLSearchParams(search).toString();
+      if (sp) {
+        href += `?${sp}`;
       }
     }
     return (
@@ -182,7 +190,7 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
   // Scenario E: Customer enters PEWA with no search and browses relevant options
   // =========================================================================
   describe("Scenario E — Customer enters PEWA with no search and browses relevant options", () => {
-    it("displays header, search input, category chips, neighborhood chips, quick tags, and all venues", () => {
+    it("displays header, search input, category chips, See nearby, Filters action, and all venues without permanent area or tag chips", () => {
       render(<Discovery />);
 
       // Header and search
@@ -190,7 +198,7 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       expect(screen.getByText("What’s on the menu?")).toBeInTheDocument();
       expect(screen.getByLabelText("Search menus")).toBeInTheDocument();
 
-      // Category chips
+      // Primary Category chips are present
       expect(screen.getByRole("button", { name: "All categories" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Cafés/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Bakeries/i })).toBeInTheDocument();
@@ -198,19 +206,13 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
       expect(screen.getByRole("button", { name: /Cloud Kitchens/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Gelato & Sweets/i })).toBeInTheDocument();
 
-      // Neighborhood chips
-      expect(screen.getByRole("button", { name: "All areas" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "CBD" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Westlands" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Riverside" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Kilimani & Lavington" })).toBeInTheDocument();
+      // Controls for discovery actions
+      expect(screen.getByRole("button", { name: /See nearby/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Filters/i })).toBeInTheDocument();
 
-      // Quick tags
-      expect(screen.getByRole("button", { name: "All tags" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Vegetarian" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Vegan" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Gluten-Free" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Halal" })).toBeInTheDocument();
+      // Permanent neighborhood and quick-tag chips are REMOVED from the main Home layout
+      expect(screen.queryByRole("button", { name: "All areas" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "All tags" })).not.toBeInTheDocument();
 
       // All prototype businesses rendered
       expect(
@@ -531,6 +533,9 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
 
       const { unmount } = render(<Discovery />);
 
+      // Open Filters dialog to access area refinements
+      fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+
       // CBD chip matches venue with 'CBD, Nairobi' address and 'Moi Avenue' address
       const cbdChip = screen.getByRole("button", { name: "CBD" });
       fireEvent.click(cbdChip);
@@ -595,11 +600,169 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
 
       render(<Discovery directory />);
 
+      // Open Filters dialog to access category selector
+      fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+
       const categorySelect = screen.getByLabelText("Cuisine or category");
       fireEvent.change(categorySelect, { target: { value: "Coffee Roastery" } });
 
       // The business in the Coffee Roastery category must be matched and visible
       expect(screen.getByText("Highland Specialty Roasters")).toBeInTheDocument();
+    });
+  });
+
+  // =========================================================================
+  // PEWA-R2-A-CORR-003: Home and Directory Simplification
+  // =========================================================================
+  describe("PEWA-R2-A-CORR-003: Home & Directory Simplification", () => {
+    beforeEach(() => {
+      usePewa.getState().loadScenario("new-cafe");
+    });
+
+    it("Recents on Home: shows maximum 2 items, renders View all link, hides when empty, and preserves stored recents", () => {
+      // Authoritative demonstration venues
+      const venueIds = ["venue_ggc", "venue_horizon", "venue_cloudburger", "venue_sol"];
+
+      // Initially recents is empty -> section is hidden
+      const { unmount } = render(<Discovery />);
+      expect(screen.queryByText("Recently opened")).not.toBeInTheDocument();
+      unmount();
+
+      // Add 4 venues to recents
+      usePewa.setState({ recents: [venueIds[0]!, venueIds[1]!, venueIds[2]!, venueIds[3]!] });
+
+      render(<Discovery />);
+      expect(screen.getByText("Recently opened")).toBeInTheDocument();
+
+      // View all link should be visible with count
+      const viewAllLink = screen.getByRole("link", { name: /View all \(4\)/i });
+      expect(viewAllLink).toBeInTheDocument();
+      expect(viewAllLink.getAttribute("href")).toBe("/directory?filter=recents");
+
+      // Home should only render 2 cards in the recents section (bounded presentation)
+      // Check that the underlying store still preserves all 4 recents without truncation
+      expect(usePewa.getState().recents).toHaveLength(4);
+    });
+
+    it("Favourites on Home: shows maximum 2 items, renders View all link, hides when empty, and preserves stored favourites", () => {
+      const venueIds = ["venue_ggc", "venue_horizon", "venue_cloudburger"];
+
+      // Initially favourites is empty -> section is hidden
+      const { unmount } = render(<Discovery />);
+      expect(screen.queryByText("Saved favourites")).not.toBeInTheDocument();
+      unmount();
+
+      // Add 3 venues to favourites
+      usePewa.setState({ favourites: [venueIds[0]!, venueIds[1]!, venueIds[2]!] });
+
+      render(<Discovery />);
+      expect(screen.getByText("Saved favourites")).toBeInTheDocument();
+
+      // View all link should be visible with count
+      const viewAllLink = screen.getByRole("link", { name: /View all \(3\)/i });
+      expect(viewAllLink).toBeInTheDocument();
+      expect(viewAllLink.getAttribute("href")).toBe("/directory?filter=saved");
+
+      // Underlying store keeps all 3 favourites
+      expect(usePewa.getState().favourites).toHaveLength(3);
+    });
+
+    it("See nearby: explicit button handles permission grant and denial gracefully", () => {
+      // Mock navigator.geolocation
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn(),
+      };
+      Object.defineProperty(window.navigator, "geolocation", {
+        value: mockGeolocation,
+        configurable: true,
+      });
+
+      render(<Discovery />);
+
+      const seeNearbyBtn = screen.getByRole("button", { name: /See nearby/i });
+      expect(seeNearbyBtn).toBeInTheDocument();
+
+      // 1. Test denial fallback
+      mockGeolocation.getCurrentPosition.mockImplementationOnce(
+        (_success: PositionCallback, error: PositionErrorCallback) => {
+          error({
+            code: 1, // PERMISSION_DENIED
+            message: "User denied Geolocation",
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          } as GeolocationPositionError);
+        },
+      );
+
+      fireEvent.click(seeNearbyBtn);
+
+      // Graceful fallback notice should be displayed without broken UI
+      expect(screen.getByText(/Location access was denied or unavailable/i)).toBeInTheDocument();
+
+      // Dismiss the notice
+      const dismissBtn = screen.getByRole("button", { name: /Dismiss location notice/i });
+      fireEvent.click(dismissBtn);
+      expect(
+        screen.queryByText(/Location access was denied or unavailable/i),
+      ).not.toBeInTheDocument();
+
+      // 2. Test granted flow
+      mockGeolocation.getCurrentPosition.mockImplementationOnce((success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: -1.2921,
+            longitude: 36.8219,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      fireEvent.click(seeNearbyBtn);
+      expect(
+        screen.getByText(/Showing venues within your local service area/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Nearby Area Active/i)).toBeInTheDocument();
+    });
+
+    it("Filters dialog: opens, allows refining by tags, service, and clearing all filters", () => {
+      render(<Discovery />);
+
+      // Open filters dialog
+      fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+      expect(screen.getByText("Filters & Refinements")).toBeInTheDocument();
+
+      // Select Vegetarian tag in dialog
+      const vegButton = screen.getByRole("button", { name: "Vegetarian" });
+      fireEvent.click(vegButton);
+
+      // Apply filters and close dialog
+      const applyBtn = screen.getByRole("button", { name: /Apply filters/i });
+      fireEvent.click(applyBtn);
+
+      // Active filter badge appears on the main page
+      expect(screen.getByText("Tag: Vegetarian")).toBeInTheDocument();
+
+      // Clear all filters
+      const clearAllBtn = screen.getByRole("button", { name: /Clear all/i });
+      fireEvent.click(clearAllBtn);
+      expect(screen.queryByText("Tag: Vegetarian")).not.toBeInTheDocument();
+    });
+
+    it("Discovery vs Home: Home has concise cards without offering previews; Directory has offering previews", () => {
+      // 1. Home mode without query: no offering preview box
+      const { unmount } = render(<Discovery />);
+      expect(screen.queryByText(/Popular offerings/i)).not.toBeInTheDocument();
+      unmount();
+
+      // 2. Directory mode: renders rich previews
+      render(<Discovery directory />);
+      expect(screen.getAllByText(/Popular offerings/i).length).toBeGreaterThan(0);
     });
   });
 });

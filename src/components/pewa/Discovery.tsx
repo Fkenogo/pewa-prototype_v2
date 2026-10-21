@@ -6,9 +6,9 @@ import {
   Search,
   ArrowRight,
   Sparkles,
-  Tag as TagIcon,
   Building2,
   X,
+  SlidersHorizontal,
 } from "lucide-react";
 import { formatPrice, usePewa } from "@/lib/pewa/store";
 import type { Menu, Offering, Venue } from "@/lib/pewa/types";
@@ -20,6 +20,14 @@ import {
 } from "@/lib/pewa/availability";
 import { canAdmitOrder, getAuthoritativeVenues, getAuthoritativeMenus } from "@/lib/pewa/ordering";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { CustomerNav } from "./CustomerNav";
 import { cn } from "@/lib/utils";
 import breakfast from "@/assets/cafe-breakfast.jpg";
@@ -36,7 +44,7 @@ export interface VenueSearchResult {
   isVenueMatch: boolean;
 }
 
-const PRIMARY_CATEGORIES = [
+export const PRIMARY_CATEGORIES = [
   { id: "all", label: "All", emoji: "", category: "" },
   { id: "cafe", label: "Cafés", emoji: "☕", category: "Café" },
   { id: "bakery", label: "Bakeries", emoji: "🥐", category: "Artisan Bakery" },
@@ -60,7 +68,7 @@ const PRIMARY_CATEGORIES = [
   },
 ];
 
-const NEIGHBORHOOD_FILTERS = [
+export const NEIGHBORHOOD_FILTERS = [
   { id: "all", label: "All Areas", matches: [] as string[] },
   {
     id: "cbd",
@@ -89,7 +97,7 @@ const NEIGHBORHOOD_FILTERS = [
   },
 ];
 
-const CURATED_QUICK_TAGS = [
+export const CURATED_QUICK_TAGS = [
   "Vegetarian",
   "Vegan",
   "Gluten-Free",
@@ -98,7 +106,17 @@ const CURATED_QUICK_TAGS = [
   "Popular",
 ];
 
-export function Discovery({ directory = false }: { directory?: boolean }) {
+export function Discovery({
+  directory = false,
+  initialFilter,
+  initialQuery = "",
+  initialArea = "",
+}: {
+  directory?: boolean;
+  initialFilter?: string | undefined;
+  initialQuery?: string | undefined;
+  initialArea?: string | undefined;
+}) {
   const {
     venues,
     menus,
@@ -110,12 +128,26 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     recordPromotionClick,
     recordPromotionImpression,
   } = usePewa();
-  const [q, setQ] = useState("");
+
+  const [q, setQ] = useState(initialQuery);
   const [service, setService] = useState("");
   const [category, setCategory] = useState("");
   const [tagFilter, setTagFilter] = useState("");
-  const [area, setArea] = useState("");
-  const [savedOnly, setSavedOnly] = useState(false);
+  const [area, setArea] = useState(initialArea);
+  const [savedOnly, setSavedOnly] = useState(initialFilter === "saved");
+  const [recentsOnly, setRecentsOnly] = useState(initialFilter === "recents");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [nearbyStatus, setNearbyStatus] = useState<
+    "idle" | "requesting" | "granted" | "denied" | "unsupported"
+  >("idle");
+  const [nearbyNotice, setNearbyNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialFilter === "saved") setSavedOnly(true);
+    if (initialFilter === "recents") setRecentsOnly(true);
+    if (initialQuery) setQ(initialQuery);
+    if (initialArea) setArea(initialArea);
+  }, [initialFilter, initialQuery, initialArea]);
 
   // Authoritative catalogue representation shared with cart and order submission
   const allVenues = useMemo(() => getAuthoritativeVenues({ venues }), [venues]);
@@ -132,10 +164,6 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
       live.flatMap((v) => getVenuePublicMenus(v).flatMap((m) => m.sections.map((s) => s.name))),
     ),
   ];
-  const services = [...new Set(live.flatMap((v) => v.services))];
-  const areas = [...new Set(live.map((v) => (v.deliveryOnly ? v.serviceArea : v.address)))].filter(
-    Boolean,
-  );
 
   const query = q.trim().toLowerCase();
   const queryTokens = query.split(/\s+/).filter(Boolean);
@@ -143,11 +171,15 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
   const results: VenueSearchResult[] = live.flatMap((v) => {
     // 1. Venue-level filters
     if (savedOnly && !favourites.includes(v.id)) return [];
+    if (recentsOnly && !recents.includes(v.id)) return [];
     if (service && !v.services.includes(service)) return [];
 
+    const venueLoc = (v.deliveryOnly ? v.serviceArea : v.address).toLowerCase();
+
     if (area) {
-      const venueLoc = (v.deliveryOnly ? v.serviceArea : v.address).toLowerCase();
-      const areaFilter = NEIGHBORHOOD_FILTERS.find((f) => f.id === area || f.label === area);
+      const areaFilter = NEIGHBORHOOD_FILTERS.find(
+        (f) => f.id === area || f.label.toLowerCase() === area.toLowerCase(),
+      );
       if (areaFilter && areaFilter.matches.length > 0) {
         const matchesAny = areaFilter.matches.some((term) => venueLoc.includes(term.toLowerCase()));
         if (!matchesAny) return [];
@@ -190,8 +222,22 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
       .join(" ")
       .toLowerCase();
 
+    // Query tokens match venue text or area aliases
     const venueMatchesQuery =
-      queryTokens.length > 0 && queryTokens.every((tok) => venueText.includes(tok));
+      queryTokens.length > 0 &&
+      queryTokens.every((tok) => {
+        if (venueText.includes(tok)) return true;
+        const matchingAreaFilter = NEIGHBORHOOD_FILTERS.find(
+          (f) =>
+            f.id.includes(tok) ||
+            f.label.toLowerCase().includes(tok) ||
+            f.matches.some((m) => m.includes(tok)),
+        );
+        if (matchingAreaFilter && matchingAreaFilter.matches.some((m) => venueLoc.includes(m))) {
+          return true;
+        }
+        return false;
+      });
 
     // 2. Offering-level analysis across eligible public menus
     const venueMenus = getVenuePublicMenus(v);
@@ -238,17 +284,14 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     }
 
     // 3. Determine if the business qualifies:
-    // If a tag filter is active, at least one offering MUST match the tag filter
     if (tagFilter && qualifyingOfferings.length === 0) {
       return [];
     }
 
-    // If a section category was selected, at least one offering MUST be in that section
     if (isSectionCategory && qualifyingOfferings.length === 0) {
       return [];
     }
 
-    // If a search query is active:
     const isVenueMatch = Boolean(queryTokens.length > 0 && venueMatchesQuery);
     if (queryTokens.length > 0) {
       const hasQualifyingItem = qualifyingOfferings.length > 0;
@@ -263,12 +306,35 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
   });
 
   const recentVenues = recents.flatMap((id) => {
-    const v = live.find((v) => v.id === id);
+    const v = live.find((x) => x.id === id);
+    return v ? [v] : [];
+  });
+
+  const favouriteVenues = favourites.flatMap((id) => {
+    const v = live.find((x) => x.id === id);
     return v ? [v] : [];
   });
 
   const activeCampaigns = campaigns.filter((c) => c.active);
-  const hasActiveFilters = Boolean(q || category || area || tagFilter || service || savedOnly);
+
+  const activeFilterCount =
+    (category ? 1 : 0) +
+    (area ? 1 : 0) +
+    (tagFilter ? 1 : 0) +
+    (service ? 1 : 0) +
+    (savedOnly ? 1 : 0) +
+    (recentsOnly ? 1 : 0);
+
+  const hasActiveFilters = Boolean(
+    q ||
+    category ||
+    area ||
+    tagFilter ||
+    service ||
+    savedOnly ||
+    recentsOnly ||
+    nearbyStatus === "granted",
+  );
 
   const recordedImpressionsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -289,6 +355,48 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
     setTagFilter("");
     setArea("");
     setSavedOnly(false);
+    setRecentsOnly(false);
+    setNearbyStatus("idle");
+    setNearbyNotice(null);
+  };
+
+  const handleSeeNearby = () => {
+    if (nearbyStatus === "granted") {
+      setNearbyStatus("idle");
+      setNearbyNotice(null);
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setNearbyStatus("unsupported");
+      setNearbyNotice(
+        "Location services are not supported by this browser. You can search by area (e.g. Westlands, CBD) or select an area manually.",
+      );
+      return;
+    }
+
+    setNearbyStatus("requesting");
+    setNearbyNotice(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (_pos) => {
+        // Truthful bounded proximity: in this prototype, location matches the local Nairobi operating area
+        // without fabricating unverified GPS coordinates or precision distance metrics.
+        setNearbyStatus("granted");
+        setNearbyNotice(
+          "Showing venues within your local service area. Delivery kitchens evaluate by designated dispatch zones.",
+        );
+      },
+      (err) => {
+        setNearbyStatus("denied");
+        setNearbyNotice(
+          err && err.code === 1
+            ? "Location access was denied or unavailable. You can search by neighborhood (e.g. Westlands, CBD) or browse all menus."
+            : "Location is currently unavailable. You can search by area or browse all menus.",
+        );
+      },
+      { timeout: 5000, maximumAge: 60000 },
+    );
   };
 
   return (
@@ -329,8 +437,63 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
         )}
       </label>
 
+      {/* Discovery Action Bar: See Nearby & Optional Filters */}
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <Button
+            type="button"
+            variant={nearbyStatus === "granted" ? "secondary" : "outline"}
+            size="sm"
+            onClick={handleSeeNearby}
+            className={cn(
+              "h-8 gap-1 rounded-full text-xs font-medium transition-colors",
+              nearbyStatus === "granted" &&
+                "border-emerald-500/40 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200",
+            )}
+            aria-label="See nearby venues"
+          >
+            <MapPin
+              className={cn(
+                "h-3.5 w-3.5",
+                nearbyStatus === "granted"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-primary",
+              )}
+            />
+            {nearbyStatus === "granted" ? "Nearby active" : "See nearby"}
+          </Button>
+
+          <Button
+            type="button"
+            variant={activeFilterCount > 0 ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setFiltersOpen(true)}
+            className="h-8 gap-1.5 rounded-full text-xs font-medium"
+            aria-label="Filters"
+          >
+            <SlidersHorizontal className="h-3 w-3" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.2 text-[10px] font-bold text-primary-foreground">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
+        </div>
+
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="text-[11px] font-semibold text-muted-foreground hover:text-foreground underline"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
       {/* Primary Category Chips */}
-      <div className="mt-3.5">
+      <div className="mt-3">
         <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-1">
           {PRIMARY_CATEGORIES.map((cat) => {
             const isSelected =
@@ -364,137 +527,311 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
         </div>
       </div>
 
-      {/* Neighborhood & Nearby Area Filter Chips */}
-      <div className="mt-2">
-        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-1 text-xs text-muted-foreground">
-          <span className="shrink-0 flex items-center gap-0.5 font-medium pl-0.5 text-[11px]">
-            <MapPin className="h-3 w-3" />
-            Area:
-          </span>
-          {NEIGHBORHOOD_FILTERS.map((f) => {
-            const isSelected = f.id === "all" ? !area : area === f.id;
-            return (
+      {/* Active Filter Pills (Shown only when filters are active) */}
+      {hasActiveFilters && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
+          {category && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 font-medium text-primary text-[11px]">
+              Category: {category}
               <button
-                key={f.id}
                 type="button"
-                aria-label={f.id === "all" ? "All areas" : f.label}
-                onClick={() => {
-                  if (f.id === "all" || isSelected) {
-                    setArea("");
-                  } else {
-                    setArea(f.id);
-                  }
-                }}
-                className={cn(
-                  "shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors",
-                  isSelected
-                    ? "border-foreground bg-foreground text-background font-semibold shadow-xs"
-                    : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
+                onClick={() => setCategory("")}
+                className="hover:opacity-75"
+                aria-label="Remove category filter"
               >
-                {f.label}
+                <X className="h-3 w-3" />
               </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Dietary & Highlight Quick Tag Pills */}
-      <div className="mt-2">
-        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-1 text-xs text-muted-foreground">
-          <span className="shrink-0 flex items-center gap-0.5 font-medium pl-0.5 text-[11px]">
-            <TagIcon className="h-3 w-3" />
-            Tags:
-          </span>
-          <button
-            type="button"
-            aria-label="All tags"
-            onClick={() => setTagFilter("")}
-            className={cn(
-              "shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-              !tagFilter
-                ? "border-primary bg-primary text-primary-foreground font-semibold"
-                : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            All
-          </button>
-          {CURATED_QUICK_TAGS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTagFilter(tagFilter === t ? "" : t)}
-              className={cn(
-                "shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                tagFilter === t
-                  ? "border-primary bg-primary text-primary-foreground font-semibold"
-                  : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {directory && (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <select
-            aria-label="Cuisine or category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="h-11 min-w-0 rounded-md border bg-card px-2 text-sm"
-          >
-            <option value="">All categories</option>
-            {businessCategories.length > 0 && (
-              <optgroup label="Business Categories">
-                {businessCategories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {sections.length > 0 && (
-              <optgroup label="Menu Sections">
-                {sections.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-          <select
-            aria-label="Service filter"
-            value={service}
-            onChange={(e) => setService(e.target.value)}
-            className="h-11 min-w-0 rounded-md border bg-card px-2 text-sm"
-          >
-            <option value="">All services</option>
-            {services.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Area filter"
-            value={area}
-            onChange={(e) => setArea(e.target.value)}
-            className="col-span-2 h-11 min-w-0 rounded-md border bg-card px-2 text-sm"
-          >
-            <option value="">All areas</option>
-            {areas.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            </span>
+          )}
+          {area && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary border px-2 py-0.5 font-medium text-foreground text-[11px]">
+              Area: {NEIGHBORHOOD_FILTERS.find((f) => f.id === area)?.label || area}
+              <button
+                type="button"
+                onClick={() => setArea("")}
+                className="hover:opacity-75"
+                aria-label="Remove area filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {tagFilter && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary border px-2 py-0.5 font-medium text-foreground text-[11px]">
+              Tag: {tagFilter}
+              <button
+                type="button"
+                onClick={() => setTagFilter("")}
+                className="hover:opacity-75"
+                aria-label="Remove tag filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {service && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary border px-2 py-0.5 font-medium text-foreground text-[11px]">
+              Service: {service}
+              <button
+                type="button"
+                onClick={() => setService("")}
+                className="hover:opacity-75"
+                aria-label="Remove service filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {savedOnly && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary border px-2 py-0.5 font-medium text-foreground text-[11px]">
+              Favourites Only
+              <button
+                type="button"
+                onClick={() => setSavedOnly(false)}
+                className="hover:opacity-75"
+                aria-label="Remove saved filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {recentsOnly && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary border px-2 py-0.5 font-medium text-foreground text-[11px]">
+              Recently Opened
+              <button
+                type="button"
+                onClick={() => setRecentsOnly(false)}
+                className="hover:opacity-75"
+                aria-label="Remove recents filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {nearbyStatus === "granted" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-400 text-[11px]">
+              Nearby Area Active
+              <button
+                type="button"
+                onClick={() => {
+                  setNearbyStatus("idle");
+                  setNearbyNotice(null);
+                }}
+                className="hover:opacity-75"
+                aria-label="Reset nearby location"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
         </div>
       )}
 
-      {/* Featured Offers (Sponsored) */}
+      {/* Nearby Notice or Denial Fallback Banner */}
+      {nearbyNotice && (
+        <div
+          role={nearbyStatus === "denied" || nearbyStatus === "unsupported" ? "alert" : "status"}
+          className={cn(
+            "mt-3 flex items-start justify-between gap-2 rounded-xl border p-3 text-xs shadow-xs",
+            nearbyStatus === "granted"
+              ? "border-emerald-500/30 bg-emerald-50/60 text-emerald-950 dark:bg-emerald-950/20 dark:text-emerald-200"
+              : "border-amber-500/30 bg-amber-50/70 text-amber-950 dark:bg-amber-950/20 dark:text-amber-200",
+          )}
+        >
+          <div className="flex items-start gap-2">
+            <MapPin
+              className={cn(
+                "mt-0.5 h-4 w-4 shrink-0",
+                nearbyStatus === "granted"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-amber-600 dark:text-amber-400",
+              )}
+            />
+            <div className="space-y-0.5">
+              <p className="font-semibold">
+                {nearbyStatus === "granted" ? "Nearby Discovery Active" : "Location Access Notice"}
+              </p>
+              <p className="text-[11px] opacity-90">{nearbyNotice}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNearbyNotice(null)}
+            className="text-xs font-bold opacity-60 hover:opacity-100"
+            aria-label="Dismiss location notice"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Optional Filters Dialog */}
+      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Filters & Refinements</DialogTitle>
+            <DialogDescription>
+              Filter menus by neighborhood, category, dietary preference, or service.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Area / Neighborhood Filter */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                Area / Neighborhood
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {NEIGHBORHOOD_FILTERS.map((f) => {
+                  const isSelected = f.id === "all" ? !area : area === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      aria-label={f.id === "all" ? "All areas" : f.label}
+                      onClick={() => setArea(f.id === "all" || isSelected ? "" : f.id)}
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        isSelected
+                          ? "border-primary bg-primary text-primary-foreground font-semibold"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Business Category or Menu Section */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                Category or Cuisine
+              </h4>
+              <select
+                aria-label="Cuisine or category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="h-10 w-full rounded-md border bg-card px-2.5 text-xs text-foreground outline-none"
+              >
+                <option value="">All categories & sections</option>
+                {businessCategories.length > 0 && (
+                  <optgroup label="Business Categories">
+                    {businessCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {sections.length > 0 && (
+                  <optgroup label="Menu Sections">
+                    {sections.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+
+            {/* Dietary & Special Tags */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                Dietary & Special Tags
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {CURATED_QUICK_TAGS.map((t) => {
+                  const isSelected = tagFilter.toLowerCase() === t.toLowerCase();
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTagFilter(isSelected ? "" : t)}
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        isSelected
+                          ? "border-primary bg-primary text-primary-foreground font-semibold"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Service Types */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                Service Available
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {["Dine-in", "Takeaway", "Delivery"].map((s) => {
+                  const isSelected = service === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setService(isSelected ? "" : s)}
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        isSelected
+                          ? "border-primary bg-primary text-primary-foreground font-semibold"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Saved Only */}
+            <div className="pt-2 border-t flex items-center justify-between">
+              <span className="text-xs font-medium">Saved favourites only</span>
+              <Button
+                variant={savedOnly ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => setSavedOnly(!savedOnly)}
+                className="h-8 text-xs gap-1"
+              >
+                <Heart className={cn("h-3.5 w-3.5", savedOnly && "fill-primary text-primary")} />
+                {savedOnly ? "Only Saved" : "All Menus"}
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-row items-center justify-between sm:justify-between pt-2 border-t">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setArea("");
+                setTagFilter("");
+                setService("");
+                setSavedOnly(false);
+              }}
+              className="text-xs text-muted-foreground"
+            >
+              Reset
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setFiltersOpen(false)}
+              className="text-xs font-semibold"
+            >
+              Apply filters ({results.length} {results.length === 1 ? "result" : "results"})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Featured Offers (Sponsored, Home only) */}
       {!directory && !hasActiveFilters && activeCampaigns.length > 0 && (
         <section className="mt-6 rounded-2xl border border-accent/30 bg-accent/5 p-4 shadow-xs">
           <div className="mb-3 flex items-center justify-between">
@@ -541,21 +878,67 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
         </section>
       )}
 
-      {/* Recently Visited */}
+      {/* Recently Visited (Home only, max 2, hidden if empty) */}
       {!directory && !hasActiveFilters && recentVenues.length > 0 && (
         <section className="mt-6">
-          <h2 className="mb-3 text-xl font-semibold">Recently opened</h2>
-          <div className="no-scrollbar flex gap-3 overflow-x-auto">
-            {recentVenues.map((v) => (
+          <div className="mb-2.5 flex items-center justify-between">
+            <h2 className="text-base font-bold">Recently opened</h2>
+            <Link
+              to="/directory"
+              search={{ filter: "recents" }}
+              className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5"
+            >
+              View all ({recentVenues.length}) →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            {recentVenues.slice(0, 2).map((v) => (
               <Link
                 key={v.id}
                 to="/m/$slug"
                 params={{ slug: v.slug }}
-                className="min-w-44 rounded-lg border bg-secondary p-3 shadow-xs"
+                className="block rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
               >
-                <span className="font-semibold block truncate">{v.name}</span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Open menu again <ArrowRight className="inline h-3 w-3" />
+                <span className="block truncate font-semibold text-sm">{v.name}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                  {v.category || "Menu"}
+                </span>
+                <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
+                  Open menu <ArrowRight className="h-3 w-3" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Saved Favourites (Home only, max 2, hidden if empty) */}
+      {!directory && !hasActiveFilters && favouriteVenues.length > 0 && (
+        <section className="mt-5">
+          <div className="mb-2.5 flex items-center justify-between">
+            <h2 className="text-base font-bold">Saved favourites</h2>
+            <Link
+              to="/directory"
+              search={{ filter: "saved" }}
+              className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5"
+            >
+              View all ({favouriteVenues.length}) →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            {favouriteVenues.slice(0, 2).map((v) => (
+              <Link
+                key={v.id}
+                to="/m/$slug"
+                params={{ slug: v.slug }}
+                className="block rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
+              >
+                <span className="block truncate font-semibold text-sm">{v.name}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                  {v.deliveryOnly ? "Delivery only" : v.address.split(",")[0]}
+                </span>
+                <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
+                  <Heart className="h-3 w-3 fill-primary text-primary" /> View menu
                 </span>
               </Link>
             ))}
@@ -570,9 +953,11 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
             <h2 className="text-xl font-semibold">
               {savedOnly
                 ? "Favourites"
-                : directory
-                  ? `${results.length} ${results.length === 1 ? "menu" : "menus"}`
-                  : "Discover menus"}
+                : recentsOnly
+                  ? "Recently opened"
+                  : directory
+                    ? `${results.length} ${results.length === 1 ? "menu" : "menus"}`
+                    : "Discover menus"}
             </h2>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               <span>
@@ -632,6 +1017,7 @@ export function Discovery({ directory = false }: { directory?: boolean }) {
               searchQuery={q}
               allMenus={allMenus}
               allVenues={allVenues}
+              directory={directory}
             />
           ))}
         </div>
@@ -673,6 +1059,7 @@ function VenueCard({
   searchQuery = "",
   allMenus = [],
   allVenues = [],
+  directory = false,
 }: {
   venue: Venue;
   matchingOfferings?: QualifyingOfferingMatch[];
@@ -680,6 +1067,7 @@ function VenueCard({
   searchQuery?: string;
   allMenus?: Menu[];
   allVenues?: Venue[];
+  directory?: boolean;
 }) {
   const { favourites, toggleFavourite, orderPolicy } = usePewa();
   const saved = favourites.includes(venue.id);
@@ -688,6 +1076,10 @@ function VenueCard({
   })[0];
   const previewImage = venueMenu?.sections.flatMap((s) => s.offerings).find((o) => o.image)?.image;
   const isMenuOnly = !canAdmitOrder(orderPolicy);
+
+  // Home only renders matching offering previews when a search query is active;
+  // Directory retains richer preview rendering.
+  const shouldRenderOfferings = directory || Boolean(searchQuery.trim());
 
   return (
     <article className="relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-sm">
@@ -758,14 +1150,16 @@ function VenueCard({
           </div>
 
           {/* Contextual Matching Offerings or Business Match Explanation */}
-          {matchingOfferings.length > 0 ? (
+          {shouldRenderOfferings && matchingOfferings.length > 0 ? (
             <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs">
               <div className="flex items-center gap-1.5 font-semibold text-primary">
                 <Sparkles className="h-3.5 w-3.5 shrink-0" />
                 <span>
-                  {isVenueMatch
-                    ? `Matched business & ${matchingOfferings.length} menu item${matchingOfferings.length > 1 ? "s" : ""}:`
-                    : `${matchingOfferings.length} matching item${matchingOfferings.length > 1 ? "s" : ""}:`}
+                  {searchQuery.trim()
+                    ? isVenueMatch
+                      ? `Matched business & ${matchingOfferings.length} menu item${matchingOfferings.length > 1 ? "s" : ""}:`
+                      : `${matchingOfferings.length} matching item${matchingOfferings.length > 1 ? "s" : ""}:`
+                    : "Popular offerings:"}
                 </span>
               </div>
               <div className="mt-2 space-y-2">
@@ -817,7 +1211,7 @@ function VenueCard({
                 )}
               </div>
             </div>
-          ) : isVenueMatch ? (
+          ) : isVenueMatch && searchQuery ? (
             <div className="mt-3 rounded-lg border border-border bg-muted/40 p-2.5 text-xs">
               <div className="flex items-center gap-1.5 font-semibold text-foreground">
                 <Building2 className="h-3.5 w-3.5 shrink-0 text-primary" />
