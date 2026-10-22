@@ -2,7 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { AlertTriangle, Bell, Check, ClipboardList, Fuel } from "lucide-react";
 import { toast } from "sonner";
-import { usePewa, canManageOrders, canManageBilling, ROLE_LABELS } from "@/lib/pewa/store";
+import {
+  usePewa,
+  canManageOrders,
+  canManageBilling,
+  getEffectiveBusinessRole,
+  ROLE_LABELS,
+} from "@/lib/pewa/store";
 import { pageHead } from "@/lib/pewa/metadata";
 import { OrderSnapshot, STATUS_LABELS } from "@/components/pewa/OrderSnapshot";
 import { Button } from "@/components/ui/button";
@@ -18,16 +24,10 @@ export const Route = createFileRoute("/admin/orders")({
 });
 
 function OrderCockpit() {
-  const {
-    orders,
-    organisation,
-    venues,
-    role,
-    orderPolicy,
-    acceptOrder,
-    declineOrder,
-    markOrderReady,
-  } = usePewa();
+  const state = usePewa();
+  const { orders, organisation, venues, orderPolicy, acceptOrder, declineOrder, markOrderReady } =
+    state;
+  const effectiveRole = getEffectiveBusinessRole(state);
   const [tab, setTab] = useState("pending");
   const [declining, setDeclining] = useState<string | null>(null);
   const [reason, setReason] = useState("Unable to fulfil this request");
@@ -83,7 +83,9 @@ function OrderCockpit() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-              {role === "staff" ? "Operational Staff Workspace" : ROLE_LABELS[role]}
+              {effectiveRole === "staff"
+                ? "Operational Staff Workspace"
+                : ROLE_LABELS[effectiveRole]}
             </span>
             <span className="text-xs font-medium text-foreground">
               {orgVenues.find((v) => v.id === selectedStationVenueId)?.name ||
@@ -126,7 +128,7 @@ function OrderCockpit() {
         )}
       </div>
 
-      {role !== "staff" && (
+      {effectiveRole !== "staff" && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-card border p-3 text-xs">
           <div className="flex items-center gap-2">
             <Fuel className="h-4 w-4 text-primary" />
@@ -138,7 +140,7 @@ function OrderCockpit() {
                 ` · ${orderPolicy.overdraftUsed}/10 continuity units used`}
             </span>
           </div>
-          {canManageBilling(role) && (
+          {canManageBilling(effectiveRole) && (
             <Button
               asChild
               variant="ghost"
@@ -151,7 +153,7 @@ function OrderCockpit() {
         </div>
       )}
 
-      {isZeroUnits && canManageBilling(role) && (
+      {isZeroUnits && canManageBilling(effectiveRole) && (
         <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-50/60 p-3 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-200">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -254,7 +256,7 @@ function OrderCockpit() {
             {order.declineReason && (
               <p className="mt-3 text-sm text-muted-foreground">{order.declineReason}</p>
             )}
-            {canManageOrders(role) && order.status === "pending" && (
+            {canManageOrders(effectiveRole) && order.status === "pending" && (
               <div className="mt-4 space-y-3">
                 {declining === order.id ? (
                   <>
@@ -322,7 +324,7 @@ function OrderCockpit() {
                 )}
               </div>
             )}
-            {canManageOrders(role) && order.status === "accepted" && (
+            {canManageOrders(effectiveRole) && order.status === "accepted" && (
               <Button
                 className="mt-4 h-11 w-full"
                 onClick={() => {

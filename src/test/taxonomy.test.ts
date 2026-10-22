@@ -69,7 +69,7 @@ describe("Slice R1-A — Menu Taxonomy and Structure Engine", () => {
 
   describe("2. Recommended Sections & Custom Section Creation", () => {
     it("merchants can add suggested sections or arbitrary custom sections in any language", () => {
-      usePewa.getState().loadScenario("new-cafe");
+      usePewa.getState().loadScenario("established-restaurant");
       const s = usePewa.getState();
       const menuId = s.menus[0]?.id;
       expect(menuId).toBeDefined();

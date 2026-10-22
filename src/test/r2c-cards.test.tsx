@@ -338,9 +338,11 @@ describe("R2-C: Business Discovery Cards, Location & Delivery-Only Presentation"
       expect(heroImg.getAttribute("src")).toContain("cafe-breakfast");
       unmount();
 
-      // Update coverImage in draft -> must NOT leak to public discovery before publishing
+      // Switch to authorised merchant role to update coverImage in draft -> must NOT leak to public discovery before publishing
+      usePewa.getState().setRole("admin");
       const customCoverUrl = "https://images.unsplash.com/photo-custom-published-cover";
       usePewa.getState().updateMenuMeta("menu_ggc_allday", { coverImage: customCoverUrl });
+      usePewa.getState().setRole("customer");
 
       const { unmount: unmountDraft } = render(<Discovery />);
       const draftCard = screen.getByTestId("venue-card-green-garden-cafe");
@@ -349,8 +351,10 @@ describe("R2-C: Business Discovery Cards, Location & Delivery-Only Presentation"
       expect(draftHeroImg.getAttribute("src")).not.toBe(customCoverUrl);
       unmountDraft();
 
-      // Publish the menu -> new coverImage must now be reflected on the Green Garden Café card
+      // Publish the menu as authorised merchant -> new coverImage must now be reflected on the Green Garden Café card
+      usePewa.getState().setRole("admin");
       usePewa.getState().publishMenu("menu_ggc_allday");
+      usePewa.getState().setRole("customer");
 
       render(<Discovery />);
       const publishedCard = screen.getByTestId("venue-card-green-garden-cafe");
@@ -361,7 +365,8 @@ describe("R2-C: Business Discovery Cards, Location & Delivery-Only Presentation"
     });
 
     it("falls back to the first eligible available offering image when coverImage is cleared and published, and does not leak draft offering images", () => {
-      // Clear coverImage on Green Garden Café and publish
+      // Clear coverImage on Green Garden Café and publish as authorised merchant
+      usePewa.getState().setRole("admin");
       usePewa.getState().updateMenuMeta("menu_ggc_allday", { coverImage: null });
       usePewa.getState().publishMenu("menu_ggc_allday");
 
@@ -376,6 +381,7 @@ describe("R2-C: Business Discovery Cards, Location & Delivery-Only Presentation"
         ...firstOff,
         image: draftOnlyOffImage,
       });
+      usePewa.getState().setRole("customer");
 
       render(<Discovery />);
       const cafeCard = screen.getByTestId("venue-card-green-garden-cafe");
@@ -386,8 +392,8 @@ describe("R2-C: Business Discovery Cards, Location & Delivery-Only Presentation"
     });
 
     it("skips hidden or sold-out offerings when selecting hero image and renders monogram fallback when no eligible image exists", () => {
-      // Clear coverImage on Sol Artisan Bakery and remove images from all offerings except the first one,
-      // then mark the first one hidden at venue_sol
+      // Clear coverImage on Sol Artisan Bakery and mark the first offering hidden at venue_sol as authorised merchant
+      usePewa.getState().setRole("admin");
       const st = usePewa.getState();
       const solMenu = st.menus.find((m) => m.id === "menu_sol_bakery")!;
       const firstSec = solMenu.sections[0]!;
@@ -398,6 +404,7 @@ describe("R2-C: Business Discovery Cards, Location & Delivery-Only Presentation"
         hidden: true,
       });
       st.publishMenu(solMenu.id);
+      usePewa.getState().setRole("customer");
 
       const { unmount } = render(<Discovery />);
       const solCard = screen.getByTestId("venue-card-sol-artisan-bakery");

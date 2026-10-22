@@ -76,6 +76,10 @@ describe("Slice P6 — PEWA Operator Console & Guardrails", () => {
   });
 
   describe("Bounded Tenant Management", () => {
+    beforeEach(() => {
+      usePewa.getState().setRole("operator");
+    });
+
     it("suspends tenant with reason note and logs audit event", () => {
       const s = usePewa.getState();
       const orgId = s.organisation!.id;
@@ -104,6 +108,10 @@ describe("Slice P6 — PEWA Operator Console & Guardrails", () => {
   });
 
   describe("Commercial Dispute Resolution & Credit Adjustments", () => {
+    beforeEach(() => {
+      usePewa.getState().setRole("operator");
+    });
+
     it("resolves dispute with credit adjustment and updates unit balance", () => {
       const s = usePewa.getState();
       const initialUnits = s.orderPolicy.included;
@@ -146,6 +154,10 @@ describe("Slice P6 — PEWA Operator Console & Guardrails", () => {
   });
 
   describe("Content Moderation Oversight", () => {
+    beforeEach(() => {
+      usePewa.getState().setRole("operator");
+    });
+
     it("resolves moderation case and logs action taken", () => {
       const s = usePewa.getState();
       expect(s.moderationCases.length).toBeGreaterThan(0);

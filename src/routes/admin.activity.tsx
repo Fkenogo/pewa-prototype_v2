@@ -11,7 +11,7 @@ import {
   ShoppingBag,
   Sparkles,
 } from "lucide-react";
-import { canViewActivity, usePewa } from "@/lib/pewa/store";
+import { canViewActivity, getEffectiveBusinessRole, usePewa } from "@/lib/pewa/store";
 import { pageHead } from "@/lib/pewa/metadata";
 import { Button } from "@/components/ui/button";
 
@@ -25,10 +25,12 @@ export const Route = createFileRoute("/admin/activity")({
 });
 
 function ActivityPage() {
-  const { organisation, orders, activity, campaigns, role } = usePewa();
+  const state = usePewa();
+  const { organisation, orders, activity, campaigns } = state;
+  const effectiveRole = getEffectiveBusinessRole(state);
   const [filter, setFilter] = useState<string>("all");
 
-  if (!canViewActivity(role)) {
+  if (!canViewActivity(effectiveRole)) {
     return (
       <main className="mx-auto max-w-sm px-4 pt-16 text-center">
         <h1 className="text-2xl font-bold">Activity restricted</h1>

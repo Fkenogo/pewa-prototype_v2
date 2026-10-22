@@ -238,8 +238,10 @@ describe("R2-D & CORR-001: Featured Placements, Delivered Impression Integrity, 
   it("Scenario F (CORR-001) — Ineligible campaigns (paused, expired, exhausted, suspended org, or unpublished venue) produce no billable exposure", () => {
     const camp = usePewa.getState().campaigns[0]!;
 
-    // 1. Paused campaign
+    // 1. Paused campaign (toggled by authorised merchant)
+    usePewa.getState().setRole("owner");
     usePewa.getState().toggleCampaign(camp.id);
+    usePewa.getState().setRole("customer");
     usePewa.getState().recordPromotionImpression(camp.id);
     expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
 
@@ -270,7 +272,9 @@ describe("R2-D & CORR-001: Featured Placements, Delivered Impression Integrity, 
         c.id === camp.id ? { ...c, active: true, endDate: "2026-10-31T00:00:00.000Z" } : c,
       ),
     }));
+    usePewa.getState().setRole("operator");
     usePewa.getState().setOrganisationStatus("org_ggc", "suspended", "Compliance review");
+    usePewa.getState().setRole("customer");
     const suspendedEval = evaluateCampaignDelivery(usePewa.getState().campaigns[0]!, {
       organisation: usePewa.getState().organisation,
       venues: usePewa.getState().venues,
@@ -284,8 +288,11 @@ describe("R2-D & CORR-001: Featured Placements, Delivered Impression Integrity, 
     expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
 
     // 4. Unpublished venue menu withholds campaign without charging
+    usePewa.getState().setRole("operator");
     usePewa.getState().setOrganisationStatus("org_ggc", "active");
+    usePewa.getState().setRole("owner");
     usePewa.getState().hideMenu("menu_ggc_allday");
+    usePewa.getState().setRole("customer");
     const unpubEval = evaluateCampaignDelivery(usePewa.getState().campaigns[0]!, {
       organisation: usePewa.getState().organisation,
       venues: usePewa.getState().venues,
@@ -401,7 +408,9 @@ describe("R2-D & CORR-001: Featured Placements, Delivered Impression Integrity, 
 
     // 3. Unavailable saved business handled gracefully without leaking unpublished data
     toggleFavourite("venue_ggc");
+    usePewa.getState().setRole("owner");
     usePewa.getState().hideMenu("menu_ggc_allday");
+    usePewa.getState().setRole("customer");
     render(<Discovery directory={true} initialFilter="saved" />);
     expect(screen.queryByTestId("venue-card-green-garden-cafe")).not.toBeInTheDocument();
     expect(screen.getByText(/Unavailable saved businesses/i)).toBeInTheDocument();

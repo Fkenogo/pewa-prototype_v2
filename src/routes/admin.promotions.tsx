@@ -7,6 +7,7 @@ import {
   evaluateCampaignDelivery,
   getAuthoritativeMenus,
   getAuthoritativeVenues,
+  getEffectiveBusinessRole,
   getVenuePublishedMenus,
   PROTOTYPE_DEMO_DATE_ISO,
   resolveScenarioReferenceTimeMs,
@@ -35,16 +36,10 @@ export const Route = createFileRoute("/admin/promotions")({
 });
 
 function PromotionsPage() {
-  const {
-    organisation,
-    venues,
-    menus,
-    simulatedTime,
-    campaigns,
-    role,
-    createCampaign,
-    toggleCampaign,
-  } = usePewa();
+  const state = usePewa();
+  const { organisation, venues, menus, simulatedTime, campaigns, createCampaign, toggleCampaign } =
+    state;
+  const effectiveRole = getEffectiveBusinessRole(state);
   const [tab, setTab] = useState<"paid" | "specials">("paid");
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -57,7 +52,7 @@ function PromotionsPage() {
   const allVenues = getAuthoritativeVenues({ venues });
   const allMenus = getAuthoritativeMenus({ menus });
 
-  if (!canManagePromotions(role)) {
+  if (!canManagePromotions(effectiveRole)) {
     return (
       <main className="mx-auto max-w-lg px-4 pt-16 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">

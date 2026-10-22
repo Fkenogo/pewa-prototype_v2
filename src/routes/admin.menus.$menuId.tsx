@@ -30,6 +30,7 @@ import {
   canAuthorMenus,
   canToggleAvailability,
   formatPrice,
+  getEffectiveBusinessRole,
   hasUnpublishedDraftChanges,
   usePewa,
 } from "@/lib/pewa/store";
@@ -71,6 +72,7 @@ export const Route = createFileRoute("/admin/menus/$menuId")({
 function MenuEditor() {
   const { menuId } = Route.useParams();
   const s = usePewa();
+  const effectiveRole = getEffectiveBusinessRole(s);
   const menu = s.menus.find((m) => m.id === menuId && m.orgId === s.organisation?.id);
   const orgVenues = s.venues.filter((v) => v.orgId === s.organisation?.id);
 
@@ -81,7 +83,7 @@ function MenuEditor() {
   const primaryVenue = assignedVenues[0] || orgVenues[0];
 
   const currency = primaryVenue?.currency || s.organisation?.currency || "KES";
-  const author = canAuthorMenus(s.role);
+  const author = canAuthorMenus(effectiveRole);
   const hasDraftChanges = menu ? hasUnpublishedDraftChanges(menu, s.sharedOfferings) : false;
 
   // Local State
@@ -722,7 +724,7 @@ function MenuEditor() {
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        {canToggleAvailability(s.role) && (
+                        {canToggleAvailability(effectiveRole) && (
                           <label className="flex flex-col items-center text-[10px] text-muted-foreground shrink-0 cursor-pointer">
                             <Switch
                               checked={o.available}

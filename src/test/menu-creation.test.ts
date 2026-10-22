@@ -208,7 +208,7 @@ describe("R1-B — Mobile-First Menu Creation and Organisation Experience", () =
     it("allows a new business to create, structure, populate, and publish a menu", () => {
       usePewa.getState().loadScenario("new-cafe");
 
-      // Setup minimal mock venue & org for new cafe
+      // Setup minimal mock venue, org, and founding owner membership for new cafe
       const venueId = "venue_new_cafe";
       usePewa.setState({
         organisation: {
@@ -216,8 +216,29 @@ describe("R1-B — Mobile-First Menu Creation and Organisation Experience", () =
           name: "Morning Roast",
           businessType: "Café",
           currency: "USD",
+          ownerIdentityId: "id_new_owner",
           status: "active",
         },
+        personalIdentity: {
+          id: "id_new_owner",
+          fullName: "Morning Roast Founder",
+          email: "founder@morningroast.com",
+          mobile: "+254700000001",
+          preferredSignIn: "email",
+          verifiedSimulation: true,
+          createdAt: "2026-10-20T08:00:00.000Z",
+        },
+        memberships: [
+          {
+            id: "mem_org_new_owner",
+            identityId: "id_new_owner",
+            orgId: "org_new",
+            role: "owner",
+            status: "active",
+            venueId,
+            joinedAt: "2026-10-20T08:00:00.000Z",
+          },
+        ],
         venues: [
           {
             id: venueId,
