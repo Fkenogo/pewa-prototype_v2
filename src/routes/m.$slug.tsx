@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   Eye,
   Heart,
@@ -9,6 +9,7 @@ import {
   MessageCircle,
   ShoppingBag,
   Sparkles,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -16,6 +17,7 @@ import {
   formatPrice,
   getEffectiveBusinessRole,
   getLiveMenu,
+  resolveMenuAccess,
   usePewa,
 } from "@/lib/pewa/store";
 import type { Menu, Offering } from "@/lib/pewa/types";
@@ -49,8 +51,22 @@ import {
 import { getAuthoritativeVenues, getAuthoritativeMenus } from "@/lib/pewa/ordering";
 
 export const Route = createFileRoute("/m/$slug")({
-  validateSearch: (search: Record<string, unknown>): { preview?: string | undefined } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    preview?: string | undefined;
+    access?: string | undefined;
+    code?: string | undefined;
+    menu?: string | undefined;
+    sp?: string | undefined;
+    channel?: string | undefined;
+  } => ({
     preview: typeof search["preview"] === "string" ? search["preview"] : undefined,
+    access: typeof search["access"] === "string" ? search["access"] : undefined,
+    code: typeof search["code"] === "string" ? search["code"] : undefined,
+    menu: typeof search["menu"] === "string" ? search["menu"] : undefined,
+    sp: typeof search["sp"] === "string" ? search["sp"] : undefined,
+    channel: typeof search["channel"] === "string" ? search["channel"] : undefined,
   }),
   head: ({ params }) => {
     const name = params.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -114,11 +130,11 @@ function PublicMenu() {
   const isPreviewMode = Boolean(previewMenu);
   const isPreviewDenied = isPreviewRequested && !isPreviewMode;
 
-  const live: Menu[] = venue
-    ? previewMenu
-      ? [previewMenu]
-      : getVenuePublishedMenus(venue, allMenus, allVenues, { includeProtected: true })
-    : [];
+  const live: Menu[] = useMemo(() => {
+    if (!venue) return [];
+    if (previewMenu) return [previewMenu];
+    return getVenuePublishedMenus(venue, allMenus, allVenues, { includeProtected: true });
+  }, [venue, previewMenu, allMenus, allVenues]);
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
   const [detail, setDetail] = useState<Offering | null>(null);
@@ -127,9 +143,44 @@ function PublicMenu() {
   const [nameInput, setNameInput] = useState("");
   const venueId = venue?.id;
   const hasPublishedMenu = live.length > 0 && !isPreviewMode;
+
+  const isAccessSupplied = Boolean(search.access || search.code);
+  const resolvedAccess = useMemo(() => {
+    if (isAccessSupplied) {
+      return resolveMenuAccess(
+        { accessId: search.access, code: search.code, venueId: venue?.id },
+        state,
+      );
+    }
+    return null;
+  }, [isAccessSupplied, search.access, search.code, venue?.id, state]);
+
+  // CORR-B & CORR-C:
+  // Explicitly invalid, disabled or mismatched access references must not fall through to the published-menu view.
+  const isAccessFailed = Boolean(isAccessSupplied && (!resolvedAccess || !resolvedAccess.success));
+
+  // Trust validated service context: derive strictly from validated reference, never allow forged query params to override it.
+  const requestedMenuId = resolvedAccess?.success ? resolvedAccess.menu?.id : search.menu;
+  const activeServicePoint = resolvedAccess?.success
+    ? resolvedAccess.reference?.servicePoint
+    : undefined;
+  const accessChannel = resolvedAccess?.success ? resolvedAccess.reference?.channel : undefined;
+
   useEffect(() => {
-    if (venueId && hasPublishedMenu) visitVenue(venueId);
-  }, [venueId, hasPublishedMenu, visitVenue]);
+    if (requestedMenuId && live.length > 0) {
+      const idx = live.findIndex((m) => m.id === requestedMenuId);
+      if (idx >= 0) {
+        setMenuIdx(idx);
+      }
+    }
+  }, [requestedMenuId, live]);
+
+  useEffect(() => {
+    // CORR-B: Do not create recent-menu entries from a failed access-reference journey
+    if (venueId && hasPublishedMenu && !isAccessFailed) {
+      visitVenue(venueId);
+    }
+  }, [venueId, hasPublishedMenu, isAccessFailed, visitVenue]);
 
   if (!venue) {
     return (
@@ -142,6 +193,41 @@ function PublicMenu() {
       </main>
     );
   }
+
+  // CORR-B: Display clear unavailable-access screen when access reference is invalid, disabled, or cross-venue
+  if (isAccessFailed) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center p-6 text-center pb-24">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+          <ShieldAlert className="h-8 w-8" />
+        </div>
+        <h1 className="font-display text-2xl font-bold">Access Link Unavailable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {resolvedAccess?.error ||
+            "The menu access code or QR reference is invalid, expired, or disabled by the business."}
+        </p>
+        <div className="mt-6 flex w-full flex-col gap-2.5">
+          <Link
+            to="/scan"
+            className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90"
+          >
+            Scan or Enter Another Code
+          </Link>
+          <Link
+            to="/m/$slug"
+            params={{ slug: venue.slug }}
+            className="inline-flex h-11 w-full items-center justify-center rounded-xl border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted"
+          >
+            Browse Public Menu
+          </Link>
+          <Link to="/" className="mt-2 text-xs font-medium text-muted-foreground hover:underline">
+            Back to Discovery
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   const menu = live[Math.min(menuIdx, live.length - 1)];
   const currency = venue.currency;
 
@@ -181,6 +267,30 @@ function PublicMenu() {
           </span>
           <span className="font-medium text-foreground">Showing public menu</span>
         </aside>
+      )}
+      {activeServicePoint && (
+        <div
+          data-testid="service-context-banner"
+          className="bg-primary/10 border-b border-primary/20 px-4 py-2 text-xs flex items-center justify-between text-primary font-medium"
+        >
+          <span className="flex items-center gap-1.5 min-w-0 truncate">
+            <span className="inline-block h-2 w-2 rounded-full bg-primary" />
+            <span className="truncate">
+              Service Station: <strong>{activeServicePoint}</strong>
+            </span>
+          </span>
+          {accessChannel && (
+            <span className="shrink-0 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-primary/20">
+              {accessChannel === "qr"
+                ? "QR Scan"
+                : accessChannel === "whatsapp"
+                  ? "WhatsApp"
+                  : accessChannel === "code"
+                    ? "Short Code"
+                    : "Direct Link"}
+            </span>
+          )}
+        </div>
       )}
       <header className="bg-primary px-4 pb-6 pt-16 text-primary-foreground">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-foreground font-display text-3xl text-primary">
@@ -509,7 +619,7 @@ function PublicMenu() {
       </div>
 
       <ContactDrawer venue={venue} open={contact} onOpenChange={setContact} />
-      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
+      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} servicePoint={activeServicePoint} />
 
       <Drawer open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DrawerContent className="mx-auto max-w-lg">

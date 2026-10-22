@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   UserPlus,
   Users,
+  QrCode,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -533,6 +534,16 @@ function Overview() {
               <Button asChild size="sm" className="h-10 flex-1 text-xs font-semibold">
                 <Link to="/m/$slug" params={{ slug: activeQrVenue.slug }}>
                   <ExternalLink className="h-3.5 w-3.5 mr-1" /> View live menu
+                </Link>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-10 flex-1 text-xs font-semibold"
+              >
+                <Link to="/admin/access">
+                  <QrCode className="h-3.5 w-3.5 mr-1" /> Table QRs & Access
                 </Link>
               </Button>
             </div>

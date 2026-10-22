@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   Sparkles,
   Users,
+  QrCode,
 } from "lucide-react";
 import {
   ROLE_LABELS,
@@ -72,6 +73,12 @@ function AdminLayout() {
     const items = [
       { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
       { label: "Menus", icon: BookOpen, to: "/admin", ready: canAuthorMenus(effectiveRole) },
+      {
+        label: "QR & Access",
+        icon: QrCode,
+        to: "/admin/access",
+        ready: canAuthorMenus(effectiveRole),
+      },
       {
         label: "Orders",
         icon: ClipboardList,

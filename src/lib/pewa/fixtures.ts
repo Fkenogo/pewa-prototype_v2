@@ -1,6 +1,7 @@
 import type {
   GuestSession,
   Menu,
+  MenuAccessReference,
   MembershipRole,
   ModerationCase,
   OnboardingDraft,
@@ -883,6 +884,136 @@ export const KNOWN_ORGANISATIONS: Record<string, Organisation> = {
   },
 };
 
+export const sampleAccessReferences: MenuAccessReference[] = [
+  {
+    id: "acc_ggc_dine",
+    orgId: "org_ggc",
+    venueId: "venue_ggc",
+    menuId: "menu_ggc_allday",
+    servicePoint: "Main Dining",
+    shortCode: "GGC-DINE",
+    channel: "qr",
+    status: "active",
+    type: "public",
+    label: "Main Dining Room Table QR",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+  {
+    id: "acc_ggc_bar",
+    orgId: "org_ggc",
+    venueId: "venue_ggc",
+    menuId: "menu_ggc_allday",
+    servicePoint: "Lobby Bar",
+    shortCode: "GGC-BAR",
+    channel: "qr",
+    status: "active",
+    type: "public",
+    label: "Lobby Bar Counter QR",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+  {
+    id: "acc_ggc_wa",
+    orgId: "org_ggc",
+    venueId: "venue_ggc",
+    menuId: "menu_ggc_allday",
+    servicePoint: "Lobby Bar",
+    shortCode: "GGC-CHAT",
+    channel: "whatsapp",
+    status: "active",
+    type: "public",
+    label: "WhatsApp Order Concierge",
+    customPrompt: "Hi Green Garden Café! I'd like to browse your menu on PEWA.",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+  {
+    id: "acc_ggc_web",
+    orgId: "org_ggc",
+    venueId: "venue_ggc",
+    menuId: "menu_ggc_allday",
+    shortCode: "GGC-WEB",
+    channel: "direct",
+    status: "active",
+    type: "public",
+    label: "Website Direct Link",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+  {
+    id: "acc_hrz_pool",
+    orgId: "org_horizon",
+    venueId: "venue_horizon",
+    menuId: "menu_horizon_lounge",
+    servicePoint: "Poolside Bar",
+    shortCode: "HRZ-POOL",
+    channel: "qr",
+    status: "active",
+    type: "public",
+    label: "Poolside Loungers QR",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+  {
+    id: "acc_hrz_room",
+    orgId: "org_horizon",
+    venueId: "venue_horizon",
+    menuId: "menu_horizon_room",
+    servicePoint: "Room 304",
+    shortCode: "HRZ-ROOM",
+    channel: "qr",
+    status: "active",
+    type: "protected",
+    label: "In-Room Dining Bedside QR",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+  {
+    id: "acc_cb_del",
+    orgId: "org_cloudburger",
+    venueId: "venue_cloudburger",
+    menuId: "menu_cloudburger_delivery",
+    servicePoint: "Kilimani Dispatch",
+    shortCode: "CB-DEL",
+    channel: "direct",
+    status: "active",
+    type: "public",
+    label: "Packaging Direct Link",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+  {
+    id: "acc_cb_wa",
+    orgId: "org_cloudburger",
+    venueId: "venue_cloudburger",
+    menuId: "menu_cloudburger_delivery",
+    servicePoint: "Kilimani Dispatch",
+    shortCode: "CB-CHAT",
+    channel: "whatsapp",
+    status: "active",
+    type: "public",
+    label: "WhatsApp Smash Orders",
+    customPrompt: "Hey CloudBurger! I want to view your smashed burger menu on PEWA.",
+    createdAt: "2026-10-19T08:00:00.000Z",
+    updatedAt: "2026-10-19T08:00:00.000Z",
+  },
+];
+
+export function buildScenarioAccessReferences(id: ScenarioId): MenuAccessReference[] {
+  if (id === "new-cafe") return [];
+  if (id === "hotel") {
+    return sampleAccessReferences.filter((a) => a.orgId === "org_horizon");
+  }
+  if (id === "delivery-only") {
+    return sampleAccessReferences.filter((a) => a.orgId === "org_cloudburger");
+  }
+  if (id === "multi-brand") {
+    return sampleAccessReferences;
+  }
+  return sampleAccessReferences.filter((a) => a.orgId === "org_ggc");
+}
+
 export function buildScenario(
   id: ScenarioId,
 ): Omit<PewaState, "role"> & { role: PewaState["role"] } {
@@ -934,6 +1065,7 @@ export function buildScenario(
     organisations: Object.values(KNOWN_ORGANISATIONS) as Organisation[],
     memberships: buildScenarioMemberships("org_ggc", "owner", "venue_ggc"),
     invitations: (id === "new-cafe" ? [] : [samplePendingInvitation]) as TeamInvitation[],
+    accessReferences: buildScenarioAccessReferences(id),
     onboardingDraft: null as OnboardingDraft | null,
   };
   if (id === "zero-units") {
