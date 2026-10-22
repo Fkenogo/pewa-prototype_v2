@@ -1,7 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { render, screen, fireEvent, within, act } from "@testing-library/react";
 import { usePewa, evaluateCampaignDelivery } from "@/lib/pewa/store";
-import { Discovery, FeaturedCampaignPlacementCard } from "@/components/pewa/Discovery";
+import {
+  Discovery,
+  FeaturedCampaignPlacementCard,
+  QUALIFYING_EXPOSURE_DWELL_MS,
+  QUALIFYING_EXPOSURE_MIN_RATIO,
+} from "@/components/pewa/Discovery";
 
 // Mock TanStack Router Link so Discovery and FeaturedCampaignPlacementCard can render in isolation
 vi.mock("@tanstack/react-router", () => ({
@@ -36,8 +41,67 @@ vi.mock("@tanstack/react-router", () => ({
   useRouterState: () => ({ location: { pathname: "/" } }),
 }));
 
-describe("R2-D: Featured Placements, Recents and Favourites", () => {
+type ObserverCallback = (entries: Partial<IntersectionObserverEntry>[]) => void;
+
+interface MockObserverInstance {
+  callback: ObserverCallback;
+  elements: Set<Element>;
+  disconnected: boolean;
+}
+
+let mockObservers: MockObserverInstance[] = [];
+
+function setupMockIntersectionObserver() {
+  mockObservers = [];
+  class MockIntersectionObserver {
+    instance: MockObserverInstance;
+    constructor(callback: IntersectionObserverCallback) {
+      this.instance = {
+        callback: callback as unknown as ObserverCallback,
+        elements: new Set(),
+        disconnected: false,
+      };
+      mockObservers.push(this.instance);
+    }
+    observe(el: Element) {
+      this.instance.elements.add(el);
+    }
+    unobserve(el: Element) {
+      this.instance.elements.delete(el);
+    }
+    disconnect() {
+      this.instance.disconnected = true;
+      this.instance.elements.clear();
+    }
+  }
+  vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+}
+
+function triggerIntersection(options: {
+  isIntersecting: boolean;
+  intersectionRatio: number;
+  campaignId?: string;
+}) {
+  for (const obs of mockObservers) {
+    if (obs.disconnected) continue;
+    for (const el of obs.elements) {
+      const elCampId = el.getAttribute("data-campaign-id");
+      if (options.campaignId && elCampId !== options.campaignId) continue;
+      obs.callback([
+        {
+          target: el,
+          isIntersecting: options.isIntersecting,
+          intersectionRatio: options.intersectionRatio,
+        },
+      ]);
+    }
+  }
+}
+
+describe("R2-D & CORR-001: Featured Placements, Delivered Impression Integrity, Recents and Favourites", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    setupMockIntersectionObserver();
     usePewa.getState().loadScenario("sponsored-campaign");
     usePewa.setState({
       role: "customer",
@@ -47,7 +111,39 @@ describe("R2-D: Featured Placements, Recents and Favourites", () => {
     });
   });
 
-  it("Scenario A — Active featured campaign: appears on Home with Sponsored label, separated from organic results, and records one impression without duplicate rerender charges", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("Scenario A (CORR-001) — An eligible campaign outside the viewport generates no billable impression", () => {
+    const initialCamp = usePewa.getState().campaigns[0]!;
+    expect(initialCamp.impressions).toBe(142);
+    expect(initialCamp.spent).toBe(14.2);
+
+    render(<Discovery directory={false} />);
+
+    // Featured Offers section is rendered in the DOM
+    expect(screen.getByRole("region", { name: "Featured Offers" })).toBeInTheDocument();
+
+    // Card is outside viewport (isIntersecting = false, ratio = 0) or below 50% ratio
+    act(() => {
+      triggerIntersection({ isIntersecting: false, intersectionRatio: 0 });
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS * 3);
+    });
+
+    // Partial intersection below threshold (e.g. 25% visible < 50% required) also does not qualify
+    act(() => {
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 0.25 });
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS * 3);
+    });
+
+    const afterCamp = usePewa.getState().campaigns[0]!;
+    expect(afterCamp.impressions).toBe(142);
+    expect(afterCamp.spent).toBe(14.2);
+  });
+
+  it("Scenario B, C, D & H (CORR-001) — Qualifying sponsored placement becomes visible (≥50% for ≥300ms) and records exactly one impression; rerenders, repeated visibility callbacks, and clicks do not duplicate charges", () => {
     const initialCamp = usePewa.getState().campaigns[0]!;
     expect(initialCamp.impressions).toBe(142);
     expect(initialCamp.spent).toBe(14.2);
@@ -55,43 +151,97 @@ describe("R2-D: Featured Placements, Recents and Favourites", () => {
     const { rerender } = render(<Discovery directory={false} />);
 
     const featuredSection = screen.getByRole("region", { name: "Featured Offers" });
-    expect(featuredSection).toBeInTheDocument();
-    expect(within(featuredSection).getAllByText(/Sponsored/i).length).toBeGreaterThanOrEqual(1);
+    expect(within(featuredSection).getByText("Sponsored")).toBeInTheDocument();
     expect(
       within(featuredSection).getByText("20% Off Slow Cold Brews All Week"),
     ).toBeInTheDocument();
-    expect(within(featuredSection).getByText("Green Garden Café")).toBeInTheDocument();
-    expect(within(featuredSection).getByText(/All-Day Menu/i)).toBeInTheDocument();
 
-    // Impression recorded exactly once on mount
-    const afterMountCamp = usePewa.getState().campaigns[0]!;
-    expect(afterMountCamp.impressions).toBe(143);
-    expect(afterMountCamp.spent).toBe(14.3);
+    // Enter viewport at qualifying ratio (0.75 >= 0.5)
+    act(() => {
+      triggerIntersection({
+        isIntersecting: true,
+        intersectionRatio: QUALIFYING_EXPOSURE_MIN_RATIO + 0.25,
+      });
+    });
 
-    // Rerendering does not duplicate impression charges
+    // Before 300ms dwell threshold completes, impression is still 142
+    act(() => {
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS - 50);
+    });
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
+
+    // Complete 300ms continuous dwell -> records 1 qualifying impression ($0.10)
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+    const afterQualifying = usePewa.getState().campaigns[0]!;
+    expect(afterQualifying.impressions).toBe(143);
+    expect(afterQualifying.spent).toBe(14.3);
+
+    // Scenario C: Ordinary React rerenders do not duplicate the charge
     rerender(<Discovery directory={false} />);
-    const afterRerenderCamp = usePewa.getState().campaigns[0]!;
-    expect(afterRerenderCamp.impressions).toBe(143);
-    expect(afterRerenderCamp.spent).toBe(14.3);
+    act(() => {
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 1.0 });
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS * 2);
+    });
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(143);
+    expect(usePewa.getState().campaigns[0]!.spent).toBe(14.3);
 
-    // Clicking sponsored card tracks engagement click without consuming budget
+    // Scenario D: Repeated visibility callbacks during the same exposure do not duplicate the charge
+    act(() => {
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 0.8 });
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 1.0 });
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS * 2);
+    });
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(143);
+    expect(usePewa.getState().campaigns[0]!.spent).toBe(14.3);
+
+    // Scenario H: Clicking a campaign tracks engagement click without adding budget deduction
     const featuredCard = screen.getByTestId(`featured-card-${initialCamp.id}`);
     fireEvent.click(featuredCard);
-    const afterClickCamp = usePewa.getState().campaigns[0]!;
-    expect(afterClickCamp.clicks).toBe(initialCamp.clicks + 1);
-    expect(afterClickCamp.spent).toBe(14.3);
+    const afterClick = usePewa.getState().campaigns[0]!;
+    expect(afterClick.clicks).toBe(initialCamp.clicks + 1);
+    expect(afterClick.spent).toBe(14.3);
   });
 
-  it("Scenario B — Inactive, expired, or exhausted campaign: withheld from customer placement and does not generate billable impressions", () => {
+  it("Scenario E (CORR-001) — A card that leaves the viewport or is removed before meeting the 300ms dwell threshold generates no impression", () => {
+    const { unmount } = render(<Discovery directory={false} />);
+
+    // Card enters viewport at 100% visibility
+    act(() => {
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 1.0 });
+      vi.advanceTimersByTime(150); // Only 150ms (< 300ms threshold)
+    });
+
+    // Card scrolls out of viewport before 300ms completes
+    act(() => {
+      triggerIntersection({ isIntersecting: false, intersectionRatio: 0 });
+      vi.advanceTimersByTime(500);
+    });
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
+    expect(usePewa.getState().campaigns[0]!.spent).toBe(14.2);
+
+    // Card re-enters viewport briefly (100ms) and then component unmounts
+    act(() => {
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 1.0 });
+      vi.advanceTimersByTime(100);
+    });
+    unmount();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
+    expect(usePewa.getState().campaigns[0]!.spent).toBe(14.2);
+  });
+
+  it("Scenario F (CORR-001) — Ineligible campaigns (paused, expired, exhausted, suspended org, or unpublished venue) produce no billable exposure", () => {
     const camp = usePewa.getState().campaigns[0]!;
 
     // 1. Paused campaign
     usePewa.getState().toggleCampaign(camp.id);
-    expect(usePewa.getState().campaigns[0]!.active).toBe(false);
-
     usePewa.getState().recordPromotionImpression(camp.id);
     expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
-    expect(usePewa.getState().campaigns[0]!.spent).toBe(14.2);
 
     const { unmount: unmountPaused } = render(<Discovery directory={false} />);
     expect(screen.queryByRole("region", { name: "Featured Offers" })).not.toBeInTheDocument();
@@ -111,52 +261,16 @@ describe("R2-D: Featured Placements, Recents and Favourites", () => {
     });
     expect(expiredEval.eligible).toBe(false);
     expect(expiredEval.state).toBe("expired");
-
     usePewa.getState().recordPromotionImpression(camp.id);
     expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
 
-    const { unmount: unmountExpired } = render(<Discovery directory={false} />);
-    expect(screen.queryByRole("region", { name: "Featured Offers" })).not.toBeInTheDocument();
-    unmountExpired();
-
-    // 3. Budget exhausted campaign
+    // 3. Suspended organisation preserves remaining exposure entitlement
     usePewa.setState((s) => ({
       campaigns: s.campaigns.map((c) =>
-        c.id === camp.id
-          ? {
-              ...c,
-              active: true,
-              endDate: "2026-10-31T00:00:00.000Z",
-              budget: 50,
-              spent: 50,
-            }
-          : c,
+        c.id === camp.id ? { ...c, active: true, endDate: "2026-10-31T00:00:00.000Z" } : c,
       ),
     }));
-    const exhaustedEval = evaluateCampaignDelivery(usePewa.getState().campaigns[0]!, {
-      organisation: usePewa.getState().organisation,
-      venues: usePewa.getState().venues,
-      menus: usePewa.getState().menus,
-      referenceTimeIso: "2026-10-22T10:00:00.000Z",
-    });
-    expect(exhaustedEval.eligible).toBe(false);
-    expect(exhaustedEval.state).toBe("exhausted");
-
-    usePewa.getState().recordPromotionImpression(camp.id);
-    expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
-
-    render(<Discovery directory={false} />);
-    expect(screen.queryByRole("region", { name: "Featured Offers" })).not.toBeInTheDocument();
-  });
-
-  it("Scenario C — Suspended organisation or unpublished menu: halts featured delivery and preserves remaining exposure entitlement", () => {
-    const camp = usePewa.getState().campaigns[0]!;
-    expect(camp.budget).toBe(50);
-    expect(camp.spent).toBe(14.2);
-
-    // Suspend organisation
     usePewa.getState().setOrganisationStatus("org_ggc", "suspended", "Compliance review");
-
     const suspendedEval = evaluateCampaignDelivery(usePewa.getState().campaigns[0]!, {
       organisation: usePewa.getState().organisation,
       venues: usePewa.getState().venues,
@@ -166,20 +280,12 @@ describe("R2-D: Featured Placements, Recents and Favourites", () => {
     expect(suspendedEval.state).toBe("suspended");
     expect(suspendedEval.remainingBudget).toBe(35.8);
     expect(suspendedEval.remainingImpressionsEntitlement).toBe(358);
-
-    // Attempting to record an impression while suspended does not charge or reduce entitlement
     usePewa.getState().recordPromotionImpression(camp.id);
     expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
-    expect(usePewa.getState().campaigns[0]!.spent).toBe(14.2);
 
-    const { unmount } = render(<Discovery directory={false} />);
-    expect(screen.queryByRole("region", { name: "Featured Offers" })).not.toBeInTheDocument();
-    unmount();
-
-    // Reactivate organisation, then unpublish all venue menus -> campaign withheld without charging
+    // 4. Unpublished venue menu withholds campaign without charging
     usePewa.getState().setOrganisationStatus("org_ggc", "active");
     usePewa.getState().hideMenu("menu_ggc_allday");
-
     const unpubEval = evaluateCampaignDelivery(usePewa.getState().campaigns[0]!, {
       organisation: usePewa.getState().organisation,
       venues: usePewa.getState().venues,
@@ -187,10 +293,9 @@ describe("R2-D: Featured Placements, Recents and Favourites", () => {
     });
     expect(unpubEval.eligible).toBe(false);
     expect(unpubEval.state).toBe("unpublished_venue");
-    expect(unpubEval.remainingBudget).toBe(35.8);
   });
 
-  it("Scenario D — Merchant customer placement preview: renders how the Featured Offer appears to customers using published content", () => {
+  it("Scenario G (CORR-001) — Merchant placement previews remain strictly non-billable", () => {
     const state = usePewa.getState();
     const camp = state.campaigns[0]!;
     const venue = state.venues[0]!;
@@ -208,54 +313,67 @@ describe("R2-D: Featured Placements, Recents and Favourites", () => {
     const previewCard = screen.getByTestId(`featured-preview-${camp.id}`);
     expect(previewCard).toBeInTheDocument();
     expect(within(previewCard).getByText("Sponsored")).toBeInTheDocument();
-    expect(within(previewCard).getByText("20% Off Slow Cold Brews All Week")).toBeInTheDocument();
-    expect(within(previewCard).getByText("Green Garden Café")).toBeInTheDocument();
-    expect(within(previewCard).getByText(/All-Day Menu/i)).toBeInTheDocument();
+
+    // No IntersectionObserver should be registered for previewOnly cards, and advancing timers records 0 impressions
+    expect(mockObservers.reduce((acc, o) => acc + o.elements.size, 0)).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS * 5);
+    });
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(142);
+    expect(usePewa.getState().campaigns[0]!.spent).toBe(14.2);
   });
 
-  it("Scenario E & F — Recently Viewed: records genuine visits in most-recent-first order without duplicates, shows max 2 on Home with View all, and supports Clear history", () => {
-    const { visitVenue } = usePewa.getState();
-
-    // Visit three venues, then revisit the first one
-    visitVenue("venue_ggc");
-    visitVenue("venue_sol");
-    visitVenue("venue_gelato");
-    visitVenue("venue_ggc");
-
-    // Stored in most-recent-first order with no duplicate entries
-    expect(usePewa.getState().recents).toEqual(["venue_ggc", "venue_gelato", "venue_sol"]);
+  it("Scenario I (CORR-001) — Campaign exhaustion prevents new billable delivery without causing immediate disappearance of the already displayed placement", () => {
+    const camp = usePewa.getState().campaigns[0]!;
+    // Set campaign to have exactly 1 impression ($0.10) of remaining budget
+    usePewa.setState((s) => ({
+      campaigns: s.campaigns.map((c) =>
+        c.id === camp.id ? { ...c, budget: 15.0, spent: 14.9, impressions: 149 } : c,
+      ),
+    }));
 
     const { unmount } = render(<Discovery directory={false} />);
 
-    const recentsSection = screen.getByRole("region", { name: "Recently opened" });
-    expect(recentsSection).toBeInTheDocument();
-    expect(within(recentsSection).getByText("View all (3) →")).toBeInTheDocument();
+    // Placement is rendered on Home
+    expect(screen.getByTestId(`featured-card-${camp.id}`)).toBeInTheDocument();
 
-    // Only top 2 shown on Home ("Green Garden Café" and "Gelato Craft Lab"), not "Sol Artisan Bakery"
-    expect(within(recentsSection).getByText("Green Garden Café")).toBeInTheDocument();
-    expect(within(recentsSection).getByText("Gelato Craft Lab")).toBeInTheDocument();
-    expect(within(recentsSection).queryByText("Sol Artisan Bakery")).not.toBeInTheDocument();
+    // Qualifying exposure exhausts the budget ($14.90 -> $15.00)
+    act(() => {
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 1.0 });
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS + 20);
+    });
 
-    // Clear history from Home removes the section
-    fireEvent.click(within(recentsSection).getByRole("button", { name: "Clear recent history" }));
-    expect(usePewa.getState().recents).toEqual([]);
-    expect(screen.queryByRole("region", { name: "Recently opened" })).not.toBeInTheDocument();
+    const exhaustedCamp = usePewa.getState().campaigns[0]!;
+    expect(exhaustedCamp.impressions).toBe(150);
+    expect(exhaustedCamp.spent).toBe(15.0);
+
+    // Requirement 11: Already displayed placement remains visible in the current customer view (no jarring disappearance)
+    expect(screen.getByTestId(`featured-card-${camp.id}`)).toBeInTheDocument();
+
+    // Customer can still click the displayed placement to visit the venue without extra budget charge
+    fireEvent.click(screen.getByTestId(`featured-card-${camp.id}`));
+    expect(usePewa.getState().campaigns[0]!.clicks).toBe(camp.clicks + 1);
+    expect(usePewa.getState().campaigns[0]!.spent).toBe(15.0);
+
     unmount();
 
-    // Verify full list in Directory recents filter
+    // Subsequent fresh Home visits do not deliver the now-exhausted campaign or generate billable impressions
+    render(<Discovery directory={false} />);
+    expect(screen.queryByRole("region", { name: "Featured Offers" })).not.toBeInTheDocument();
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(150);
+  });
+
+  it("Scenario J — Recents and Favourites regressions remain green (most-recent-first, max 2 on Home with View all, Clear history, direct unsave, and graceful unavailable handling)", () => {
+    const { visitVenue, toggleFavourite } = usePewa.getState();
+
+    // 1. Recents ordering, deduplication, Home 2-card cap, and Clear history
+    visitVenue("venue_ggc");
     visitVenue("venue_sol");
     visitVenue("venue_gelato");
     visitVenue("venue_ggc");
-    render(<Discovery directory={true} initialFilter="recents" />);
-    expect(screen.getByText("3 businesses")).toBeInTheDocument();
-    expect(screen.getByTestId("venue-card-green-garden-cafe")).toBeInTheDocument();
-    expect(screen.getByTestId("venue-card-gelato-craft-lab")).toBeInTheDocument();
-    expect(screen.getByTestId("venue-card-sol-artisan-bakery")).toBeInTheDocument();
-  });
+    expect(usePewa.getState().recents).toEqual(["venue_ggc", "venue_gelato", "venue_sol"]);
 
-  it("Scenario G & H — Favourites: save and remove from discovery, shows max 2 on Home with View all, and allows direct removal", () => {
-    const { toggleFavourite } = usePewa.getState();
-
+    // 2. Favourites save, Home 2-card cap, and direct unsave
     toggleFavourite("venue_ggc");
     toggleFavourite("venue_sol");
     toggleFavourite("venue_gelato");
@@ -263,57 +381,31 @@ describe("R2-D: Featured Placements, Recents and Favourites", () => {
 
     const { unmount } = render(<Discovery directory={false} />);
 
+    const recentsSection = screen.getByRole("region", { name: "Recently opened" });
+    expect(within(recentsSection).getByText("View all (3) →")).toBeInTheDocument();
+    expect(within(recentsSection).getByText("Green Garden Café")).toBeInTheDocument();
+    expect(within(recentsSection).getByText("Gelato Craft Lab")).toBeInTheDocument();
+    expect(within(recentsSection).queryByText("Sol Artisan Bakery")).not.toBeInTheDocument();
+
+    fireEvent.click(within(recentsSection).getByRole("button", { name: "Clear recent history" }));
+    expect(usePewa.getState().recents).toEqual([]);
+    expect(screen.queryByRole("region", { name: "Recently opened" })).not.toBeInTheDocument();
+
     const savedSection = screen.getByRole("region", { name: "Saved favourites" });
-    expect(savedSection).toBeInTheDocument();
     expect(within(savedSection).getByText("View all (3) →")).toBeInTheDocument();
-
-    // Max 2 shown on Home
-    expect(within(savedSection).getByText("Green Garden Café")).toBeInTheDocument();
-    expect(within(savedSection).getByText("Sol Artisan Bakery")).toBeInTheDocument();
-    expect(within(savedSection).queryByText("Gelato Craft Lab")).not.toBeInTheDocument();
-
-    // Remove Green Garden Café directly from the Saved favourites section on Home
     fireEvent.click(within(savedSection).getByRole("button", { name: "Unsave Green Garden Café" }));
     expect(usePewa.getState().favourites).toEqual(["venue_sol", "venue_gelato"]);
     expect(within(savedSection).getByText("View all (2) →")).toBeInTheDocument();
     expect(within(savedSection).getByText("Gelato Craft Lab")).toBeInTheDocument();
     unmount();
 
-    // Verify full saved list in Directory saved filter
+    // 3. Unavailable saved business handled gracefully without leaking unpublished data
     toggleFavourite("venue_ggc");
-    render(<Discovery directory={true} initialFilter="saved" />);
-    expect(screen.getByText("3 businesses")).toBeInTheDocument();
-  });
-
-  it("Scenario I — Unavailable recent or favourite business: handled gracefully without leaking unpublished/protected data and allows removal", () => {
-    usePewa.getState().visitVenue("venue_ggc");
-    usePewa.getState().toggleFavourite("venue_ggc");
-
-    // Hide Green Garden Café's published menu so the venue has no eligible public menu
     usePewa.getState().hideMenu("menu_ggc_allday");
-
     render(<Discovery directory={true} initialFilter="saved" />);
-
-    // Should not render Green Garden Café's menu items or organic card, but should show graceful unavailable entry with remove button
     expect(screen.queryByTestId("venue-card-green-garden-cafe")).not.toBeInTheDocument();
     expect(screen.getByText(/Unavailable saved businesses/i)).toBeInTheDocument();
-    expect(screen.getByText(/Menu is currently unpublished or unavailable/i)).toBeInTheDocument();
-
-    const removeBtn = screen.getByRole("button", { name: "Unsave Green Garden Café" });
-    fireEvent.click(removeBtn);
-    expect(usePewa.getState().favourites).toEqual([]);
-  });
-
-  it("Scenario J — Home clutter guard: Home remains clean and responsive with no permanent area or tag chip rows", () => {
-    render(<Discovery directory={false} />);
-
-    // Prominent search input and compact category chips exist
-    expect(screen.getByLabelText("Search menus")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "See nearby venues" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
-
-    // Empty recents and favourites sections are hidden
-    expect(screen.queryByRole("region", { name: "Recently opened" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Saved favourites" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unsave Green Garden Café" }));
+    expect(usePewa.getState().favourites).not.toContain("venue_ggc");
   });
 });

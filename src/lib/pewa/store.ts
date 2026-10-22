@@ -893,7 +893,7 @@ export const usePewa = create<PewaState & Actions>()(
         recordPromotionClick: (campaignId) => {
           // Engagement tracking per CORR-B & R2-D:
           // Clicks are tracked separately as engagement metrics and MUST NOT draw down promotional budget.
-          // Only record engagement for campaigns eligible for customer delivery.
+          // Allow engagement clicks on eligible campaigns as well as placements whose final qualifying impression just exhausted the budget.
           const s = get();
           const target = s.campaigns.find((c) => c.id === campaignId);
           if (!target) return;
@@ -903,7 +903,7 @@ export const usePewa = create<PewaState & Actions>()(
             menus: s.menus,
             referenceTimeIso: s.simulatedTime,
           });
-          if (!evaluation.eligible) return;
+          if (!evaluation.eligible && evaluation.state !== "exhausted") return;
           set((state) => ({
             campaigns: state.campaigns.map((c) =>
               c.id === campaignId

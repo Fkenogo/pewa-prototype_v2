@@ -438,19 +438,35 @@ export function Discovery({
     return [{ id, name: v?.name || "Saved business" }];
   });
 
+  const recordedImpressionsRef = useRef<Set<string>>(new Set());
+  const [deliveredInViewIds, setDeliveredInViewIds] = useState<string[]>([]);
+
   const activeCampaigns = useMemo(
     () =>
-      campaigns.filter(
-        (c) =>
-          evaluateCampaignDelivery(c, {
-            organisation,
-            venues,
-            menus,
-            referenceTimeIso: simulatedTime,
-          }).eligible,
-      ),
-    [campaigns, organisation, venues, menus, simulatedTime],
+      campaigns.filter((c) => {
+        const evaluation = evaluateCampaignDelivery(c, {
+          organisation,
+          venues,
+          menus,
+          referenceTimeIso: simulatedTime,
+        });
+        if (evaluation.eligible) return true;
+        // Requirement 11: Ensure a campaign exhausted by its qualifying impression does not
+        // immediately disappear from the already displayed customer placement.
+        if (evaluation.state === "exhausted" && deliveredInViewIds.includes(c.id)) {
+          return true;
+        }
+        return false;
+      }),
+    [campaigns, organisation, venues, menus, simulatedTime, deliveredInViewIds],
   );
+
+  const handleQualifyingExposure = (campaignId: string) => {
+    if (recordedImpressionsRef.current.has(campaignId)) return;
+    recordedImpressionsRef.current.add(campaignId);
+    setDeliveredInViewIds((prev) => (prev.includes(campaignId) ? prev : [...prev, campaignId]));
+    recordPromotionImpression(campaignId);
+  };
 
   const venuesWithLocationData = useMemo(() => live.filter((v) => hasVenueLocationData(v)), [live]);
 
@@ -473,18 +489,6 @@ export function Discovery({
     recentsOnly ||
     (nearbyStatus === "granted" && nearbyCoords !== null),
   );
-
-  const recordedImpressionsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!directory && !hasActiveFilters && activeCampaigns.length > 0) {
-      for (const camp of activeCampaigns) {
-        if (!recordedImpressionsRef.current.has(camp.id)) {
-          recordedImpressionsRef.current.add(camp.id);
-          recordPromotionImpression(camp.id);
-        }
-      }
-    }
-  }, [directory, hasActiveFilters, activeCampaigns, recordPromotionImpression]);
 
   const clearAllFilters = () => {
     setQ("");
@@ -1066,6 +1070,7 @@ export function Discovery({
                   campaign={camp}
                   venue={v}
                   publishedMenu={pubMenu}
+                  onQualifyingExposure={() => handleQualifyingExposure(camp.id)}
                   onClick={() => recordPromotionClick(camp.id)}
                 />
               );
@@ -1692,20 +1697,97 @@ function VenueCard({
   );
 }
 
+/**
+ * Prototype Qualifying-Exposure Visibility Criterion (R2-D CORR-001):
+ * A rendered customer-facing sponsored placement card qualifies for a delivered impression
+ * only when at least 50% of the card (`QUALIFYING_EXPOSURE_MIN_RATIO = 0.5`) is intersecting
+ * the browser viewport continuously for at least 300ms (`QUALIFYING_EXPOSURE_DWELL_MS = 300`).
+ *
+ * Note: This client-side IntersectionObserver mechanism is a deterministic prototype
+ * exposure simulation and is NOT production-grade advertising billing or fraud prevention.
+ */
+export const QUALIFYING_EXPOSURE_MIN_RATIO = 0.5;
+export const QUALIFYING_EXPOSURE_DWELL_MS = 300;
+
 export function FeaturedCampaignPlacementCard({
   campaign,
   venue,
   publishedMenu,
   onClick,
+  onQualifyingExposure,
   previewOnly = false,
 }: {
   campaign: Pick<PromotionCampaign, "id" | "title" | "tagline" | "badgeText">;
   venue: Venue;
   publishedMenu?: Menu | undefined;
   onClick?: () => void;
+  onQualifyingExposure?: () => void;
   previewOnly?: boolean;
 }) {
   const { sharedOfferings, simulatedTime } = usePewa();
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const hasQualifiedRef = useRef(false);
+  const onQualifyingExposureRef = useRef(onQualifyingExposure);
+  onQualifyingExposureRef.current = onQualifyingExposure;
+
+  useEffect(() => {
+    // Requirement 7: Merchant preview cards are strictly non-billable and never attach exposure observers.
+    if (previewOnly) return;
+    if (hasQualifiedRef.current) return;
+    const el = cardRef.current;
+    if (!el || typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearPendingDwell = () => {
+      if (dwellTimer !== null) {
+        clearTimeout(dwellTimer);
+        dwellTimer = null;
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (hasQualifiedRef.current) {
+            clearPendingDwell();
+            return;
+          }
+          const meetsRatio =
+            entry.isIntersecting &&
+            (entry.intersectionRatio === undefined ||
+              entry.intersectionRatio >= QUALIFYING_EXPOSURE_MIN_RATIO);
+
+          if (meetsRatio) {
+            if (dwellTimer === null) {
+              dwellTimer = setTimeout(() => {
+                dwellTimer = null;
+                if (!hasQualifiedRef.current) {
+                  hasQualifiedRef.current = true;
+                  onQualifyingExposureRef.current?.();
+                  observer.disconnect();
+                }
+              }, QUALIFYING_EXPOSURE_DWELL_MS);
+            }
+          } else {
+            // Requirement 5: Cancel pending exposure qualification when card leaves viewport threshold
+            clearPendingDwell();
+          }
+        }
+      },
+      { threshold: [0, QUALIFYING_EXPOSURE_MIN_RATIO, 1] },
+    );
+
+    observer.observe(el);
+
+    return () => {
+      // Requirement 5: Cancel pending exposure qualification on unmount
+      clearPendingDwell();
+      observer.disconnect();
+    };
+  }, [previewOnly, campaign.id]);
 
   const publishedCoverImage = useMemo(() => {
     if (!publishedMenu) return undefined;
@@ -1804,14 +1886,16 @@ export function FeaturedCampaignPlacementCard({
   }
 
   return (
-    <Link
-      to="/m/$slug"
-      params={{ slug: venue.slug }}
-      onClick={onClick}
-      data-testid={`featured-card-${campaign.id}`}
-      className="block rounded-xl border bg-card p-3 shadow-xs transition-colors hover:border-accent"
-    >
-      {content}
-    </Link>
+    <div ref={cardRef} data-campaign-id={campaign.id}>
+      <Link
+        to="/m/$slug"
+        params={{ slug: venue.slug }}
+        onClick={onClick}
+        data-testid={`featured-card-${campaign.id}`}
+        className="block rounded-xl border bg-card p-3 shadow-xs transition-colors hover:border-accent"
+      >
+        {content}
+      </Link>
+    </div>
   );
 }

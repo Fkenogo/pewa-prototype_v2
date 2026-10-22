@@ -163,10 +163,12 @@ function PromotionsPage() {
                   <b>never</b> influence or boost organic directory search rankings.
                 </p>
                 <p>
-                  Only delivered, on-screen qualifying impressions count toward campaign activity.
+                  Only delivered, on-screen qualifying impressions (at least 50% of the sponsored
+                  card visible in the customer viewport for ≥300ms) count toward campaign activity.
                   Clicks are tracked separately as engagement and do not draw down budget.
-                  (Simulated impression pricing at $0.10/impression is non-authoritative prototype
-                  simulation).
+                  (Client-side IntersectionObserver exposure tracking and $0.10/impression pricing
+                  are non-authoritative prototype simulations, not production advertising billing or
+                  fraud prevention).
                 </p>
               </div>
             </div>
