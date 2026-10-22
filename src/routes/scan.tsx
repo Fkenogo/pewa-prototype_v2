@@ -89,7 +89,10 @@ export function ScanPage() {
       setCodeError(null);
 
       // CORR-A: Validate decoded URL or short code against unified menu-access system
-      const parsed = parsePewaQrPayload(rawPayload);
+      const parsed = parsePewaQrPayload(
+        rawPayload,
+        typeof window === "undefined" ? undefined : window.location.origin,
+      );
       if (!parsed) {
         const errorMsg =
           "Unsupported QR code. Only PEWA menu QR codes or short codes are recognized.";

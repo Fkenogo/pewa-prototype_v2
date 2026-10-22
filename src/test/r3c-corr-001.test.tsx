@@ -93,6 +93,9 @@ describe("PEWA PROTOTYPE — R3-C CORR-001: QR Decoding, Access Lifecycle and Se
     const parsedExternal = parsePewaQrPayload(decodedExternal!.data);
     expect(parsedExternal).toBeNull();
 
+    expect(parsePewaQrPayload("https://evil.example/c/GGC-DINE")).toBeNull();
+    expect(parsePewaQrPayload("https://evil.example/m/fake?code=GGC-DINE")).toBeNull();
+
     // 2. WiFi network payload
     const wifiPayload = "WIFI:S:GreenGardenGuest;T:WPA;P:coffeeguest2026;;";
     const decodedWifi = createAndDecodeQr(wifiPayload);
@@ -103,6 +106,53 @@ describe("PEWA PROTOTYPE — R3-C CORR-001: QR Decoding, Access Lifecycle and Se
     // 3. Arbitrary plain text
     expect(parsePewaQrPayload("Welcome to Kenya")).toBeNull();
     expect(parsePewaQrPayload("")).toBeNull();
+  });
+
+  it("rejects conflicting access identifiers and short codes", () => {
+    const refs = usePewa.getState().accessReferences || [];
+    const dine = refs.find((ref) => ref.shortCode === "GGC-DINE")!;
+    const bar = refs.find((ref) => ref.shortCode === "GGC-BAR")!;
+
+    const result = resolveMenuAccess(
+      { accessId: dine.id, code: bar.shortCode },
+      usePewa.getState(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/do not refer to the same/i);
+  });
+
+  it("restricted managers cannot modify references outside their assigned station", () => {
+    const store = usePewa.getState();
+    const bar = (store.accessReferences || []).find((ref) => ref.shortCode === "GGC-BAR")!;
+    const manager = store.upsertPersonalIdentity({
+      fullName: "Station Manager",
+      email: "station.manager@greengarden.example",
+    });
+    store.seedScenarioMembership({
+      identityId: manager.id,
+      orgId: store.organisation!.id,
+      role: "manager",
+      status: "active",
+      venueId: bar.venueId,
+    });
+    usePewa.setState((state) => ({
+      personalIdentity: manager,
+      role: "manager",
+      memberships: (state.memberships || []).map((membership) =>
+        membership.identityId === manager.id
+          ? {
+              ...membership,
+              scopeType: "restricted" as const,
+              venueIds: [bar.venueId],
+              servicePoints: ["Main Dining"],
+            }
+          : membership,
+      ),
+    }));
+
+    expect(usePewa.getState().updateAccessReferenceStatus(bar.id, "disabled").success).toBe(false);
+    expect(usePewa.getState().regenerateAccessCode(bar.id).success).toBe(false);
+    expect(usePewa.getState().deleteAccessReference(bar.id).success).toBe(false);
   });
 
   // Criterion C: Disabled reference fails at both short-code resolution and direct menu destination

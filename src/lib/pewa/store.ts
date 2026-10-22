@@ -2189,36 +2189,12 @@ export const usePewa = create<PewaState & Actions>()(
             };
           }
 
-          // Manager operational scope check
-          if (effectiveRole === "manager") {
-            const callerMembership = getActiveOrganisationMembership(s);
-            if (callerMembership?.scopeType === "restricted") {
-              const allowedVenues =
-                callerMembership.venueIds && callerMembership.venueIds.length > 0
-                  ? callerMembership.venueIds
-                  : callerMembership.venueId
-                    ? [callerMembership.venueId]
-                    : [];
-              if (!allowedVenues.includes(existing.venueId)) {
-                return {
-                  success: false,
-                  error: "Unauthorized: access reference is outside your assigned venue scope.",
-                };
-              }
-              if (
-                callerMembership.servicePoints &&
-                callerMembership.servicePoints.length > 0 &&
-                existing.servicePoint
-              ) {
-                const mgrLower = callerMembership.servicePoints.map((p) => p.toLowerCase().trim());
-                if (!mgrLower.includes(existing.servicePoint.toLowerCase().trim())) {
-                  return {
-                    success: false,
-                    error: "Unauthorized: access reference is outside your assigned station scope.",
-                  };
-                }
-              }
-            }
+          if (effectiveRole === "manager" && !canManageAccessReference(s, existing)) {
+            return {
+              success: false,
+              error:
+                "Unauthorized: access reference is outside your assigned venue or station scope.",
+            };
           }
 
           set((state) => ({
@@ -2258,23 +2234,12 @@ export const usePewa = create<PewaState & Actions>()(
             };
           }
 
-          // Manager scope check
-          if (effectiveRole === "manager") {
-            const callerMembership = getActiveOrganisationMembership(s);
-            if (callerMembership?.scopeType === "restricted") {
-              const allowedVenues =
-                callerMembership.venueIds && callerMembership.venueIds.length > 0
-                  ? callerMembership.venueIds
-                  : callerMembership.venueId
-                    ? [callerMembership.venueId]
-                    : [];
-              if (!allowedVenues.includes(existing.venueId)) {
-                return {
-                  success: false,
-                  error: "Unauthorized: access reference is outside your assigned venue scope.",
-                };
-              }
-            }
+          if (effectiveRole === "manager" && !canManageAccessReference(s, existing)) {
+            return {
+              success: false,
+              error:
+                "Unauthorized: access reference is outside your assigned venue or station scope.",
+            };
           }
 
           const otherCodes = (s.accessReferences || [])
@@ -2319,23 +2284,12 @@ export const usePewa = create<PewaState & Actions>()(
             };
           }
 
-          // Manager scope check
-          if (effectiveRole === "manager") {
-            const callerMembership = getActiveOrganisationMembership(s);
-            if (callerMembership?.scopeType === "restricted") {
-              const allowedVenues =
-                callerMembership.venueIds && callerMembership.venueIds.length > 0
-                  ? callerMembership.venueIds
-                  : callerMembership.venueId
-                    ? [callerMembership.venueId]
-                    : [];
-              if (!allowedVenues.includes(existing.venueId)) {
-                return {
-                  success: false,
-                  error: "Unauthorized: access reference is outside your assigned venue scope.",
-                };
-              }
-            }
+          if (effectiveRole === "manager" && !canManageAccessReference(s, existing)) {
+            return {
+              success: false,
+              error:
+                "Unauthorized: access reference is outside your assigned venue or station scope.",
+            };
           }
 
           set((state) => ({
@@ -3726,6 +3680,20 @@ export function canActorOperateScope(
   return true;
 }
 
+function canManageAccessReference(
+  state: Parameters<typeof canActorOperateScope>[0],
+  reference: MenuAccessReference,
+): boolean {
+  const membership = getActiveOrganisationMembership(state as PewaState);
+  if (!membership || membership.scopeType !== "restricted") return true;
+  const venueAllowed = canActorOperateScope(state, { venueId: reference.venueId });
+  if (!venueAllowed) return false;
+  if (membership.servicePoints === undefined) return true;
+  if (!reference.servicePoint || membership.servicePoints.length === 0) return false;
+  const assigned = membership.servicePoints.map((point) => point.toLowerCase().trim());
+  return assigned.includes(reference.servicePoint.toLowerCase().trim());
+}
+
 export const formatPrice = (amount: number, currency: string) => {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
@@ -3771,6 +3739,7 @@ export function generateUniqueShortCode(existingCodes: string[], prefixHint?: st
  */
 export function parsePewaQrPayload(
   raw: string,
+  currentOrigin?: string,
 ): { code?: string | undefined; accessId?: string | undefined } | null {
   if (!raw || typeof raw !== "string") return null;
   const trimmed = raw.trim();
@@ -3793,14 +3762,24 @@ export function parsePewaQrPayload(
       return null;
     }
 
+    const host = url.hostname.toLowerCase();
+    const isPewaHost =
+      host === "pewa.app" ||
+      host.endsWith(".pewa.app") ||
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "wa.me" ||
+      (currentOrigin !== undefined && url.origin === currentOrigin);
+    if (!isPewaHost && trimmed.startsWith("http")) return null;
+
     // A. Direct short code route: /c/:code
-    const codePathMatch = url.pathname.match(/\/c\/([A-Za-z0-9_-]+)/i);
+    const codePathMatch = url.pathname.match(/^\/c\/([A-Za-z0-9_-]+)\/?$/i);
     if (codePathMatch && codePathMatch[1]) {
       return { code: codePathMatch[1].toUpperCase() };
     }
 
     // B. Menu route with query parameters: /m/:slug?code=... or ?access=...
-    if (url.pathname.includes("/m/")) {
+    if (/^\/m\/[^/]+\/?$/i.test(url.pathname)) {
       const codeParam = url.searchParams.get("code")?.trim().toUpperCase();
       const accessParam = url.searchParams.get("access")?.trim();
       if (codeParam || accessParam) {
@@ -3842,11 +3821,17 @@ export function resolveMenuAccess(
   }
 
   const accessRefs = state.accessReferences || [];
-  const ref = accessRefs.find((r) => {
-    if (idParam && r.id === idParam) return true;
-    if (codeParam && r.shortCode.toUpperCase() === codeParam) return true;
-    return false;
-  });
+  const byId = idParam ? accessRefs.find((r) => r.id === idParam) : undefined;
+  const byCode = codeParam
+    ? accessRefs.find((r) => r.shortCode.toUpperCase() === codeParam)
+    : undefined;
+  if (idParam && codeParam && (!byId || !byCode || byId.id !== byCode.id)) {
+    return {
+      success: false,
+      error: "The menu code and access identifier do not refer to the same access reference.",
+    };
+  }
+  const ref = byId || byCode;
 
   if (!ref) {
     return {
