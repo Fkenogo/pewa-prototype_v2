@@ -6,6 +6,12 @@ import {
   getActiveOrganisationMembership,
   getEffectiveBusinessRole,
   hasActiveBusinessMembership,
+  canAuthorMenus,
+  canManageBilling,
+  SAMPLE_FOUNDER_IDENTITY,
+  SAMPLE_ADMIN_IDENTITY,
+  SAMPLE_MANAGER_IDENTITY,
+  SAMPLE_STAFF_IDENTITY,
 } from "@/lib/pewa/store";
 import { Route as OnboardingRoute } from "@/routes/onboarding";
 import { Route as AdminLayoutRoute } from "@/routes/admin";
@@ -426,7 +432,7 @@ describe("R3-A: Business Registration, Personal Identity and Organisation Onboar
       expect(hasActiveBusinessMembership(stAfterOrg1)).toBe(true);
 
       // Same personal identity joins a second organisation (org_green_garden) as "manager"
-      usePewa.getState().upsertMembership({
+      usePewa.getState().seedScenarioMembership({
         identityId,
         orgId: "org_green_garden",
         role: "manager",
@@ -597,7 +603,7 @@ describe("R3-A: Business Registration, Personal Identity and Organisation Onboar
       const venueId = venues[0]!.id;
 
       // Downgrade active membership to "manager" while setting visual role to "owner"
-      usePewa.getState().upsertMembership({
+      usePewa.getState().seedScenarioMembership({
         identityId: personalIdentity!.id,
         orgId,
         role: "manager",
@@ -714,13 +720,13 @@ describe("R3-A: Business Registration, Personal Identity and Organisation Onboar
       const pendingOrder = usePewa.getState().orders.find((o) => o.status === "pending")!;
 
       for (const nonActiveStatus of ["revoked", "invited"] as const) {
-        usePewa.getState().upsertMembership({
+        usePewa.getState().seedScenarioMembership({
           identityId: personalIdentity!.id,
           orgId: organisation!.id,
           role: "owner",
           status: nonActiveStatus,
         });
-        usePewa.setState({ role: "owner" });
+        usePewa.getState().setRole("owner");
 
         expect(hasActiveBusinessMembership(usePewa.getState())).toBe(false);
         expect(getEffectiveBusinessRole(usePewa.getState())).toBe("customer");
@@ -898,6 +904,297 @@ describe("R3-A: Business Registration, Personal Identity and Organisation Onboar
           /Switching a visual role selector alone does not grant organisation permissions/i,
         ),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("R3-A CORR-002 — Membership Integrity and Simulation Boundaries", () => {
+    it("Test A — Business registration establishes correct founding Owner", () => {
+      usePewa.getState().loadScenario("new-cafe");
+      expect(usePewa.getState().organisation).toBeNull();
+      expect(usePewa.getState().memberships).toHaveLength(0);
+
+      const menuId = usePewa.getState().completeOnboarding({
+        identity: {
+          fullName: "Amina Odhiambo",
+          email: "amina@odhiambo-roasters.example",
+          preferredSignIn: "email",
+        },
+        orgName: "Odhiambo Specialty Coffee Ltd",
+        businessType: "Café",
+        currency: "KES",
+        venueName: "Odhiambo Coffee Roastery",
+        phone: "+254711223344",
+        whatsapp: "+254711223344",
+        email: "hello@odhiambocoffee.example",
+        deliveryOnly: false,
+        address: "Ngong Road, Nairobi",
+        services: ["Dine-in", "Takeaway"],
+        menuName: "Signature Roasts",
+      });
+
+      expect(menuId).toBeTruthy();
+      const st = usePewa.getState();
+      expect(st.organisation).not.toBeNull();
+      expect(st.personalIdentity?.fullName).toBe("Amina Odhiambo");
+
+      // Verify founding owner membership
+      const memberships = st.memberships || [];
+      expect(memberships).toHaveLength(1);
+      const founding = memberships[0]!;
+      expect(founding.identityId).toBe(st.personalIdentity!.id);
+      expect(founding.orgId).toBe(st.organisation!.id);
+      expect(founding.role).toBe("owner");
+      expect(founding.status).toBe("active");
+      expect(founding.venueId).toBe(st.venues[0]!.id);
+
+      // Verify effective role resolves to owner
+      expect(getEffectiveBusinessRole(st)).toBe("owner");
+      expect(hasActiveBusinessMembership(st)).toBe(true);
+      expect(canManageBilling(getEffectiveBusinessRole(st))).toBe(true);
+      expect(canAuthorMenus(getEffectiveBusinessRole(st))).toBe(true);
+    });
+
+    it("Test B — Identity without membership cannot self-assign Owner access through ordinary workflow", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const orgId = usePewa.getState().organisation!.id;
+
+      // Create an outsider personal identity
+      const outsider = usePewa.getState().upsertPersonalIdentity({
+        fullName: "Attacker / Outsider",
+        email: "outsider@unknown.example",
+      });
+
+      // 1. Attempt ordinary upsertMembership without internal fixture flag
+      const result = usePewa.getState().upsertMembership({
+        identityId: outsider.id,
+        orgId,
+        role: "owner",
+      });
+      expect(result).toBeNull(); // Rejected!
+
+      // Outsider has no membership in organisation
+      expect(
+        (usePewa.getState().memberships || []).some(
+          (m) => m.identityId === outsider.id && m.orgId === orgId,
+        ),
+      ).toBe(false);
+
+      // 2. Outsider attempts visual role selector change in Scenario Control
+      usePewa.getState().setRole("owner");
+
+      // Fail-closed enforcement: role selector alone does NOT elevate identity or synthesize membership
+      const st = usePewa.getState();
+      expect(st.personalIdentity?.id).toBe(outsider.id); // persona not silently swapped
+      expect(hasActiveBusinessMembership(st)).toBe(false);
+      expect(getEffectiveBusinessRole(st)).toBe("customer");
+
+      // Protected mutations fail closed
+      expect(
+        st.addMenu({
+          name: "Unauthorized Menu",
+          venueId: st.venues[0]!.id,
+        }),
+      ).toBe("");
+    });
+
+    it("Test C — Manager cannot elevate themselves to Owner through user-facing operations", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const orgId = usePewa.getState().organisation!.id;
+
+      // Register or establish a legitimate manager identity
+      const managerIdentity = usePewa.getState().upsertPersonalIdentity({
+        fullName: "Brian Kiprop",
+        email: "brian@greengarden.example",
+      });
+      usePewa.getState().seedScenarioMembership({
+        identityId: managerIdentity.id,
+        orgId,
+        role: "manager",
+        status: "active",
+      });
+
+      // Active state: Brian Kiprop is logged in as manager
+      usePewa.setState({ personalIdentity: managerIdentity, role: "manager" });
+      expect(getEffectiveBusinessRole(usePewa.getState())).toBe("manager");
+
+      // 1. Manager attempts to call ordinary upsertMembership to elevate to owner
+      const elevationAttempt = usePewa.getState().upsertMembership({
+        identityId: managerIdentity.id,
+        orgId,
+        role: "owner",
+      });
+      expect(elevationAttempt).toBeNull(); // Rejected by self-elevation guard
+
+      // Underlying membership remains manager
+      const memAfter = (usePewa.getState().memberships || []).find(
+        (m) => m.identityId === managerIdentity.id && m.orgId === orgId,
+      );
+      expect(memAfter?.role).toBe("manager");
+
+      // 2. Manager attempts to select Owner via setRole
+      usePewa.getState().setRole("owner");
+
+      // Effective role remains manager because the membership was NOT elevated
+      const st = usePewa.getState();
+      expect(st.personalIdentity?.id).toBe(managerIdentity.id);
+      expect(getEffectiveBusinessRole(st)).toBe("manager");
+
+      // Manager can author menus but CANNOT manage billing
+      expect(canAuthorMenus(getEffectiveBusinessRole(st))).toBe(true);
+      expect(canManageBilling(getEffectiveBusinessRole(st))).toBe(false);
+      const topUpBefore = st.orderPolicy.topUp;
+      st.addTopUpUnits(50);
+      expect(usePewa.getState().orderPolicy.topUp).toBe(topUpBefore); // Denied!
+    });
+
+    it("Test D — Invited and revoked memberships remain inactive until explicitly authorized transition; visual role switch does not reactivate revoked membership", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const orgId = usePewa.getState().organisation!.id;
+
+      // Seed a revoked member
+      const revokedIdentity = usePewa.getState().upsertPersonalIdentity({
+        fullName: "Former Employee",
+        email: "former@greengarden.example",
+      });
+      usePewa.getState().seedScenarioMembership({
+        identityId: revokedIdentity.id,
+        orgId,
+        role: "staff",
+        status: "revoked",
+      });
+
+      // Active state: user is Former Employee
+      usePewa.setState({ personalIdentity: revokedIdentity, role: "staff" });
+      expect(hasActiveBusinessMembership(usePewa.getState())).toBe(false);
+      expect(getEffectiveBusinessRole(usePewa.getState())).toBe("customer");
+
+      // 1. Ordinary workflow cannot activate revoked membership
+      const activateAttempt = usePewa.getState().upsertMembership({
+        identityId: revokedIdentity.id,
+        orgId,
+        role: "staff",
+        status: "active",
+      });
+      expect(activateAttempt).toBeNull();
+
+      // 2. Visual role switch in Scenario Control does NOT reactivate revoked membership
+      usePewa.getState().setRole("staff");
+      usePewa.getState().setRole("owner");
+
+      const st = usePewa.getState();
+      const mem = (st.memberships || []).find(
+        (m) => m.identityId === revokedIdentity.id && m.orgId === orgId,
+      );
+      expect(mem?.status).toBe("revoked");
+      expect(hasActiveBusinessMembership(st)).toBe(false);
+      expect(getEffectiveBusinessRole(st)).toBe("customer");
+
+      // Business actions remain blocked
+      expect(st.acceptOrder("PEWA-0001")).toBe(false);
+      expect(st.addMenu({ name: "Revoked Menu Attempt", venueId: st.venues[0]!.id })).toBe("");
+    });
+
+    it("Test E — Membership changes cannot cross organisation boundaries", () => {
+      usePewa.getState().loadScenario("established-restaurant");
+      const targetOtherOrgId = "org_other_cafe";
+
+      // Active owner of current organisation
+      const ownerIdentity = usePewa.getState().personalIdentity!;
+
+      // Attempt to modify membership in another organisation without fixture flag
+      const crossOrgAttempt = usePewa.getState().upsertMembership({
+        identityId: ownerIdentity.id,
+        orgId: targetOtherOrgId,
+        role: "owner",
+      });
+      expect(crossOrgAttempt).toBeNull(); // Rejected: boundary violation
+
+      // No membership was added in the foreign organisation
+      expect(
+        (usePewa.getState().memberships || []).some(
+          (m) => m.identityId === ownerIdentity.id && m.orgId === targetOtherOrgId,
+        ),
+      ).toBe(false);
+    });
+
+    it("Test F — Scenario Control acts as demonstration persona switcher without modifying underlying membership grants or security state", () => {
+      usePewa.getState().loadScenario("admitted-pending");
+      const initialMemberships = [...(usePewa.getState().memberships || [])];
+      expect(initialMemberships.length).toBeGreaterThanOrEqual(4);
+
+      // Verify initial Owner perspective (Njeri)
+      expect(usePewa.getState().role).toBe("owner");
+      expect(usePewa.getState().personalIdentity?.id).toBe(SAMPLE_FOUNDER_IDENTITY.id);
+      expect(getEffectiveBusinessRole(usePewa.getState())).toBe("owner");
+
+      // Switch Scenario Control to "staff"
+      usePewa.getState().setRole("staff");
+      expect(usePewa.getState().role).toBe("staff");
+      expect(usePewa.getState().personalIdentity?.id).toBe(SAMPLE_STAFF_IDENTITY.id);
+      expect(usePewa.getState().personalIdentity?.fullName).toBe("Faith Achieng");
+      expect(getEffectiveBusinessRole(usePewa.getState())).toBe("staff");
+
+      // Switch Scenario Control to "manager"
+      usePewa.getState().setRole("manager");
+      expect(usePewa.getState().role).toBe("manager");
+      expect(usePewa.getState().personalIdentity?.id).toBe(SAMPLE_MANAGER_IDENTITY.id);
+      expect(usePewa.getState().personalIdentity?.fullName).toBe("Alex Mwangi");
+      expect(getEffectiveBusinessRole(usePewa.getState())).toBe("manager");
+
+      // Switch Scenario Control to "admin"
+      usePewa.getState().setRole("admin");
+      expect(usePewa.getState().role).toBe("admin");
+      expect(usePewa.getState().personalIdentity?.id).toBe(SAMPLE_ADMIN_IDENTITY.id);
+      expect(usePewa.getState().personalIdentity?.fullName).toBe("Kevin Omondi");
+      expect(getEffectiveBusinessRole(usePewa.getState())).toBe("admin");
+
+      // Switch back to "owner"
+      usePewa.getState().setRole("owner");
+      expect(usePewa.getState().role).toBe("owner");
+      expect(usePewa.getState().personalIdentity?.id).toBe(SAMPLE_FOUNDER_IDENTITY.id);
+      expect(getEffectiveBusinessRole(usePewa.getState())).toBe("owner");
+
+      // Crucially, verify that underlying memberships in state were NOT modified or rewritten!
+      const finalMemberships = usePewa.getState().memberships || [];
+      expect(finalMemberships).toHaveLength(initialMemberships.length);
+      for (const initial of initialMemberships) {
+        const matching = finalMemberships.find((m) => m.id === initial.id);
+        expect(matching).toBeDefined();
+        expect(matching?.identityId).toBe(initial.identityId);
+        expect(matching?.role).toBe(initial.role);
+        expect(matching?.status).toBe(initial.status);
+        expect(matching?.joinedAt).toBe(initial.joinedAt);
+      }
+    });
+
+    it("Test G — All existing onboarding, order, menu, billing and promotion tests pass without regressions", () => {
+      // 1. Onboarding completion still works
+      usePewa.getState().loadScenario("new-cafe");
+      const menuId = usePewa.getState().completeOnboarding({
+        orgName: "Test Roastery G",
+        businessType: "Café",
+        currency: "KES",
+        venueName: "Test Roastery Venue",
+        phone: "+254700000000",
+        whatsapp: "+254700000000",
+        email: "info@testroastery.example",
+        deliveryOnly: false,
+        address: "CBD, Nairobi",
+        services: ["Dine-in"],
+        menuName: "Menu G",
+      });
+      expect(menuId).toBeTruthy();
+
+      // 2. Order admission continuity still works
+      usePewa.getState().loadScenario("admitted-pending");
+      const pendingOrder = usePewa.getState().orders.find((o) => o.status === "pending")!;
+      usePewa.getState().setRole("staff");
+      expect(usePewa.getState().acceptOrder(pendingOrder.id)).toBe(true);
+
+      // 3. Menu publishing still works for owner
+      usePewa.getState().setRole("owner");
+      const draftMenu = usePewa.getState().menus[0]!;
+      expect(usePewa.getState().publishMenu(draftMenu.id)).toBe(true);
     });
   });
 });

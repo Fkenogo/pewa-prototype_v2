@@ -32,6 +32,10 @@ import {
   PROTOTYPE_DIRECTORY_VENUES,
   PROTOTYPE_DIRECTORY_MENUS,
   SAMPLE_FOUNDER_IDENTITY,
+  SAMPLE_ADMIN_IDENTITY,
+  SAMPLE_MANAGER_IDENTITY,
+  SAMPLE_STAFF_IDENTITY,
+  SCENARIO_DEMO_IDENTITIES,
 } from "./fixtures";
 import { getVenuePublishedMenus } from "./taxonomy";
 import {
@@ -70,6 +74,10 @@ export {
   getAuthoritativeVenues,
   getAuthoritativeMenus,
   SAMPLE_FOUNDER_IDENTITY,
+  SAMPLE_ADMIN_IDENTITY,
+  SAMPLE_MANAGER_IDENTITY,
+  SAMPLE_STAFF_IDENTITY,
+  SCENARIO_DEMO_IDENTITIES,
 };
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -138,7 +146,15 @@ type Actions = {
     role: MembershipRole;
     status?: OrganisationMembership["status"] | undefined;
     venueId?: string | undefined;
-  }) => OrganisationMembership;
+    _isInternalFixtureSetup?: boolean | undefined;
+  }) => OrganisationMembership | null;
+  seedScenarioMembership: (input: {
+    identityId: string;
+    orgId: string;
+    role: MembershipRole;
+    status?: OrganisationMembership["status"] | undefined;
+    venueId?: string | undefined;
+  }) => OrganisationMembership | null;
   saveOnboardingDraft: (draft: Partial<OnboardingDraft>) => void;
   clearOnboardingDraft: () => void;
   completeOnboarding: (input: CompleteOnboardingInput) => string;
@@ -1013,85 +1029,113 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         setRole: (role) => {
+          let swappedIdentityName: string | undefined;
           set((s) => {
             if (!isBusinessRole(role) || !s.organisation) {
               return { role };
             }
-            const identity = s.personalIdentity || SAMPLE_FOUNDER_IDENTITY;
-            const existingIdentities = s.identities || [];
-            const nextIdentities = existingIdentities.some((x) => x.id === identity.id)
-              ? existingIdentities
-              : [identity, ...existingIdentities];
-            const existingMemberships = s.memberships || [];
-            const orgId = s.organisation.id;
-            const memRole = role as MembershipRole;
-            const hasMem = existingMemberships.some(
-              (m) => m.identityId === identity.id && m.orgId === orgId,
+
+            // Check if current user is explicitly modeling an inactive / revoked / invited / pending member
+            const currentMem = (s.memberships || []).find(
+              (m) => m.identityId === s.personalIdentity?.id && m.orgId === s.organisation?.id,
             );
-            const nextMemberships: OrganisationMembership[] = hasMem
-              ? existingMemberships.map((m) =>
-                  m.identityId === identity.id && m.orgId === orgId
-                    ? { ...m, role: memRole, status: "active" as const }
-                    : m,
-                )
-              : [
-                  ...existingMemberships,
-                  {
-                    id: `mem_${orgId}_${memRole}`,
-                    identityId: identity.id,
-                    orgId,
-                    role: memRole,
-                    status: "active" as const,
-                    joinedAt: now(),
-                  },
-                ];
-            return {
-              role,
-              personalIdentity: identity,
-              identities: nextIdentities,
-              memberships: nextMemberships,
-            };
+
+            if (currentMem && currentMem.status !== "active") {
+              // Fail-closed rule (Requirement 3.4 & 3.5):
+              // Revoked, invited or pending memberships must never be reactivated or elevated
+              // by changing the Scenario Control role selector. Keep current identity and memberships untouched.
+              return { role };
+            }
+
+            // Check if current identity is one of the pre-seeded scenario demonstration identities
+            const isDemonstrationIdentity =
+              s.personalIdentity &&
+              SCENARIO_DEMO_IDENTITIES.some((idItem) => idItem.id === s.personalIdentity?.id);
+
+            if (!isDemonstrationIdentity) {
+              // Non-demonstration identity: do NOT swap identity away to another persona.
+              // Authenticated identities remain themselves; visual role selector alone cannot self-elevate.
+              return { role };
+            }
+
+            // If the current identity is already an active member of this role:
+            if (currentMem && currentMem.role === role && currentMem.status === "active") {
+              return { role };
+            }
+
+            // In demonstration mode, switch the active persona to the pre-seeded member for this role if one exists
+            const targetMembership = (s.memberships || []).find(
+              (m) => m.orgId === s.organisation?.id && m.role === role && m.status === "active",
+            );
+            if (targetMembership) {
+              const targetIdentity = (s.identities || []).find(
+                (idItem) => idItem.id === targetMembership.identityId,
+              );
+              if (targetIdentity) {
+                swappedIdentityName = targetIdentity.fullName;
+                return {
+                  role,
+                  personalIdentity: targetIdentity,
+                };
+              }
+            }
+
+            // If no matching membership exists for this role in the organisation,
+            // update role without synthesizing or mutating any memberships (fails closed via getEffectiveBusinessRole)
+            return { role };
           });
           get().log({
             kind: "role.switched",
-            message: `Simulated role switched to ${role} (membership synced)`,
+            message: `Simulated role switched to ${role} (demonstration persona: ${swappedIdentityName || get().personalIdentity?.fullName || "Fail-closed guest"}; memberships preserved)`,
           });
         },
         loadScenario: (id) => {
           const sc = buildScenario(id);
           const currentRole = get().role;
           const nextRole = id === "new-cafe" ? "owner" : sc.role || currentRole;
-          const syncedMemberships =
-            sc.organisation && sc.personalIdentity && isBusinessRole(nextRole)
-              ? (sc.memberships || []).map((m) =>
-                  m.identityId === sc.personalIdentity?.id && m.orgId === sc.organisation?.id
-                    ? { ...m, role: nextRole as MembershipRole, status: "active" as const }
-                    : m,
-                )
-              : sc.memberships;
+          let persona = sc.personalIdentity;
+          if (isBusinessRole(nextRole) && sc.organisation && sc.memberships) {
+            const memForRole = sc.memberships.find(
+              (m) =>
+                m.orgId === sc.organisation?.id && m.role === nextRole && m.status === "active",
+            );
+            if (memForRole) {
+              const idForRole = (sc.identities || []).find((i) => i.id === memForRole.identityId);
+              if (idForRole) {
+                persona = idForRole;
+              }
+            }
+          }
           set({
             ...sc,
+            personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
-            memberships: syncedMemberships,
+            memberships: sc.memberships,
           });
         },
         reset: () => {
           const sc = buildScenario(get().scenario);
           const nextRole = get().role;
-          const syncedMemberships =
-            sc.organisation && sc.personalIdentity && isBusinessRole(nextRole)
-              ? (sc.memberships || []).map((m) =>
-                  m.identityId === sc.personalIdentity?.id && m.orgId === sc.organisation?.id
-                    ? { ...m, role: nextRole as MembershipRole, status: "active" as const }
-                    : m,
-                )
-              : sc.memberships;
+          let persona = sc.personalIdentity;
+          if (isBusinessRole(nextRole) && sc.organisation && sc.memberships) {
+            const memForRole = sc.memberships.find(
+              (m) =>
+                m.orgId === sc.organisation?.id && m.role === nextRole && m.status === "active",
+            );
+            if (memForRole) {
+              const idForRole = (sc.identities || []).find((i) => i.id === memForRole.identityId);
+              if (idForRole) {
+                persona = idForRole;
+              }
+            }
+          }
           set({
             ...sc,
+            personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
-            memberships: syncedMemberships,
+            memberships: sc.memberships,
           });
         },
         log: (e) =>
@@ -1159,6 +1203,78 @@ export const usePewa = create<PewaState & Actions>()(
           const existing = existingMemberships.find(
             (m) => m.identityId === input.identityId && m.orgId === input.orgId,
           );
+
+          // If not an internal fixture setup, enforce strict membership mutation boundaries
+          if (!input._isInternalFixtureSetup) {
+            // Check 1: Target organisation must match active organisation context
+            if (!s.organisation || s.organisation.id !== input.orgId) {
+              get().log({
+                kind: "membership.rejected",
+                message: `Membership mutation rejected: target organisation (${input.orgId}) does not match active context (${s.organisation?.id || "none"})`,
+              });
+              return null;
+            }
+
+            // Check 2: Caller must have an active identity
+            if (!s.personalIdentity) {
+              get().log({
+                kind: "membership.rejected",
+                message: `Membership mutation rejected: unauthenticated caller cannot modify memberships`,
+              });
+              return null;
+            }
+
+            // Check 3: Caller must hold an active Owner or Admin membership in the organisation
+            const callerMembership = existingMemberships.find(
+              (m) =>
+                m.identityId === s.personalIdentity?.id &&
+                m.orgId === input.orgId &&
+                m.status === "active",
+            );
+            if (
+              !callerMembership ||
+              (callerMembership.role !== "owner" && callerMembership.role !== "admin")
+            ) {
+              get().log({
+                kind: "membership.rejected",
+                message: `Membership mutation rejected: caller role (${callerMembership?.role || "none"}) lacks organisation membership management authority (R3-A boundary; team delegation deferred to R3-B)`,
+              });
+              return null;
+            }
+
+            // Check 4: Self-elevation guard (Requirement 2.1 & Test C)
+            // Users cannot elevate their own role
+            if (
+              input.identityId === s.personalIdentity.id &&
+              input.role !== callerMembership.role
+            ) {
+              get().log({
+                kind: "membership.rejected",
+                message: `Membership mutation rejected: self-elevation is strictly prohibited (${callerMembership.role} -> ${input.role})`,
+              });
+              return null;
+            }
+
+            // Check 5: Admin cannot assign Owner role (only Owner can)
+            if (callerMembership.role === "admin" && input.role === "owner") {
+              get().log({
+                kind: "membership.rejected",
+                message: `Membership mutation rejected: administrators cannot assign the Owner role`,
+              });
+              return null;
+            }
+
+            // Check 6: Deferred invitation activation (Requirement 2.6 & Test D)
+            // Membership activation through invitation acceptance is deferred to R3-B
+            if (existing?.status === "invited" && input.status === "active") {
+              get().log({
+                kind: "membership.rejected",
+                message: `Membership mutation rejected: invitation activation requires token verification (deferred to R3-B)`,
+              });
+              return null;
+            }
+          }
+
           const membership: OrganisationMembership = {
             id: existing?.id || uid("mem"),
             identityId: input.identityId,
@@ -1172,7 +1288,14 @@ export const usePewa = create<PewaState & Actions>()(
             ? existingMemberships.map((m) => (m.id === membership.id ? membership : m))
             : [...existingMemberships, membership];
           set({ memberships: nextMemberships });
+          get().log({
+            kind: "membership.upserted",
+            message: `Membership updated: identity ${input.identityId} as ${input.role} (${membership.status}) in ${input.orgId}`,
+          });
           return membership;
+        },
+        seedScenarioMembership: (input) => {
+          return get().upsertMembership({ ...input, _isInternalFixtureSetup: true });
         },
         saveOnboardingDraft: (draft) => {
           set((s) => {

@@ -728,20 +728,87 @@ export const SAMPLE_FOUNDER_IDENTITY: PersonalIdentity = {
   createdAt: "2026-10-19T07:45:00.000Z",
 };
 
+export const SAMPLE_ADMIN_IDENTITY: PersonalIdentity = {
+  id: "id_admin_kevin",
+  fullName: "Kevin Omondi",
+  email: "kevin@greengarden.example",
+  mobile: "+254700456789",
+  preferredSignIn: "email",
+  verifiedSimulation: true,
+  verifiedAt: "2026-10-19T07:50:00.000Z",
+  createdAt: "2026-10-19T07:45:00.000Z",
+};
+
+export const SAMPLE_MANAGER_IDENTITY: PersonalIdentity = {
+  id: "id_manager_alex",
+  fullName: "Alex Mwangi",
+  email: "alex@greengarden.example",
+  mobile: "+254700234567",
+  preferredSignIn: "email",
+  verifiedSimulation: true,
+  verifiedAt: "2026-10-19T07:50:00.000Z",
+  createdAt: "2026-10-19T07:45:00.000Z",
+};
+
+export const SAMPLE_STAFF_IDENTITY: PersonalIdentity = {
+  id: "id_staff_barista",
+  fullName: "Faith Achieng",
+  email: "faith@greengarden.example",
+  mobile: "+254700345678",
+  preferredSignIn: "mobile",
+  verifiedSimulation: true,
+  verifiedAt: "2026-10-19T07:50:00.000Z",
+  createdAt: "2026-10-19T07:45:00.000Z",
+};
+
+export const SCENARIO_DEMO_IDENTITIES: PersonalIdentity[] = [
+  SAMPLE_FOUNDER_IDENTITY,
+  SAMPLE_ADMIN_IDENTITY,
+  SAMPLE_MANAGER_IDENTITY,
+  SAMPLE_STAFF_IDENTITY,
+];
+
 function buildScenarioMemberships(
   orgId: string,
-  role: MembershipRole = "owner",
+  primaryRole: MembershipRole = "owner",
   venueId?: string,
 ): OrganisationMembership[] {
   return [
     {
-      id: `mem_${orgId}_${role}`,
+      id: `mem_${orgId}_owner`,
       identityId: SAMPLE_FOUNDER_IDENTITY.id,
       orgId,
-      role,
+      role: "owner",
       status: "active",
       venueId,
       joinedAt: "2026-10-19T07:55:00.000Z",
+    },
+    {
+      id: `mem_${orgId}_admin`,
+      identityId: SAMPLE_ADMIN_IDENTITY.id,
+      orgId,
+      role: "admin",
+      status: "active",
+      venueId,
+      joinedAt: "2026-10-19T08:00:00.000Z",
+    },
+    {
+      id: `mem_${orgId}_manager`,
+      identityId: SAMPLE_MANAGER_IDENTITY.id,
+      orgId,
+      role: "manager",
+      status: "active",
+      venueId,
+      joinedAt: "2026-10-19T08:05:00.000Z",
+    },
+    {
+      id: `mem_${orgId}_staff`,
+      identityId: SAMPLE_STAFF_IDENTITY.id,
+      orgId,
+      role: "staff",
+      status: "active",
+      venueId,
+      joinedAt: "2026-10-19T08:10:00.000Z",
     },
   ];
 }
@@ -793,7 +860,7 @@ export function buildScenario(
     sharedOfferings: sampleSharedOfferings,
     simulatedTime: "10:00",
     personalIdentity: SAMPLE_FOUNDER_IDENTITY as PersonalIdentity | null,
-    identities: [SAMPLE_FOUNDER_IDENTITY] as PersonalIdentity[],
+    identities: SCENARIO_DEMO_IDENTITIES as PersonalIdentity[],
     memberships: buildScenarioMemberships("org_ggc", "owner", "venue_ggc"),
     onboardingDraft: null as OnboardingDraft | null,
   };
@@ -913,6 +980,7 @@ export function buildScenario(
       ...common,
       scenario: id,
       role: "admin",
+      personalIdentity: SAMPLE_ADMIN_IDENTITY,
       organisation: {
         id: "org_multi_brand",
         name: "Horizon Hospitality Group",

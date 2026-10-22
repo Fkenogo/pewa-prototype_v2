@@ -6,6 +6,8 @@ import {
   ROLE_LABELS,
   canAccessOperatorConsole,
   getActiveOrganisationMembership,
+  getEffectiveBusinessRole,
+  isBusinessRole,
   usePewa,
 } from "@/lib/pewa/store";
 import { SCENARIOS } from "@/lib/pewa/fixtures";
@@ -30,6 +32,8 @@ export function ScenarioPanel() {
     personalIdentity,
   } = state;
   const activeMembership = getActiveOrganisationMembership(state);
+  const effectiveRole = getEffectiveBusinessRole(state);
+  const isFailClosed = isBusinessRole(role) && effectiveRole === "customer";
   const navigate = useNavigate();
   const myVenue = venues.find((v) => v.orgId === organisation?.id);
 
@@ -95,9 +99,14 @@ export function ScenarioPanel() {
             )}
 
             <section className="mb-5">
-              <h3 className="mb-1 font-sans text-xs font-bold uppercase tracking-wider opacity-70">
-                Acting as (Simulated Identity &amp; Membership)
-              </h3>
+              <div className="mb-1 flex items-center justify-between">
+                <h3 className="font-sans text-xs font-bold uppercase tracking-wider opacity-70">
+                  Demonstration Persona Switcher
+                </h3>
+                <span className="rounded bg-proto-foreground/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider">
+                  Simulation Only
+                </span>
+              </div>
               <p className="mb-2 text-[11px] opacity-75">
                 {personalIdentity ? (
                   <>
@@ -124,6 +133,14 @@ export function ScenarioPanel() {
                   </button>
                 ))}
               </div>
+              {isFailClosed && (
+                <div className="mt-2.5 rounded-lg border border-amber-400/40 bg-amber-400/10 p-2 text-[11px] text-amber-200">
+                  <b>Fail-closed boundary:</b> No active {ROLE_LABELS[role]} membership exists for{" "}
+                  <b>{personalIdentity?.fullName || "this identity"}</b> in{" "}
+                  {organisation?.name || "the active organisation"}. Business actions remain
+                  restricted.
+                </div>
+              )}
             </section>
 
             <section className="mb-5">
