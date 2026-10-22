@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { FlaskConical, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
-import { ROLE_LABELS, canAccessOperatorConsole, usePewa } from "@/lib/pewa/store";
+import {
+  ROLE_LABELS,
+  canAccessOperatorConsole,
+  getActiveOrganisationMembership,
+  usePewa,
+} from "@/lib/pewa/store";
 import { SCENARIOS } from "@/lib/pewa/fixtures";
 import type { Role } from "@/lib/pewa/types";
 import { cn } from "@/lib/utils";
@@ -11,8 +16,20 @@ const ROLES = Object.keys(ROLE_LABELS) as Role[];
 
 export function ScenarioPanel() {
   const [open, setOpen] = useState(false);
-  const { role, scenario, setRole, loadScenario, reset, activity, venues, organisation, orders } =
-    usePewa();
+  const state = usePewa();
+  const {
+    role,
+    scenario,
+    setRole,
+    loadScenario,
+    reset,
+    activity,
+    venues,
+    organisation,
+    orders,
+    personalIdentity,
+  } = state;
+  const activeMembership = getActiveOrganisationMembership(state);
   const navigate = useNavigate();
   const myVenue = venues.find((v) => v.orgId === organisation?.id);
 
@@ -41,7 +58,7 @@ export function ScenarioPanel() {
                   UNFROZEN — FOUNDER REFINEMENT IN PROGRESS
                 </span>
                 <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mt-1">
-                  R1-A: Taxonomy & Structure
+                  R3-A: Identity &amp; Business Onboarding
                 </p>
                 <h2 className="text-xl font-bold">Scenario control</h2>
               </div>
@@ -78,9 +95,21 @@ export function ScenarioPanel() {
             )}
 
             <section className="mb-5">
-              <h3 className="mb-2 font-sans text-xs font-bold uppercase tracking-wider opacity-70">
-                Acting as
+              <h3 className="mb-1 font-sans text-xs font-bold uppercase tracking-wider opacity-70">
+                Acting as (Simulated Identity &amp; Membership)
               </h3>
+              <p className="mb-2 text-[11px] opacity-75">
+                {personalIdentity ? (
+                  <>
+                    Identity: <b>{personalIdentity.fullName}</b>
+                    {activeMembership && organisation
+                      ? ` · ${ROLE_LABELS[activeMembership.role]} at ${organisation.name}`
+                      : ""}
+                  </>
+                ) : (
+                  <>Unregistered guest / first-time visitor</>
+                )}
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 {ROLES.map((r) => (
                   <button
@@ -108,6 +137,13 @@ export function ScenarioPanel() {
                   className="rounded-full bg-proto-foreground/10 px-3 py-2"
                 >
                   Customer home
+                </Link>
+                <Link
+                  to="/onboarding"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full bg-proto-foreground/10 px-3 py-2"
+                >
+                  Business onboarding
                 </Link>
                 {role === "staff" ? (
                   <Link

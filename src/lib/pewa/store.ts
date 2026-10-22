@@ -2,12 +2,18 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   ActivityEvent,
+  ContactVisibility,
   Menu,
   MenuPublishedSnapshot,
   MenuStatus,
+  MembershipRole,
+  OnboardingDraft,
   Offering,
   OfferingSchedule,
+  OrganisationMembership,
+  PersonalIdentity,
   PewaState,
+  PreferredSignInIdentifier,
   Role,
   ScenarioId,
   Section,
@@ -21,7 +27,12 @@ import type {
   ModerationCase,
   VenueOfferingOverride,
 } from "./types";
-import { buildScenario, PROTOTYPE_DIRECTORY_VENUES, PROTOTYPE_DIRECTORY_MENUS } from "./fixtures";
+import {
+  buildScenario,
+  PROTOTYPE_DIRECTORY_VENUES,
+  PROTOTYPE_DIRECTORY_MENUS,
+  SAMPLE_FOUNDER_IDENTITY,
+} from "./fixtures";
 import { getVenuePublishedMenus } from "./taxonomy";
 import {
   canAdmitOrder,
@@ -58,6 +69,7 @@ export {
   validateAndRecalculateLineModifiers,
   getAuthoritativeVenues,
   getAuthoritativeMenus,
+  SAMPLE_FOUNDER_IDENTITY,
 };
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -71,24 +83,64 @@ export const slugify = (s: string) =>
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-") || "business";
 
+export interface CompleteOnboardingInput {
+  // Optional Personal Identity fields (Step A)
+  identity?:
+    | {
+        fullName: string;
+        email?: string | undefined;
+        mobile?: string | undefined;
+        preferredSignIn?: PreferredSignInIdentifier | undefined;
+        verifiedSimulation?: boolean | undefined;
+      }
+    | undefined;
+  // Step B — Organisation details
+  orgName: string;
+  tradingName?: string | undefined;
+  businessType: string;
+  category?: string | undefined;
+  country?: string | undefined;
+  currency: string;
+  primaryBusinessContact?: string | undefined;
+  primaryContactVisibility?: ContactVisibility | undefined;
+  // Step C — Business presence
+  venueName: string;
+  tagline?: string | undefined;
+  brandBadge?: string | undefined;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  deliveryOnly: boolean;
+  // Step D — Location and service configuration
+  address: string;
+  serviceArea?: string | undefined;
+  services: string[];
+  servicePointName?: string | undefined;
+  additionalServiceContexts?: string[] | undefined;
+  menuName: string;
+}
+
 type Actions = {
   setRole: (r: Role) => void;
   loadScenario: (id: ScenarioId) => void;
   reset: () => void;
-  completeOnboarding: (input: {
-    orgName: string;
-    businessType: string;
-    category?: string;
-    venueName: string;
-    address: string;
-    deliveryOnly: boolean;
-    currency: string;
-    services: string[];
-    phone: string;
-    whatsapp: string;
-    email: string;
-    menuName: string;
-  }) => string;
+  upsertPersonalIdentity: (input: {
+    id?: string | undefined;
+    fullName: string;
+    email?: string | undefined;
+    mobile?: string | undefined;
+    preferredSignIn?: PreferredSignInIdentifier | undefined;
+    verifiedSimulation?: boolean | undefined;
+  }) => PersonalIdentity;
+  upsertMembership: (input: {
+    identityId: string;
+    orgId: string;
+    role: MembershipRole;
+    venueId?: string | undefined;
+  }) => OrganisationMembership;
+  saveOnboardingDraft: (draft: Partial<OnboardingDraft>) => void;
+  clearOnboardingDraft: () => void;
+  completeOnboarding: (input: CompleteOnboardingInput) => string;
   addSection: (menuId: string, name: string, categoryTag?: string) => void;
   addSectionsBatch: (menuId: string, names: string[]) => void;
   renameSection: (menuId: string, sectionId: string, name: string) => void;
@@ -925,15 +977,58 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         setRole: (role) => {
-          set({ role });
-          get().log({ kind: "role.switched", message: `Role switched to ${role}` });
+          set((s) => {
+            if (!isBusinessRole(role) || !s.organisation) {
+              return { role };
+            }
+            const identity = s.personalIdentity || SAMPLE_FOUNDER_IDENTITY;
+            const existingIdentities = s.identities || [];
+            const nextIdentities = existingIdentities.some((x) => x.id === identity.id)
+              ? existingIdentities
+              : [identity, ...existingIdentities];
+            const existingMemberships = s.memberships || [];
+            const orgId = s.organisation.id;
+            const memRole = role as MembershipRole;
+            const hasMem = existingMemberships.some(
+              (m) => m.identityId === identity.id && m.orgId === orgId,
+            );
+            const nextMemberships: OrganisationMembership[] = hasMem
+              ? existingMemberships.map((m) =>
+                  m.identityId === identity.id && m.orgId === orgId
+                    ? { ...m, role: memRole, status: "active" as const }
+                    : m,
+                )
+              : [
+                  ...existingMemberships,
+                  {
+                    id: `mem_${orgId}_${memRole}`,
+                    identityId: identity.id,
+                    orgId,
+                    role: memRole,
+                    status: "active" as const,
+                    joinedAt: now(),
+                  },
+                ];
+            return {
+              role,
+              personalIdentity: identity,
+              identities: nextIdentities,
+              memberships: nextMemberships,
+            };
+          });
+          get().log({
+            kind: "role.switched",
+            message: `Simulated role switched to ${role} (membership synced)`,
+          });
         },
         loadScenario: (id) => {
           const sc = buildScenario(id);
+          const currentRole = get().role;
+          const nextRole = id === "new-cafe" ? "owner" : sc.role || currentRole;
           set({
             ...sc,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
-            role: get().role,
+            role: nextRole,
           });
         },
         reset: () => {
@@ -951,54 +1046,305 @@ export const usePewa = create<PewaState & Actions>()(
               200,
             ),
           })),
+        upsertPersonalIdentity: (input) => {
+          const s = get();
+          const cleanEmail = (input.email || "").trim();
+          const cleanMobile = (input.mobile || "").trim();
+          const existingList = s.identities || [];
+          const existing = existingList.find(
+            (idItem) =>
+              (input.id && idItem.id === input.id) ||
+              (cleanEmail &&
+                idItem.email &&
+                idItem.email.toLowerCase() === cleanEmail.toLowerCase()) ||
+              (cleanMobile && idItem.mobile && idItem.mobile === cleanMobile) ||
+              (!cleanEmail &&
+                !cleanMobile &&
+                s.personalIdentity &&
+                idItem.id === s.personalIdentity.id),
+          );
+
+          const identity: PersonalIdentity = {
+            id: existing?.id || input.id || uid("id"),
+            fullName: input.fullName.trim() || existing?.fullName || "Business Owner",
+            email: cleanEmail || existing?.email || "",
+            mobile: cleanMobile || existing?.mobile || "",
+            preferredSignIn:
+              input.preferredSignIn ||
+              existing?.preferredSignIn ||
+              (cleanEmail ? "email" : "mobile"),
+            verifiedSimulation:
+              input.verifiedSimulation !== undefined
+                ? input.verifiedSimulation
+                : (existing?.verifiedSimulation ?? true),
+            verifiedAt:
+              input.verifiedSimulation || existing?.verifiedSimulation
+                ? existing?.verifiedAt || now()
+                : undefined,
+            createdAt: existing?.createdAt || now(),
+          };
+
+          const nextIdentities = existingList.some((x) => x.id === identity.id)
+            ? existingList.map((x) => (x.id === identity.id ? identity : x))
+            : [identity, ...existingList];
+
+          set({
+            personalIdentity: identity,
+            identities: nextIdentities,
+          });
+          get().log({
+            kind: "identity.upserted",
+            message: `Personal identity “${identity.fullName}” (${identity.preferredSignIn}: ${identity.preferredSignIn === "email" ? identity.email || identity.mobile : identity.mobile || identity.email}) simulated & verified`,
+          });
+          return identity;
+        },
+        upsertMembership: (input) => {
+          const s = get();
+          const existingMemberships = s.memberships || [];
+          const existing = existingMemberships.find(
+            (m) => m.identityId === input.identityId && m.orgId === input.orgId,
+          );
+          const membership: OrganisationMembership = {
+            id: existing?.id || uid("mem"),
+            identityId: input.identityId,
+            orgId: input.orgId,
+            role: input.role,
+            status: "active",
+            venueId: input.venueId ?? existing?.venueId,
+            joinedAt: existing?.joinedAt || now(),
+          };
+          const nextMemberships = existing
+            ? existingMemberships.map((m) => (m.id === membership.id ? membership : m))
+            : [...existingMemberships, membership];
+          set({ memberships: nextMemberships });
+          return membership;
+        },
+        saveOnboardingDraft: (draft) => {
+          set((s) => {
+            const defaultDraft: OnboardingDraft = {
+              step: 0,
+              fullName: s.personalIdentity?.fullName || "",
+              personalEmail: s.personalIdentity?.email || "",
+              personalMobile: s.personalIdentity?.mobile || "",
+              preferredSignIn: s.personalIdentity?.preferredSignIn || "email",
+              verificationSimulated: Boolean(s.personalIdentity?.verifiedSimulation),
+              orgName: "",
+              tradingName: "",
+              category: "Café",
+              businessType: "Café",
+              isCustomCategory: false,
+              customCategoryInput: "",
+              country: "Kenya",
+              currency: "KES",
+              primaryBusinessContact: "",
+              primaryContactVisibility: "private",
+              venueName: "",
+              tagline: "",
+              brandBadge: "",
+              phone: "",
+              whatsapp: "",
+              email: "",
+              deliveryOnly: false,
+              address: "",
+              serviceArea: "",
+              services: ["Dine-in", "Takeaway"],
+              servicePointName: "Main Dining",
+              additionalServiceContexts: [],
+              menuName: "All-Day Menu",
+            };
+            return {
+              onboardingDraft: {
+                ...(s.onboardingDraft || defaultDraft),
+                ...draft,
+              },
+            };
+          });
+        },
+        clearOnboardingDraft: () => set({ onboardingDraft: null }),
         completeOnboarding: (i) => {
-          const orgId = uid("org");
-          const venueId = uid("venue");
-          const menuId = uid("menu");
-          let slug = slugify(i.venueName || i.orgName);
-          if (get().venues.some((v) => v.slug === slug))
-            slug = `${slug}-${get().venues.length + 1}`;
-          set((s) => ({
-            organisation: {
-              id: orgId,
-              name: i.orgName,
-              businessType: i.businessType,
-              category: i.category || i.businessType,
-              currency: i.currency,
-            },
-            venues: [
-              {
-                id: venueId,
-                orgId,
-                name: i.venueName,
-                slug,
-                category: i.category || i.businessType,
-                address: i.deliveryOnly ? "" : i.address,
-                deliveryOnly: i.deliveryOnly,
-                serviceArea: i.deliveryOnly ? i.address : "",
-                services: i.services,
-                contact: { phone: i.phone, whatsapp: i.whatsapp, email: i.email },
-                tagline: "",
-                currency: i.currency,
-              },
-              ...s.venues.filter((v) => v.orgId !== s.organisation?.id),
-            ],
-            menus: [
-              {
-                id: menuId,
-                orgId,
-                venueId,
-                name: i.menuName,
-                status: "draft",
-                sections: [],
-                updatedAt: now(),
-              },
-              ...s.menus.filter((m) => m.orgId !== s.organisation?.id),
-            ],
+          const stateBefore = get();
+
+          // Ensure personal identity is established or reused
+          const identityInput = i.identity || {
+            fullName: stateBefore.personalIdentity?.fullName || `${i.orgName.trim()} Founder`,
+            email: stateBefore.personalIdentity?.email || i.email || "",
+            mobile: stateBefore.personalIdentity?.mobile || i.phone || i.whatsapp || "",
+            preferredSignIn: stateBefore.personalIdentity?.preferredSignIn || "email",
+            verifiedSimulation: true,
+          };
+          const ownerIdentity = get().upsertPersonalIdentity(identityInput);
+
+          const s = get();
+          const cleanOrgName = i.orgName.trim();
+          const cleanVenueName = (i.venueName || i.orgName).trim();
+
+          // Idempotency guard (Requirement 3E & Scenario H):
+          // If the active organisation already matches this onboarding submission, update in-place
+          // rather than creating duplicate organisation, venue, or menu records.
+          const isUpdatingExistingOrg =
+            Boolean(s.organisation) &&
+            s.organisation?.name.toLowerCase() === cleanOrgName.toLowerCase() &&
+            s.organisation?.ownerIdentityId === ownerIdentity.id;
+
+          const orgId = isUpdatingExistingOrg ? s.organisation!.id : uid("org");
+          const existingOrgVenue = isUpdatingExistingOrg
+            ? s.venues.find((v) => v.orgId === orgId)
+            : undefined;
+          const venueId = existingOrgVenue ? existingOrgVenue.id : uid("venue");
+
+          const existingOrgMenus = isUpdatingExistingOrg
+            ? s.menus.filter((m) => m.orgId === orgId)
+            : [];
+          const primaryExistingMenu = existingOrgMenus[0];
+          const menuId = primaryExistingMenu ? primaryExistingMenu.id : uid("menu");
+
+          let slug = existingOrgVenue?.slug || slugify(cleanVenueName || cleanOrgName);
+          if (!existingOrgVenue && s.venues.some((v) => v.slug === slug)) {
+            slug = `${slug}-${s.venues.length + 1}`;
+          }
+
+          // Contact privacy safeguard (Requirement 3B & Scenario J):
+          // Only customer-facing contact channels (`i.phone`, `i.whatsapp`, `i.email`) are placed on the public Venue.
+          // If `primaryContactVisibility === "public"` and a customer channel is blank, primaryBusinessContact may populate
+          // the matching public channel; if `"private"`, `primaryBusinessContact` is stored strictly on `Organisation`
+          // and never copied into public `venue.contact`.
+          const visibility: ContactVisibility =
+            i.primaryContactVisibility ||
+            (isUpdatingExistingOrg ? s.organisation?.primaryContactVisibility : undefined) ||
+            "private";
+          const publicPhone = i.phone.trim();
+          const publicWhatsapp = i.whatsapp.trim();
+          const publicEmail = i.email.trim();
+
+          const primaryContexts = [
+            ...(i.servicePointName?.trim() ? [i.servicePointName.trim()] : []),
+            ...(i.additionalServiceContexts || []).map((c) => c.trim()).filter(Boolean),
+          ];
+          const uniqueContexts = Array.from(new Set(primaryContexts));
+
+          const effectiveAddress = i.deliveryOnly ? "" : i.address.trim();
+          const effectiveServiceArea = i.deliveryOnly
+            ? (i.serviceArea || i.address).trim()
+            : (i.serviceArea || "").trim();
+
+          const newMenus: Menu[] = isUpdatingExistingOrg
+            ? s.menus.map((m) =>
+                m.id === menuId ? { ...m, name: i.menuName.trim() || m.name, updatedAt: now() } : m,
+              )
+            : [
+                {
+                  id: menuId,
+                  orgId,
+                  venueId,
+                  name: i.menuName.trim() || "All-Day Menu",
+                  description: i.servicePointName?.trim()
+                    ? `Service context: ${i.servicePointName.trim()}`
+                    : undefined,
+                  status: "draft",
+                  sections: [],
+                  updatedAt: now(),
+                },
+                // If hotel or multi-context setup specifies additional contexts (e.g., "In-Room Dining (Guests Only)"),
+                // scaffold draft menus for those additional contexts without duplicating the primary menu.
+                ...uniqueContexts
+                  .filter((ctx) => ctx !== i.servicePointName?.trim())
+                  .map((ctx) => ({
+                    id: uid("menu"),
+                    orgId,
+                    venueId,
+                    name: `${ctx} Menu`,
+                    description: `Service context: ${ctx}`,
+                    isProtected:
+                      ctx.toLowerCase().includes("room") || ctx.toLowerCase().includes("guest"),
+                    status: "draft" as MenuStatus,
+                    sections: [],
+                    updatedAt: now(),
+                  })),
+                ...s.menus.filter((m) => m.orgId !== s.organisation?.id),
+              ];
+
+          const foundingMembership: OrganisationMembership = {
+            id: `mem_${orgId}_owner`,
+            identityId: ownerIdentity.id,
+            orgId,
             role: "owner",
-          }));
-          get().log({ kind: "org.created", message: `Organisation “${i.orgName}” created` });
-          get().log({ kind: "menu.created", message: `Draft menu “${i.menuName}” created` });
+            status: "active",
+            venueId,
+            joinedAt: now(),
+          };
+
+          set((prev) => {
+            const otherMemberships = (prev.memberships || []).filter(
+              (m) => !(m.identityId === ownerIdentity.id && m.orgId === orgId),
+            );
+            return {
+              organisation: {
+                id: orgId,
+                name: cleanOrgName,
+                tradingName:
+                  i.tradingName?.trim() ||
+                  (isUpdatingExistingOrg ? prev.organisation?.tradingName : undefined),
+                businessType: i.businessType,
+                category: i.category || i.businessType,
+                country:
+                  i.country?.trim() ||
+                  (isUpdatingExistingOrg ? prev.organisation?.country : undefined) ||
+                  "Kenya",
+                currency: i.currency,
+                primaryContact:
+                  i.primaryBusinessContact?.trim() ||
+                  (isUpdatingExistingOrg ? prev.organisation?.primaryContact : undefined),
+                primaryContactVisibility: visibility,
+                ownerIdentityId: ownerIdentity.id,
+                status: "active",
+              },
+              venues: [
+                {
+                  id: venueId,
+                  orgId,
+                  name: cleanVenueName,
+                  slug,
+                  category: i.category || i.businessType,
+                  address: effectiveAddress,
+                  deliveryOnly: i.deliveryOnly,
+                  serviceArea: effectiveServiceArea,
+                  services: i.deliveryOnly
+                    ? ["Delivery"]
+                    : i.services.length > 0
+                      ? i.services
+                      : ["Dine-in"],
+                  contact: {
+                    phone: publicPhone,
+                    whatsapp: publicWhatsapp,
+                    email: publicEmail,
+                  },
+                  tagline: i.tagline?.trim() || "",
+                  brandBadge:
+                    i.brandBadge?.trim() ||
+                    (existingOrgVenue ? existingOrgVenue.brandBadge : undefined),
+                  serviceContexts:
+                    uniqueContexts.length > 0 ? uniqueContexts : existingOrgVenue?.serviceContexts,
+                  currency: i.currency,
+                },
+                ...prev.venues.filter(
+                  (v) => v.orgId !== prev.organisation?.id && v.orgId !== orgId,
+                ),
+              ],
+              menus: newMenus,
+              memberships: [...otherMemberships, foundingMembership],
+              onboardingDraft: null,
+              role: "owner",
+            };
+          });
+
+          get().log({
+            kind: "org.created",
+            message: `Organisation “${cleanOrgName}” registered with Owner membership for ${ownerIdentity.fullName}`,
+          });
+          get().log({
+            kind: "menu.created",
+            message: `Draft menu “${i.menuName}” created`,
+          });
           return menuId;
         },
         addMenu: (nameOrInput, venueId) => {
@@ -1838,6 +2184,59 @@ export const ROLE_LABELS: Record<Role, string> = {
   staff: "Operational Staff",
   operator: "PEWA Operator",
 };
+
+/**
+ * Returns the active organisation membership for a given personal identity and organisation.
+ * Conceptually separates reusable personal identity from per-organisation membership & role (R3-A).
+ */
+export function getActiveOrganisationMembership(state: {
+  personalIdentity?: PersonalIdentity | null | undefined;
+  organisation?: PewaState["organisation"] | undefined;
+  memberships?: OrganisationMembership[] | undefined;
+}): OrganisationMembership | undefined {
+  const identityId = state.personalIdentity?.id;
+  const orgId = state.organisation?.id;
+  if (!identityId || !orgId) return undefined;
+  return (state.memberships || []).find(
+    (m) => m.identityId === identityId && m.orgId === orgId && m.status === "active",
+  );
+}
+
+/**
+ * Resolves the effective business role from the active identity's organisation membership,
+ * rather than granting business permissions merely from a visual role selector when an identity
+ * lacks active membership in the target organisation (R3-A Requirement 2).
+ */
+export function getEffectiveBusinessRole(state: {
+  role: Role;
+  personalIdentity?: PersonalIdentity | null | undefined;
+  organisation?: PewaState["organisation"] | undefined;
+  memberships?: OrganisationMembership[] | undefined;
+}): Role {
+  if (!isBusinessRole(state.role)) return state.role;
+  if (!state.organisation) return state.role;
+
+  // If memberships are populated, require a matching active membership for the current personal identity
+  if (state.memberships && state.memberships.length > 0 && state.personalIdentity) {
+    const activeMembership = getActiveOrganisationMembership(state);
+    if (!activeMembership) {
+      return "customer";
+    }
+    return activeMembership.role;
+  }
+
+  return state.role;
+}
+
+export function hasActiveBusinessMembership(state: {
+  role: Role;
+  personalIdentity?: PersonalIdentity | null | undefined;
+  organisation?: PewaState["organisation"] | undefined;
+  memberships?: OrganisationMembership[] | undefined;
+}): boolean {
+  const effectiveRole = getEffectiveBusinessRole(state);
+  return isBusinessRole(effectiveRole);
+}
 
 export const canAuthorMenus = (r: Role) => r === "owner" || r === "admin" || r === "manager";
 export const canToggleAvailability = (r: Role) => canAuthorMenus(r) || r === "staff";

@@ -1,8 +1,12 @@
 import type {
   GuestSession,
   Menu,
+  MembershipRole,
   ModerationCase,
+  OnboardingDraft,
+  OrganisationMembership,
   OrderRequest,
+  PersonalIdentity,
   PewaState,
   PromotionCampaign,
   ScenarioId,
@@ -713,6 +717,35 @@ export const PROTOTYPE_DIRECTORY_MENUS: Menu[] = [
   gelatoLabMenu,
 ];
 
+export const SAMPLE_FOUNDER_IDENTITY: PersonalIdentity = {
+  id: "id_founder_njeri",
+  fullName: "Njeri Kamau",
+  email: "njeri@greengarden.example",
+  mobile: "+254700123456",
+  preferredSignIn: "email",
+  verifiedSimulation: true,
+  verifiedAt: "2026-10-19T07:50:00.000Z",
+  createdAt: "2026-10-19T07:45:00.000Z",
+};
+
+function buildScenarioMemberships(
+  orgId: string,
+  role: MembershipRole = "owner",
+  venueId?: string,
+): OrganisationMembership[] {
+  return [
+    {
+      id: `mem_${orgId}_${role}`,
+      identityId: SAMPLE_FOUNDER_IDENTITY.id,
+      orgId,
+      role,
+      status: "active",
+      venueId,
+      joinedAt: "2026-10-19T07:55:00.000Z",
+    },
+  ];
+}
+
 export function buildScenario(
   id: ScenarioId,
 ): Omit<PewaState, "role"> & { role: PewaState["role"] } {
@@ -759,6 +792,10 @@ export function buildScenario(
     simulatedOffline: false,
     sharedOfferings: sampleSharedOfferings,
     simulatedTime: "10:00",
+    personalIdentity: SAMPLE_FOUNDER_IDENTITY as PersonalIdentity | null,
+    identities: [SAMPLE_FOUNDER_IDENTITY] as PersonalIdentity[],
+    memberships: buildScenarioMemberships("org_ggc", "owner", "venue_ggc"),
+    onboardingDraft: null as OnboardingDraft | null,
   };
   if (id === "zero-units") {
     common.orderPolicy.included = 0;
@@ -780,6 +817,10 @@ export function buildScenario(
       venues: [greenGardenVenue],
       menus: [greenGardenMenu(false)].map((m) => ({ ...m, orgId: "org_ggc" })),
       activity: [],
+      personalIdentity: null,
+      identities: [],
+      memberships: [],
+      onboardingDraft: null,
     };
   }
 
@@ -792,10 +833,13 @@ export function buildScenario(
         id: "org_horizon",
         name: "The Grand Horizon Hotel Ltd",
         businessType: "Hotel & Hospitality",
+        country: "Kenya",
         currency: "KES",
+        ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
       },
       venues: [hotelVenue],
       menus: [hotelPublicMenu, hotelProtectedMenu],
+      memberships: buildScenarioMemberships("org_horizon", "owner", hotelVenue.id),
       guestSession: {
         venueId: hotelVenue.id,
         roomNumber: "402",
@@ -823,10 +867,13 @@ export function buildScenario(
         id: "org_horizon",
         name: "The Grand Horizon Hotel Ltd",
         businessType: "Hotel & Hospitality",
+        country: "Kenya",
         currency: "KES",
+        ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
       },
       venues: [hotelVenue],
       menus: [hotelPublicMenu, hotelProtectedMenu],
+      memberships: buildScenarioMemberships("org_horizon", "owner", hotelVenue.id),
       guestSession: null, // unverified guest session
       activity: [],
     };
@@ -841,10 +888,13 @@ export function buildScenario(
         id: "org_cloudburger",
         name: "CloudBurger Kitchen Ltd",
         businessType: "Delivery-only cloud kitchen",
+        country: "Kenya",
         currency: "KES",
+        ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
       },
       venues: [cloudBurgerVenue],
       menus: [cloudBurgerMenu],
+      memberships: buildScenarioMemberships("org_cloudburger", "owner", cloudBurgerVenue.id),
       activity: [
         {
           id: "act_cloud_1",
@@ -867,7 +917,9 @@ export function buildScenario(
         id: "org_multi_brand",
         name: "Horizon Hospitality Group",
         businessType: "Multi-brand restaurant group",
+        country: "Kenya",
         currency: "KES",
+        ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
       },
       venues: [{ ...greenGardenVenue, orgId: "org_multi_brand" }, solBakeryVenue, gelatoLabVenue],
       menus: [
@@ -875,6 +927,7 @@ export function buildScenario(
         solBakeryMenu,
         gelatoLabMenu,
       ],
+      memberships: buildScenarioMemberships("org_multi_brand", "admin"),
       activity: [
         {
           id: "act_multi_1",
@@ -896,11 +949,14 @@ export function buildScenario(
         id: "org_ggc",
         name: "Green Garden Café Ltd",
         businessType: "Single-venue café",
+        country: "Kenya",
         currency: "KES",
+        ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
       },
       venues: [greenGardenVenue],
       menus: [greenGardenMenu(false)],
       campaigns: [promoSeedCampaign],
+      memberships: buildScenarioMemberships("org_ggc", "owner", greenGardenVenue.id),
       activity: [
         {
           id: "act_camp_1",
@@ -967,10 +1023,13 @@ export function buildScenario(
       id: "org_ggc",
       name: "Green Garden Café Ltd",
       businessType: "Single-venue café",
+      country: "Kenya",
       currency: "KES",
+      ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
     },
     venues: [venue],
     menus: [menu],
+    memberships: buildScenarioMemberships("org_ggc", "owner", venue.id),
     orders: pending,
     orderSequence: pending.length,
     cart: id === "outdated-price" ? { venueId: venue.id, lines: [line] } : null,

@@ -17,6 +17,8 @@ import {
   canManagePromotions,
   canManageBilling,
   canViewActivity,
+  getActiveOrganisationMembership,
+  getEffectiveBusinessRole,
   usePewa,
 } from "@/lib/pewa/store";
 import { Button } from "@/components/ui/button";
@@ -42,12 +44,25 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminLayout() {
-  const { role, organisation, venues } = usePewa();
+  const { role, organisation, venues, personalIdentity, memberships } = usePewa();
   const orgVenues = venues.filter((v) => v.orgId === organisation?.id);
   const primaryVenue = orgVenues[0];
+  const effectiveRole = getEffectiveBusinessRole({
+    role,
+    personalIdentity,
+    organisation,
+    memberships,
+  });
+  const activeMembership = getActiveOrganisationMembership({
+    personalIdentity,
+    organisation,
+    memberships,
+  });
+  const lacksMembership =
+    isBusinessRole(role) && Boolean(organisation) && !isBusinessRole(effectiveRole);
 
   const navItems = useMemo(() => {
-    if (role === "staff") {
+    if (effectiveRole === "staff") {
       return [
         { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: true },
         { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
@@ -56,35 +71,59 @@ function AdminLayout() {
     }
     const items = [
       { label: "Overview", icon: LayoutGrid, to: "/admin", ready: true },
-      { label: "Menus", icon: BookOpen, to: "/admin", ready: canAuthorMenus(role) },
-      { label: "Orders", icon: ClipboardList, to: "/admin/orders", ready: canManageOrders(role) },
+      { label: "Menus", icon: BookOpen, to: "/admin", ready: canAuthorMenus(effectiveRole) },
+      {
+        label: "Orders",
+        icon: ClipboardList,
+        to: "/admin/orders",
+        ready: canManageOrders(effectiveRole),
+      },
     ];
-    if (canManagePromotions(role)) {
+    if (canManagePromotions(effectiveRole)) {
       items.push({ label: "Promos", icon: Sparkles, to: "/admin/promotions", ready: true });
     }
-    if (canViewActivity(role)) {
+    if (canViewActivity(effectiveRole)) {
       items.push({ label: "Activity", icon: Activity, to: "/admin/activity", ready: true });
     }
-    if (canManageBilling(role)) {
+    if (canManageBilling(effectiveRole)) {
       items.push({ label: "Billing", icon: CreditCard, to: "/admin/billing", ready: true });
     }
     return items;
-  }, [role]);
+  }, [effectiveRole]);
 
-  if (!isBusinessRole(role)) {
+  if (!isBusinessRole(effectiveRole)) {
     return (
       <Centered>
         <ShieldAlert className="h-10 w-10 text-muted-foreground" />
-        <h1 className="text-2xl">Business workspace only</h1>
+        <h1 className="text-2xl">
+          {lacksMembership ? "Organisation membership required" : "Business workspace only"}
+        </h1>
         <p className="text-muted-foreground">
-          You're acting as <b>{ROLE_LABELS[role]}</b>.{" "}
-          {role === "operator"
-            ? "Operators can't edit a business's menus or prices."
-            : "Customers don't need an account to browse."}
+          {lacksMembership ? (
+            <>
+              Personal identity <b>{personalIdentity?.fullName || "Unverified User"}</b> does not
+              hold an active membership in <b>{organisation?.name}</b>. Switching a visual role
+              selector alone does not grant organisation permissions.
+            </>
+          ) : (
+            <>
+              You're acting as <b>{ROLE_LABELS[role]}</b>.{" "}
+              {role === "operator"
+                ? "Operators can't edit a business's menus or prices."
+                : "Customers don't need an account to browse."}
+            </>
+          )}
         </p>
         <p className="text-sm text-muted-foreground">
-          Switch role from the panel in the top-right.
+          {lacksMembership
+            ? "Register your own business or select an authorised membership in Scenario Control."
+            : "Switch role from the panel in the top-right."}
         </p>
+        {lacksMembership && (
+          <Button asChild className="mt-3 h-10" size="sm">
+            <Link to="/onboarding">Register a business</Link>
+          </Button>
+        )}
         {role === "operator" && (
           <Button asChild className="mt-3 h-10" size="sm">
             <Link to="/operator">Open PEWA Operator Console</Link>
@@ -111,7 +150,12 @@ function AdminLayout() {
         <p className="font-display text-2xl font-bold text-primary">pewa</p>
         <p className="mt-1 truncate text-sm font-semibold text-foreground">{organisation.name}</p>
         <div className="mt-2 rounded-lg border bg-card/60 p-2 text-xs space-y-0.5">
-          <p className="font-medium text-foreground">{ROLE_LABELS[role]}</p>
+          {personalIdentity && (
+            <p className="font-semibold text-foreground truncate">{personalIdentity.fullName}</p>
+          )}
+          <p className="font-medium text-primary">
+            {ROLE_LABELS[activeMembership?.role || effectiveRole]}
+          </p>
           {primaryVenue && (
             <p className="text-[11px] text-muted-foreground truncate">
               Station: {primaryVenue.name}

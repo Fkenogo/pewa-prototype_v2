@@ -19,13 +19,19 @@ import {
   CopyPlus,
   Edit2,
   UtensilsCrossed,
+  Building2,
+  ShieldCheck,
+  UserPlus,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   canAuthorMenus,
   canManageBilling,
   formatPrice,
+  getActiveOrganisationMembership,
   hasUnpublishedDraftChanges,
+  ROLE_LABELS,
   usePewa,
 } from "@/lib/pewa/store";
 import { StatusBadge } from "@/components/pewa/StatusBadge";
@@ -58,11 +64,13 @@ export const Route = createFileRoute("/admin/")({
 });
 
 function Overview() {
+  const state = usePewa();
   const {
     organisation,
     venues,
     menus,
     role,
+    personalIdentity,
     orderPolicy,
     simulatedTime,
     setSimulatedTime,
@@ -73,9 +81,11 @@ function Overview() {
     publishMenu,
     duplicateMenu,
     deleteMenu,
-  } = usePewa();
+  } = state;
+  const activeMembership = getActiveOrganisationMembership(state);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [inviteTeamModalOpen, setInviteTeamModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"menus" | "shared">("menus");
   const [editingSharedOffering, setEditingSharedOffering] = useState<SharedOffering | null>(null);
   const [isCreatingShared, setIsCreatingShared] = useState(false);
@@ -125,7 +135,7 @@ function Overview() {
   return (
     <main className="mx-auto max-w-3xl px-4 pt-5 pb-24">
       {/* Organisation and Header */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             {organisation?.name} · Workspace
@@ -133,15 +143,95 @@ function Overview() {
           <h1 className="mt-0.5 text-3xl font-bold tracking-tight">Your menus</h1>
         </div>
 
-        {canManageBilling(role) && (
-          <Button asChild variant="outline" size="sm" className="h-9 shrink-0">
-            <Link to="/admin/billing">
-              <Fuel className="mr-1.5 h-3.5 w-3.5 text-primary" />
-              {orderPolicy.expired ? "Subscription expired" : `${totalUnits} units`}
-            </Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {(role === "owner" || role === "admin") && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 font-semibold"
+              onClick={() => setInviteTeamModalOpen(true)}
+              data-testid="workspace-invite-team-btn"
+            >
+              <UserPlus className="mr-1.5 h-3.5 w-3.5 text-primary" />
+              Invite your team
+            </Button>
+          )}
+          {canManageBilling(role) && (
+            <Button asChild variant="outline" size="sm" className="h-9 shrink-0">
+              <Link to="/admin/billing">
+                <Fuel className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                {orderPolicy.expired ? "Subscription expired" : `${totalUnits} units`}
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* R3-A Organisation & Founding Identity Summary Card */}
+      {organisation && (
+        <div
+          className="mt-4 rounded-xl border bg-card p-3.5 shadow-xs"
+          data-testid="workspace-organisation-summary"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-lg">
+                {activeQrVenue?.brandBadge || <Building2 className="h-4 w-4 text-primary" />}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-sm font-bold text-foreground">{organisation.name}</span>
+                  {organisation.tradingName && organisation.tradingName !== organisation.name && (
+                    <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                      Trading as {organisation.tradingName}
+                    </span>
+                  )}
+                  {organisation.country && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {organisation.country} · {currency}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {personalIdentity ? (
+                    <>
+                      Signed in as <b className="text-foreground">{personalIdentity.fullName}</b> (
+                      {ROLE_LABELS[activeMembership?.role || role]})
+                    </>
+                  ) : (
+                    <>Active workspace role: {ROLE_LABELS[role]}</>
+                  )}
+                  {organisation.primaryContact && (
+                    <>
+                      {" · "}Admin contact:{" "}
+                      <span className="font-medium">
+                        {organisation.primaryContactVisibility === "public"
+                          ? "Publicly shared"
+                          : "Private (hidden from guest menus)"}
+                      </span>
+                    </>
+                  )}
+                </p>
+                {activeQrVenue?.serviceContexts && activeQrVenue.serviceContexts.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">
+                      Service points:
+                    </span>
+                    {activeQrVenue.serviceContexts.map((ctx) => (
+                      <span
+                        key={ctx}
+                        className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
+                      >
+                        {ctx}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* R1-D Clock & Schedule Simulation Toolbar for Prototype Testing */}
       <div className="mt-4 rounded-xl border bg-card p-3 shadow-xs">
@@ -883,6 +973,68 @@ function Overview() {
         onOpenChange={setCreateModalOpen}
         defaultVenueId={filterVenueId || undefined}
       />
+
+      {/* R3-A Staged Team Invitation Handoff Dialog */}
+      <Dialog open={inviteTeamModalOpen} onOpenChange={setInviteTeamModalOpen}>
+        <DialogContent className="max-w-md" data-testid="workspace-invite-team-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Users className="h-5 w-5 text-primary" />
+              Invite your team to {organisation?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              Your personal identity is registered as the founding <b>Organisation Owner</b>. You
+              can invite administrators, branch managers, and operational staff without sharing your
+              personal login credentials.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2.5 py-2 text-xs">
+            <div className="rounded-xl border bg-muted/30 p-3 space-y-1">
+              <p className="font-bold text-foreground">Administrator</p>
+              <p className="text-muted-foreground">
+                Full operational and menu authoring control across venues, commercial top-ups, and
+                team management.
+              </p>
+            </div>
+            <div className="rounded-xl border bg-muted/30 p-3 space-y-1">
+              <p className="font-bold text-foreground">Manager</p>
+              <p className="text-muted-foreground">
+                Menu authoring, availability control, promotions, and order management for assigned
+                service points.
+              </p>
+            </div>
+            <div className="rounded-xl border bg-muted/30 p-3 space-y-1">
+              <p className="font-bold text-foreground">Operational Staff</p>
+              <p className="text-muted-foreground">
+                Focused access to the live Orders Queue for accepting, declining, and updating order
+                milestones without billing or menu-authoring access.
+              </p>
+            </div>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-900 dark:text-amber-300">
+              <p className="font-semibold flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                Staged for R3-B — Team Invitations &amp; Role Assignment
+              </p>
+              <p className="mt-1">
+                Live invitation dispatch, acceptance tokens, and member revocation are scheduled for{" "}
+                <b>Work Package R3-B</b>. No external emails or SMS invitations are sent from this
+                preview.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              size="sm"
+              onClick={() => setInviteTeamModalOpen(false)}
+              className="w-full sm:w-auto font-semibold"
+            >
+              Got it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit / Create Shared Offering Modal */}
       {editingSharedOffering && (

@@ -21,12 +21,93 @@ export type ScenarioId =
 
 export type OrgStatus = "active" | "suspended" | "pending_review";
 
+export type PreferredSignInIdentifier = "email" | "mobile";
+
+/**
+ * Prototype representation of a reusable personal identity, strictly separate from
+ * organisation membership (R3-A).
+ *
+ * Note: This is a deterministic prototype identity simulation, NOT production
+ * identity-provider authentication or real email/SMS verification.
+ */
+export interface PersonalIdentity {
+  id: string;
+  fullName: string;
+  email: string;
+  mobile: string;
+  preferredSignIn: PreferredSignInIdentifier;
+  verifiedSimulation: boolean;
+  verifiedAt?: string | undefined;
+  createdAt: string;
+}
+
+export type MembershipRole = "owner" | "admin" | "manager" | "staff";
+export type MembershipStatus = "active" | "invited" | "revoked";
+
+/**
+ * Associates a PersonalIdentity with a specific Organisation and a distinct role
+ * within that organisation (R3-A).
+ * Supports one individual belonging to multiple organisations with distinct roles.
+ */
+export interface OrganisationMembership {
+  id: string;
+  identityId: string;
+  orgId: string;
+  role: MembershipRole;
+  status: MembershipStatus;
+  venueId?: string | undefined;
+  joinedAt: string;
+}
+
+export type ContactVisibility = "public" | "private";
+
+export interface OnboardingDraft {
+  step: number;
+  // Step A — Personal identity
+  fullName: string;
+  personalEmail: string;
+  personalMobile: string;
+  preferredSignIn: PreferredSignInIdentifier;
+  verificationSimulated: boolean;
+  // Step B — Organisation details
+  orgName: string;
+  tradingName: string;
+  category: string;
+  businessType: string;
+  isCustomCategory: boolean;
+  customCategoryInput: string;
+  country: string;
+  currency: string;
+  primaryBusinessContact: string;
+  primaryContactVisibility: ContactVisibility;
+  // Step C — Business presence
+  venueName: string;
+  tagline: string;
+  brandBadge: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  deliveryOnly: boolean;
+  // Step D — Location and service configuration
+  address: string;
+  serviceArea: string;
+  services: string[];
+  servicePointName: string;
+  additionalServiceContexts: string[];
+  menuName: string;
+}
+
 export interface Organisation {
   id: string;
   name: string;
+  tradingName?: string | undefined;
   businessType: string;
   category?: string | undefined;
+  country?: string | undefined;
   currency: string;
+  primaryContact?: string | undefined;
+  primaryContactVisibility?: ContactVisibility | undefined;
+  ownerIdentityId?: string | undefined;
   status?: OrgStatus | undefined;
   statusNote?: string | undefined;
 }
@@ -55,6 +136,8 @@ export interface Venue {
   currency: string;
   category?: string | undefined;
   businessCategory?: string | undefined;
+  brandBadge?: string | undefined;
+  serviceContexts?: string[] | undefined;
   timezone?: string | undefined;
   coordinates?: VenueCoordinates | undefined;
   deliveryCoverageStatus?: DeliveryCoverageStatus | undefined;
@@ -240,6 +323,10 @@ export interface PewaState {
   simulatedOffline: boolean;
   sharedOfferings?: SharedOffering[] | undefined;
   simulatedTime?: string | undefined; // "HH:MM" e.g. "09:30" or ISO string
+  personalIdentity?: PersonalIdentity | null | undefined;
+  identities?: PersonalIdentity[] | undefined;
+  memberships?: OrganisationMembership[] | undefined;
+  onboardingDraft?: OnboardingDraft | null | undefined;
 }
 
 export interface CartLine {
