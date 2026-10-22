@@ -464,8 +464,15 @@ function Onboarding() {
                 external email or SMS invitation is sent from this prototype screen.
               </div>
             </div>
-            <DialogFooter>
-              <Button onClick={() => setInviteModalOpen(false)} className="w-full sm:w-auto">
+            <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
+              <Button asChild variant="default" className="w-full sm:w-auto">
+                <Link to="/admin/team">Open Team Management</Link>
+              </Button>
+              <Button
+                onClick={() => setInviteModalOpen(false)}
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
                 Got it
               </Button>
             </DialogFooter>

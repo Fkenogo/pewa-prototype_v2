@@ -4,6 +4,7 @@ import type {
   MembershipRole,
   ModerationCase,
   OnboardingDraft,
+  Organisation,
   OrganisationMembership,
   OrderRequest,
   PersonalIdentity,
@@ -11,6 +12,7 @@ import type {
   PromotionCampaign,
   ScenarioId,
   SharedOffering,
+  TeamInvitation,
   UsageDisputeCase,
   Venue,
 } from "./types";
@@ -768,11 +770,30 @@ export const SCENARIO_DEMO_IDENTITIES: PersonalIdentity[] = [
   SAMPLE_STAFF_IDENTITY,
 ];
 
+export const samplePendingInvitation: TeamInvitation = {
+  id: "inv_sample_brian",
+  token: "tok_sample_brian",
+  orgId: "org_ggc",
+  orgName: "Green Garden Café Ltd",
+  recipientContact: "brian@greengarden.example",
+  recipientName: "Brian Kiprop",
+  role: "manager",
+  scopeType: "restricted",
+  venueIds: ["venue_ggc"],
+  servicePoints: ["Main Counter", "Dine-in Area"],
+  invitedById: SAMPLE_FOUNDER_IDENTITY.id,
+  invitedByName: SAMPLE_FOUNDER_IDENTITY.fullName,
+  createdAt: "2026-10-21T09:00:00.000Z",
+  expiresAt: "2026-10-28T09:00:00.000Z",
+  status: "pending",
+};
+
 function buildScenarioMemberships(
   orgId: string,
   primaryRole: MembershipRole = "owner",
   venueId?: string,
 ): OrganisationMembership[] {
+  const venues = venueId ? [venueId] : [];
   return [
     {
       id: `mem_${orgId}_owner`,
@@ -781,6 +802,8 @@ function buildScenarioMemberships(
       role: "owner",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "all",
       joinedAt: "2026-10-19T07:55:00.000Z",
     },
     {
@@ -790,6 +813,8 @@ function buildScenarioMemberships(
       role: "admin",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "all",
       joinedAt: "2026-10-19T08:00:00.000Z",
     },
     {
@@ -799,6 +824,9 @@ function buildScenarioMemberships(
       role: "manager",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "restricted",
+      servicePoints: ["Main Counter", "Dine-in Area"],
       joinedAt: "2026-10-19T08:05:00.000Z",
     },
     {
@@ -808,10 +836,52 @@ function buildScenarioMemberships(
       role: "staff",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "restricted",
+      servicePoints: ["Barista Station", "Main Counter"],
       joinedAt: "2026-10-19T08:10:00.000Z",
     },
   ];
 }
+
+export const KNOWN_ORGANISATIONS: Record<string, Organisation> = {
+  org_ggc: {
+    id: "org_ggc",
+    name: "Green Garden Café Ltd",
+    businessType: "Single-venue café",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+  org_horizon: {
+    id: "org_horizon",
+    name: "The Grand Horizon Hotel Ltd",
+    businessType: "Hotel & Hospitality",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+  org_cloudburger: {
+    id: "org_cloudburger",
+    name: "CloudBurger Kitchen Ltd",
+    businessType: "Delivery-only cloud kitchen",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+  org_multi_brand: {
+    id: "org_multi_brand",
+    name: "Horizon Hospitality Group",
+    businessType: "Multi-brand restaurant group",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+};
 
 export function buildScenario(
   id: ScenarioId,
@@ -861,7 +931,9 @@ export function buildScenario(
     simulatedTime: "10:00",
     personalIdentity: SAMPLE_FOUNDER_IDENTITY as PersonalIdentity | null,
     identities: SCENARIO_DEMO_IDENTITIES as PersonalIdentity[],
+    organisations: Object.values(KNOWN_ORGANISATIONS) as Organisation[],
     memberships: buildScenarioMemberships("org_ggc", "owner", "venue_ggc"),
+    invitations: (id === "new-cafe" ? [] : [samplePendingInvitation]) as TeamInvitation[],
     onboardingDraft: null as OnboardingDraft | null,
   };
   if (id === "zero-units") {
@@ -881,12 +953,14 @@ export function buildScenario(
       scenario: id,
       role: "owner",
       organisation: null,
+      organisations: [],
       venues: [greenGardenVenue],
       menus: [greenGardenMenu(false)].map((m) => ({ ...m, orgId: "org_ggc" })),
       activity: [],
       personalIdentity: null,
       identities: [],
       memberships: [],
+      invitations: [],
       onboardingDraft: null,
     };
   }

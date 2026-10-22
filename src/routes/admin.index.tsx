@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import {
   canAuthorMenus,
   canManageBilling,
+  canManageTeam,
   formatPrice,
   getActiveOrganisationMembership,
   getEffectiveBusinessRole,
@@ -52,6 +53,7 @@ import { pageHead } from "@/lib/pewa/metadata";
 import { getVenuePublishedMenus, isMenuEligibleForVenue } from "@/lib/pewa/taxonomy";
 import { getSharedOfferingUsage, parseScheduleReferenceTime } from "@/lib/pewa/availability";
 import { CreateMenuModal } from "@/components/pewa/CreateMenuModal";
+import { KNOWN_ORGANISATIONS } from "@/lib/pewa/fixtures";
 import type { SharedOffering } from "@/lib/pewa/types";
 import { cn } from "@/lib/utils";
 
@@ -145,16 +147,18 @@ function Overview() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {(effectiveRole === "owner" || effectiveRole === "admin") && (
+          {canManageTeam(effectiveRole) && (
             <Button
+              asChild
               variant="outline"
               size="sm"
               className="h-9 shrink-0 font-semibold"
-              onClick={() => setInviteTeamModalOpen(true)}
               data-testid="workspace-invite-team-btn"
             >
-              <UserPlus className="mr-1.5 h-3.5 w-3.5 text-primary" />
-              Invite your team
+              <Link to="/admin/team">
+                <UserPlus className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                Invite your team
+              </Link>
             </Button>
           )}
           {canManageBilling(effectiveRole) && (
@@ -228,6 +232,48 @@ function Overview() {
                     ))}
                   </div>
                 )}
+
+                {(() => {
+                  const otherMemberships = (state.memberships || []).filter(
+                    (m) =>
+                      m.identityId === personalIdentity?.id &&
+                      m.status === "active" &&
+                      m.orgId !== organisation?.id,
+                  );
+                  if (otherMemberships.length === 0) return null;
+                  return (
+                    <div
+                      className="mt-2.5 border-t border-border/60 pt-2 flex flex-wrap items-center gap-1.5"
+                      data-testid="workspace-org-switcher"
+                    >
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        Other organisations:
+                      </span>
+                      {otherMemberships.map((m) => {
+                        const orgMeta =
+                          (state.organisations || []).find((o) => o.id === m.orgId) ||
+                          KNOWN_ORGANISATIONS[m.orgId];
+                        const name = orgMeta?.name || m.orgId;
+                        return (
+                          <Button
+                            key={m.id}
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-[11px] px-2 py-0 border-primary/20 hover:bg-primary/5"
+                            data-testid={`switch-org-${m.orgId}`}
+                            onClick={() => state.switchOrganisation(m.orgId)}
+                          >
+                            <Building2 className="mr-1 h-3 w-3 text-primary" />
+                            {name}
+                            <span className="ml-1 text-[10px] text-muted-foreground">
+                              ({ROLE_LABELS[m.role]})
+                            </span>
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>

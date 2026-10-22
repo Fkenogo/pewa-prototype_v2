@@ -10,12 +10,14 @@ import type {
   OnboardingDraft,
   Offering,
   OfferingSchedule,
+  Organisation,
   OrganisationMembership,
   PersonalIdentity,
   PewaState,
   PreferredSignInIdentifier,
   Role,
   ScenarioId,
+  ScopeType,
   Section,
   CartLine,
   OrderRequest,
@@ -23,12 +25,14 @@ import type {
   GuestSession,
   OrgStatus,
   SharedOffering,
+  TeamInvitation,
   UsageDisputeCase,
   ModerationCase,
   VenueOfferingOverride,
 } from "./types";
 import {
   buildScenario,
+  KNOWN_ORGANISATIONS,
   PROTOTYPE_DIRECTORY_VENUES,
   PROTOTYPE_DIRECTORY_MENUS,
   SAMPLE_FOUNDER_IDENTITY,
@@ -286,6 +290,59 @@ type Actions = {
   ) => void;
   resolveModerationCase: (caseId: string, actionTaken: string) => void;
   setSimulatedOffline: (offline: boolean) => void;
+  createInvitation: (input: {
+    recipientContact: string;
+    recipientName?: string | undefined;
+    role: MembershipRole;
+    scopeType?: ScopeType | undefined;
+    venueIds?: string[] | undefined;
+    servicePoints?: string[] | undefined;
+  }) => {
+    success: boolean;
+    error?: string | undefined;
+    invitation?: TeamInvitation | undefined;
+  };
+  cancelInvitation: (invitationId: string) => {
+    success: boolean;
+    error?: string | undefined;
+  };
+  acceptInvitation: (
+    tokenOrId: string,
+    acceptingIdentityInput?:
+      | {
+          fullName: string;
+          email?: string | undefined;
+          mobile?: string | undefined;
+          preferredSignIn?: PreferredSignInIdentifier | undefined;
+        }
+      | undefined,
+  ) => {
+    success: boolean;
+    error?: string | undefined;
+    membership?: OrganisationMembership | undefined;
+  };
+  declineInvitation: (tokenOrId: string) => {
+    success: boolean;
+    error?: string | undefined;
+  };
+  updateMembershipScope: (input: {
+    membershipId: string;
+    scopeType: ScopeType;
+    venueIds?: string[] | undefined;
+    servicePoints?: string[] | undefined;
+    role?: MembershipRole | undefined;
+  }) => {
+    success: boolean;
+    error?: string | undefined;
+  };
+  revokeMembership: (membershipId: string) => {
+    success: boolean;
+    error?: string | undefined;
+  };
+  switchOrganisation: (orgId: string) => {
+    success: boolean;
+    error?: string | undefined;
+  };
 };
 
 const now = () => new Date().toISOString();
@@ -582,7 +639,7 @@ export const usePewa = create<PewaState & Actions>()(
       const mutateMenu = (
         menuId: string,
         fn: (sections: Section[]) => Section[],
-        options?: { allowAvailabilityOnly?: boolean },
+        options?: { allowAvailabilityOnly?: boolean; venueId?: string },
       ): boolean => {
         const s = get();
         const effectiveRole = getEffectiveBusinessRole(s);
@@ -592,6 +649,15 @@ export const usePewa = create<PewaState & Actions>()(
         if (!permitted) return false;
         const target = s.menus.find((m) => m.id === menuId);
         if (!target || !s.organisation || target.orgId !== s.organisation.id) return false;
+        const checkVenueId = options?.venueId || target.venueId;
+        if (
+          !canActorOperateScope(s, {
+            venueId: checkVenueId,
+            servicePoint: target.servicePointName,
+          })
+        ) {
+          return false;
+        }
         set((state) => ({
           menus: state.menus.map((m) =>
             m.id === menuId ? { ...m, sections: fn(m.sections), updatedAt: now() } : m,
@@ -772,7 +838,8 @@ export const usePewa = create<PewaState & Actions>()(
             !order ||
             order.status !== "pending" ||
             !canManageOrders(effectiveRole) ||
-            order.orgId !== s.organisation?.id
+            order.orgId !== s.organisation?.id ||
+            !canActorOperateScope(s, { venueId: order.venueId, servicePoint: order.servicePoint })
           )
             return false;
           const policy = { ...s.orderPolicy };
@@ -802,7 +869,8 @@ export const usePewa = create<PewaState & Actions>()(
             order.status !== "pending" ||
             !canManageOrders(effectiveRole) ||
             order.orgId !== s.organisation?.id ||
-            !reason.trim()
+            !reason.trim() ||
+            !canActorOperateScope(s, { venueId: order.venueId, servicePoint: order.servicePoint })
           )
             return false;
           set({
@@ -826,7 +894,8 @@ export const usePewa = create<PewaState & Actions>()(
             !order ||
             order.status !== "accepted" ||
             !canManageOrders(effectiveRole) ||
-            order.orgId !== s.organisation?.id
+            order.orgId !== s.organisation?.id ||
+            !canActorOperateScope(s, { venueId: order.venueId, servicePoint: order.servicePoint })
           )
             return false;
           set({
@@ -1111,7 +1180,9 @@ export const usePewa = create<PewaState & Actions>()(
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
+            organisations: sc.organisations || (sc.organisation ? [sc.organisation] : []),
             memberships: sc.memberships,
+            invitations: sc.invitations || [],
           });
         },
         reset: () => {
@@ -1135,7 +1206,9 @@ export const usePewa = create<PewaState & Actions>()(
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
+            organisations: sc.organisations || (sc.organisation ? [sc.organisation] : []),
             memberships: sc.memberships,
+            invitations: sc.invitations || [],
           });
         },
         log: (e) =>
@@ -1296,6 +1369,628 @@ export const usePewa = create<PewaState & Actions>()(
         },
         seedScenarioMembership: (input) => {
           return get().upsertMembership({ ...input, _isInternalFixtureSetup: true });
+        },
+        createInvitation: (input) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!s.organisation) {
+            return { success: false, error: "No active organisation context." };
+          }
+          if (!canManageTeam(effectiveRole)) {
+            return { success: false, error: "Unauthorized to invite team members." };
+          }
+          if (!canInviteRole(effectiveRole, input.role)) {
+            return {
+              success: false,
+              error: `Role “${effectiveRole}” is not authorised to invite “${input.role}”.`,
+            };
+          }
+          const cleanContact = input.recipientContact.trim().toLowerCase();
+          if (!cleanContact) {
+            return { success: false, error: "Recipient contact identifier is required." };
+          }
+
+          const callerMembership = getActiveOrganisationMembership(s);
+          const requestedScopeType: ScopeType =
+            input.scopeType ||
+            (input.role === "owner" ||
+            input.role === "admin" ||
+            (!input.venueIds?.length && (effectiveRole === "owner" || effectiveRole === "admin"))
+              ? "all"
+              : "restricted");
+
+          const managerVenues =
+            effectiveRole === "manager"
+              ? callerMembership?.venueIds && callerMembership.venueIds.length > 0
+                ? callerMembership.venueIds
+                : callerMembership?.venueId
+                  ? [callerMembership.venueId]
+                  : []
+              : [];
+
+          const assignedVenues =
+            input.venueIds && input.venueIds.length > 0
+              ? input.venueIds
+              : effectiveRole === "manager" && managerVenues.length > 0 && !input.scopeType
+                ? managerVenues
+                : undefined;
+
+          const managerStations =
+            effectiveRole === "manager" &&
+            callerMembership?.servicePoints &&
+            callerMembership.servicePoints.length > 0
+              ? callerMembership.servicePoints
+              : undefined;
+
+          let assignedServicePoints = input.servicePoints;
+
+          // For restricted Manager: omitted servicePoints defaults to manager's authorised stations.
+          // Explicitly empty servicePoints [] is rejected because it would confer venue-wide station access.
+          if (effectiveRole === "manager" && managerStations) {
+            if (assignedServicePoints === undefined) {
+              assignedServicePoints = [...managerStations];
+            } else if (assignedServicePoints.length === 0) {
+              return {
+                success: false,
+                error:
+                  "Managers restricted to specific stations cannot grant venue-wide station access.",
+              };
+            }
+          }
+
+          // Rule 2 & 1: Restricted Managers must not issue organisation-wide invitations
+          if (effectiveRole === "manager") {
+            if (callerMembership?.scopeType === "restricted" && requestedScopeType === "all") {
+              return {
+                success: false,
+                error: "Restricted managers cannot issue organisation-wide invitations.",
+              };
+            }
+
+            // Rule 1 & Rule 5: Manager scope containment
+            if (assignedVenues && assignedVenues.length > 0) {
+              const outOfScopeVenues = assignedVenues.filter((vid) => !managerVenues.includes(vid));
+              if (outOfScopeVenues.length > 0) {
+                return {
+                  success: false,
+                  error:
+                    "Managers can only assign team members within their own assigned locations.",
+                };
+              }
+            }
+
+            if (managerStations && assignedServicePoints && assignedServicePoints.length > 0) {
+              const managerStationsLower = managerStations.map((sp) => sp.toLowerCase().trim());
+              const unpermittedStations = assignedServicePoints.filter(
+                (sp) => !managerStationsLower.includes(sp.toLowerCase().trim()),
+              );
+              if (unpermittedStations.length > 0) {
+                return {
+                  success: false,
+                  error: `Managers cannot delegate service points (${unpermittedStations.join(", ")}) beyond their own assigned stations.`,
+                };
+              }
+            }
+          }
+
+          // Rule 3: Target organisation venue check (for all roles)
+          const orgVenues = s.venues.filter((v) => v.orgId === s.organisation?.id);
+          const orgVenueIds = orgVenues.map((v) => v.id);
+
+          if (assignedVenues && assignedVenues.length > 0) {
+            const foreignVenues = assignedVenues.filter((vid) => !orgVenueIds.includes(vid));
+            if (foreignVenues.length > 0) {
+              return {
+                success: false,
+                error: "Assigned locations must belong to the target organisation.",
+              };
+            }
+          }
+
+          // Validate selected service points against the selected venues' actual configured contexts
+          if (
+            assignedVenues &&
+            assignedVenues.length > 0 &&
+            assignedServicePoints &&
+            assignedServicePoints.length > 0
+          ) {
+            const targetVenues = s.venues.filter((v) => assignedVenues.includes(v.id));
+            const configuredContexts = targetVenues.flatMap((v) => v.serviceContexts || []);
+            if (configuredContexts.length > 0) {
+              const configuredLower = configuredContexts.map((c) => c.toLowerCase().trim());
+              const unconfigured = assignedServicePoints.filter(
+                (sp) => !configuredLower.includes(sp.toLowerCase().trim()),
+              );
+              if (unconfigured.length > 0) {
+                return {
+                  success: false,
+                  error: `Selected service points (${unconfigured.join(", ")}) must be configured in the assigned venue(s).`,
+                };
+              }
+            }
+          }
+
+          // Rule 6: Empty restricted assignments must not silently mean organisation-wide access
+          if (requestedScopeType === "restricted") {
+            if (!assignedVenues || assignedVenues.length === 0) {
+              return {
+                success: false,
+                error: "Restricted invitations require at least one assigned location.",
+              };
+            }
+          }
+
+          const invitation: TeamInvitation = {
+            id: uid("inv"),
+            token: uid("tok"),
+            orgId: s.organisation.id,
+            orgName: s.organisation.name,
+            recipientContact: cleanContact,
+            recipientName: input.recipientName?.trim() || undefined,
+            role: input.role,
+            scopeType: requestedScopeType,
+            venueIds: assignedVenues && assignedVenues.length > 0 ? assignedVenues : undefined,
+            servicePoints:
+              assignedServicePoints && assignedServicePoints.length > 0
+                ? assignedServicePoints
+                : undefined,
+            invitedById: s.personalIdentity?.id || "unknown",
+            invitedByName: s.personalIdentity?.fullName || "Team Member",
+            createdAt: now(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            status: "pending",
+          };
+
+          set((state) => ({
+            invitations: [invitation, ...(state.invitations || [])],
+          }));
+
+          get().log({
+            kind: "team.invited",
+            message: `Invited ${invitation.recipientContact} as ${invitation.role} to ${invitation.orgName} (${invitation.scopeType === "all" ? "Organisation-wide" : "Restricted scope"})`,
+          });
+
+          return { success: true, invitation };
+        },
+        cancelInvitation: (invitationId) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!canManageTeam(effectiveRole) || !s.organisation) {
+            return { success: false, error: "Unauthorized to cancel invitations." };
+          }
+          const invitation = (s.invitations || []).find((i) => i.id === invitationId);
+          if (!invitation) {
+            return { success: false, error: "Invitation not found." };
+          }
+          if (invitation.orgId !== s.organisation.id) {
+            return { success: false, error: "Invitation belongs to another organisation." };
+          }
+          if (invitation.status !== "pending") {
+            return {
+              success: false,
+              error: `Cannot cancel an invitation with status “${invitation.status}”.`,
+            };
+          }
+          if (effectiveRole === "manager" && invitation.role !== "staff") {
+            return { success: false, error: "Managers can only cancel staff invitations." };
+          }
+
+          set((state) => ({
+            invitations: (state.invitations || []).map((i) =>
+              i.id === invitationId ? { ...i, status: "cancelled", cancelledAt: now() } : i,
+            ),
+          }));
+
+          get().log({
+            kind: "team.invitation_cancelled",
+            message: `Invitation for ${invitation.recipientContact} (${invitation.role}) was cancelled`,
+          });
+
+          return { success: true };
+        },
+        acceptInvitation: (tokenOrId, acceptingIdentityInput) => {
+          const s = get();
+          const invitation = (s.invitations || []).find(
+            (i) => i.id === tokenOrId || i.token === tokenOrId,
+          );
+          if (!invitation) {
+            return {
+              success: false,
+              error: "Invitation not found. Please check your invitation link.",
+            };
+          }
+
+          if (invitation.status === "accepted") {
+            return {
+              success: false,
+              error: `This invitation was already accepted on ${invitation.acceptedAt ? new Date(invitation.acceptedAt).toLocaleDateString() : "earlier"}. Invitations cannot be reused.`,
+            };
+          }
+          if (invitation.status === "cancelled") {
+            return {
+              success: false,
+              error:
+                "This invitation was cancelled by the organisation. Please contact the inviter for a new invite.",
+            };
+          }
+          if (
+            invitation.status === "expired" ||
+            new Date(invitation.expiresAt).getTime() < Date.now()
+          ) {
+            return {
+              success: false,
+              error:
+                "This invitation has expired. Please request a new invitation from the business.",
+            };
+          }
+
+          let targetIdentity = s.personalIdentity;
+          if (acceptingIdentityInput) {
+            targetIdentity = get().upsertPersonalIdentity(acceptingIdentityInput);
+          }
+
+          if (!targetIdentity) {
+            return {
+              success: false,
+              error:
+                "Personal identity required. Please register or verify your personal details to accept.",
+            };
+          }
+
+          const recipientClean = invitation.recipientContact.trim().toLowerCase();
+          const emailClean = (targetIdentity.email || "").trim().toLowerCase();
+          const mobileClean = (targetIdentity.mobile || "").trim();
+
+          const matches =
+            (emailClean && emailClean === recipientClean) ||
+            (mobileClean && mobileClean === recipientClean);
+
+          if (!matches) {
+            return {
+              success: false,
+              error: `Identity mismatch: You are currently signed in as “${targetIdentity.fullName}” (${emailClean || mobileClean || "no contact"}), but this invitation was issued to “${recipientClean}”. Please switch identity to accept.`,
+            };
+          }
+
+          // Rule 5: Do not silently overwrite an existing active membership's role or scope through invitation acceptance
+          const existingActiveMem = (s.memberships || []).find(
+            (m) =>
+              m.identityId === targetIdentity.id &&
+              m.orgId === invitation.orgId &&
+              m.status === "active",
+          );
+          if (existingActiveMem) {
+            return {
+              success: false,
+              error: `You already hold an active “${ROLE_LABELS[existingActiveMem.role]}” membership in ${invitation.orgName}. An invitation cannot overwrite an existing active membership.`,
+            };
+          }
+
+          const newMembership: OrganisationMembership = {
+            id: uid("mem"),
+            identityId: targetIdentity.id,
+            orgId: invitation.orgId,
+            role: invitation.role,
+            status: "active",
+            venueId: invitation.venueIds?.[0],
+            venueIds: invitation.venueIds ? [...invitation.venueIds] : undefined,
+            servicePoints: invitation.servicePoints ? [...invitation.servicePoints] : undefined,
+            scopeType: invitation.scopeType,
+            joinedAt: now(),
+            invitedAt: invitation.createdAt,
+            invitedBy: invitation.invitedById,
+          };
+
+          // Rule 2: Where a person already belongs to another organisation, acceptance must preserve that existing membership
+          const nextMemberships = [
+            ...(s.memberships || []).filter(
+              (m) => !(m.identityId === targetIdentity.id && m.orgId === invitation.orgId),
+            ),
+            newMembership,
+          ];
+
+          const nextInvitations = (s.invitations || []).map((i) =>
+            i.id === invitation.id
+              ? {
+                  ...i,
+                  status: "accepted" as const,
+                  acceptedAt: now(),
+                  acceptedByIdentityId: targetIdentity.id,
+                }
+              : i,
+          );
+
+          // Rule 3 & 4: Provide a deterministic way to enter the newly joined organisation's workspace.
+          // Immediately align active organisation context to the target organisation.
+          const targetOrg: Organisation = (s.organisations || []).find(
+            (o) => o.id === invitation.orgId,
+          ) ||
+            (s.organisation?.id === invitation.orgId ? s.organisation : null) ||
+            KNOWN_ORGANISATIONS[invitation.orgId] || {
+              id: invitation.orgId,
+              name: invitation.orgName,
+              businessType: "Food & Beverage",
+              currency: "KES",
+              status: "active" as const,
+            };
+
+          const nextOrganisations = (s.organisations || []).some((o) => o.id === targetOrg.id)
+            ? (s.organisations || []).map((o) => (o.id === targetOrg.id ? targetOrg : o))
+            : [...(s.organisations || []), targetOrg];
+
+          set({
+            memberships: nextMemberships,
+            invitations: nextInvitations,
+            organisations: nextOrganisations,
+            organisation: targetOrg,
+            role: invitation.role,
+            personalIdentity: targetIdentity,
+          });
+
+          get().log({
+            kind: "team.invitation_accepted",
+            message: `${targetIdentity.fullName} accepted invitation as ${invitation.role} to ${invitation.orgName}`,
+          });
+
+          return { success: true, membership: newMembership };
+        },
+        declineInvitation: (tokenOrId) => {
+          const s = get();
+          const invitation = (s.invitations || []).find(
+            (i) => i.id === tokenOrId || i.token === tokenOrId,
+          );
+          if (!invitation) return { success: false, error: "Invitation not found." };
+          if (invitation.status !== "pending") {
+            return {
+              success: false,
+              error: `Cannot decline invitation with status “${invitation.status}”.`,
+            };
+          }
+          set((state) => ({
+            invitations: (state.invitations || []).map((i) =>
+              i.id === invitation.id ? { ...i, status: "cancelled", cancelledAt: now() } : i,
+            ),
+          }));
+          get().log({
+            kind: "team.invitation_declined",
+            message: `Invitation for ${invitation.recipientContact} was declined`,
+          });
+          return { success: true };
+        },
+        updateMembershipScope: (input) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!s.organisation || !canManageTeam(effectiveRole)) {
+            return { success: false, error: "Unauthorized to update team membership." };
+          }
+          const targetMem = (s.memberships || []).find((m) => m.id === input.membershipId);
+          if (!targetMem) {
+            return { success: false, error: "Membership record not found." };
+          }
+          if (targetMem.orgId !== s.organisation.id) {
+            return { success: false, error: "Membership belongs to another organisation." };
+          }
+          if (!canModifyMember(effectiveRole, targetMem)) {
+            return {
+              success: false,
+              error: `Role “${effectiveRole}” is not authorised to modify a “${targetMem.role}” member.`,
+            };
+          }
+          if (input.role && !canInviteRole(effectiveRole, input.role)) {
+            return {
+              success: false,
+              error: `Role “${effectiveRole}” is not authorised to assign “${input.role}”.`,
+            };
+          }
+          if (targetMem.role === "owner" && input.role && input.role !== "owner") {
+            return {
+              success: false,
+              error: "Cannot alter or downgrade the organisation owner role.",
+            };
+          }
+
+          const orgVenues = s.venues.filter((v) => v.orgId === s.organisation?.id);
+          const orgVenueIds = orgVenues.map((v) => v.id);
+
+          let nextServicePoints =
+            input.servicePoints !== undefined ? input.servicePoints : targetMem.servicePoints;
+
+          // Rule 1 & Rule 2: Manager containment checks
+          if (effectiveRole === "manager") {
+            const callerMem = getActiveOrganisationMembership(s);
+            if (!callerMem) {
+              return { success: false, error: "Caller membership not found or inactive." };
+            }
+            if (callerMem.scopeType === "restricted" && input.scopeType === "all") {
+              return {
+                success: false,
+                error: "Restricted managers cannot grant organisation-wide access.",
+              };
+            }
+            const managerVenues =
+              callerMem.venueIds && callerMem.venueIds.length > 0
+                ? callerMem.venueIds
+                : callerMem.venueId
+                  ? [callerMem.venueId]
+                  : [];
+            if (input.venueIds && input.venueIds.length > 0) {
+              const unpermittedVenues = input.venueIds.filter(
+                (vid) => !managerVenues.includes(vid),
+              );
+              if (unpermittedVenues.length > 0) {
+                return {
+                  success: false,
+                  error:
+                    "Managers can only assign team members within their own assigned locations.",
+                };
+              }
+            }
+
+            if (callerMem.servicePoints && callerMem.servicePoints.length > 0) {
+              // Submitting an empty station list would confer venue-wide access; reject for restricted managers
+              if (input.servicePoints && input.servicePoints.length === 0) {
+                return {
+                  success: false,
+                  error:
+                    "Managers restricted to specific stations cannot grant venue-wide station access.",
+                };
+              }
+              if (nextServicePoints === undefined) {
+                nextServicePoints = [...callerMem.servicePoints];
+              }
+              const managerStationsLower = callerMem.servicePoints.map((sp) =>
+                sp.toLowerCase().trim(),
+              );
+              if (nextServicePoints && nextServicePoints.length > 0) {
+                const unpermittedStations = nextServicePoints.filter(
+                  (sp) => !managerStationsLower.includes(sp.toLowerCase().trim()),
+                );
+                if (unpermittedStations.length > 0) {
+                  return {
+                    success: false,
+                    error: `Managers cannot delegate service points (${unpermittedStations.join(", ")}) beyond their own assigned stations.`,
+                  };
+                }
+              }
+            }
+          }
+
+          // Rule 3: Cross-organisation venue check
+          if (input.venueIds && input.venueIds.length > 0) {
+            const invalidVenues = input.venueIds.filter((vid) => !orgVenueIds.includes(vid));
+            if (invalidVenues.length > 0) {
+              return {
+                success: false,
+                error: "Assigned locations must belong to the current organisation.",
+              };
+            }
+          }
+
+          // Validate selected service points against the selected venues' actual configured contexts
+          const targetVenueIds =
+            input.venueIds || targetMem.venueIds || (targetMem.venueId ? [targetMem.venueId] : []);
+          if (targetVenueIds.length > 0 && nextServicePoints && nextServicePoints.length > 0) {
+            const targetVenues = s.venues.filter((v) => targetVenueIds.includes(v.id));
+            const configuredContexts = targetVenues.flatMap((v) => v.serviceContexts || []);
+            if (configuredContexts.length > 0) {
+              const configuredLower = configuredContexts.map((c) => c.toLowerCase().trim());
+              const unconfigured = nextServicePoints.filter(
+                (sp) => !configuredLower.includes(sp.toLowerCase().trim()),
+              );
+              if (unconfigured.length > 0) {
+                return {
+                  success: false,
+                  error: `Selected service points (${unconfigured.join(", ")}) must be configured in the assigned venue(s).`,
+                };
+              }
+            }
+          }
+
+          // Rule 6: Empty restricted assignments check
+          if (input.scopeType === "restricted") {
+            if (!input.venueIds || input.venueIds.length === 0) {
+              return {
+                success: false,
+                error: "Restricted scope requires at least one assigned location.",
+              };
+            }
+          }
+
+          set((state) => ({
+            memberships: (state.memberships || []).map((m) =>
+              m.id === input.membershipId
+                ? {
+                    ...m,
+                    role: input.role || m.role,
+                    scopeType: input.scopeType !== undefined ? input.scopeType : m.scopeType,
+                    venueIds: input.venueIds !== undefined ? input.venueIds : m.venueIds,
+                    venueId: input.venueIds?.[0] ?? m.venueId,
+                    servicePoints:
+                      nextServicePoints && nextServicePoints.length > 0
+                        ? nextServicePoints
+                        : undefined,
+                  }
+                : m,
+            ),
+          }));
+
+          get().log({
+            kind: "team.scope_updated",
+            message: `Updated operational scope for membership ${targetMem.id} (${input.role || targetMem.role}, ${input.scopeType})`,
+          });
+
+          return { success: true };
+        },
+        revokeMembership: (membershipId) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!s.organisation || !canManageTeam(effectiveRole)) {
+            return { success: false, error: "Unauthorized to revoke team memberships." };
+          }
+          const targetMem = (s.memberships || []).find((m) => m.id === membershipId);
+          if (!targetMem) {
+            return { success: false, error: "Membership record not found." };
+          }
+          if (targetMem.orgId !== s.organisation.id) {
+            return { success: false, error: "Membership belongs to another organisation." };
+          }
+
+          const check = canRevokeMember(
+            effectiveRole,
+            s.personalIdentity?.id,
+            targetMem,
+            s.memberships || [],
+          );
+          if (!check.allowed) {
+            return { success: false, error: check.reason };
+          }
+
+          set((state) => ({
+            memberships: (state.memberships || []).map((m) =>
+              m.id === membershipId ? { ...m, status: "revoked" as const, revokedAt: now() } : m,
+            ),
+          }));
+
+          get().log({
+            kind: "team.member_revoked",
+            message: `Membership revoked for identity ${targetMem.identityId} (${targetMem.role}) in ${s.organisation.name}`,
+          });
+
+          return { success: true };
+        },
+        switchOrganisation: (orgId) => {
+          const s = get();
+          const identityId = s.personalIdentity?.id;
+          if (!identityId) {
+            return { success: false, error: "Personal identity required to switch organisation." };
+          }
+          const targetMembership = (s.memberships || []).find(
+            (m) => m.identityId === identityId && m.orgId === orgId && m.status === "active",
+          );
+          if (!targetMembership) {
+            return { success: false, error: "No active membership found in target organisation." };
+          }
+          const targetOrg: Organisation = (s.organisations || []).find((o) => o.id === orgId) ||
+            (s.organisation?.id === orgId ? s.organisation : null) ||
+            KNOWN_ORGANISATIONS[orgId] || {
+              id: orgId,
+              name: targetMembership.orgId,
+              businessType: "Food & Beverage",
+              currency: "KES",
+              status: "active" as const,
+            };
+
+          set({
+            organisation: targetOrg,
+            role: targetMembership.role,
+          });
+
+          get().log({
+            kind: "organisation.switched",
+            message: `Active organisation switched to “${targetOrg.name}” (${ROLE_LABELS[targetMembership.role]})`,
+          });
+
+          return { success: true };
         },
         saveOnboardingDraft: (draft) => {
           set((s) => {
@@ -1537,6 +2232,9 @@ export const usePewa = create<PewaState & Actions>()(
           if (typeof nameOrInput === "string") {
             const targetVenueId =
               venueId || (org ? s.venues.find((v) => v.orgId === org.id)?.id : s.venues[0]?.id);
+            if (targetVenueId && !canActorOperateScope(s, { venueId: targetVenueId })) {
+              return "";
+            }
             set((state) => ({
               menus: [
                 ...state.menus,
@@ -1567,6 +2265,16 @@ export const usePewa = create<PewaState & Actions>()(
 
           const targetVenueId = inputVenueId || (venueIds?.length === 1 ? venueIds[0] : undefined);
           const targetVenueIds = venueIds && venueIds.length > 0 ? venueIds : undefined;
+
+          if (targetVenueId && !canActorOperateScope(s, { venueId: targetVenueId })) {
+            return "";
+          }
+          if (
+            targetVenueIds &&
+            targetVenueIds.some((vId) => !canActorOperateScope(s, { venueId: vId }))
+          ) {
+            return "";
+          }
 
           const sections: Section[] = initialSections.map((secName) => ({
             id: uid("sec"),
@@ -1600,6 +2308,17 @@ export const usePewa = create<PewaState & Actions>()(
           if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
           const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return;
+          if (
+            !canActorOperateScope(s, {
+              venueId: m.venueId,
+              servicePoint: m.servicePointName,
+            })
+          ) {
+            return;
+          }
+          if (updates.venueId && !canActorOperateScope(s, { venueId: updates.venueId })) {
+            return;
+          }
           set((state) => ({
             menus: state.menus.map((x) => {
               if (x.id !== menuId) return x;
@@ -1641,6 +2360,18 @@ export const usePewa = create<PewaState & Actions>()(
           }
           const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return { success: false, action: "deleted", message: "Menu not found" };
+          if (
+            !canActorOperateScope(s, {
+              venueId: m.venueId,
+              servicePoint: m.servicePointName,
+            })
+          ) {
+            return {
+              success: false,
+              action: "deleted",
+              message: "Not authorised for this location",
+            };
+          }
 
           const wasPublished = m.status === "published" || !!m.publishedAt || !!m.publishedSnapshot;
           const menuOfferingIds = new Set(
@@ -1958,26 +2689,29 @@ export const usePewa = create<PewaState & Actions>()(
         },
         setOfferingVenueOverride: (menuId, sectionId, offeringId, venueId, override) => {
           let offName = "";
-          const ok = mutateMenu(menuId, (ss) =>
-            ss.map((sec) => {
-              if (sectionId && sec.id !== sectionId) return sec;
-              return {
-                ...sec,
-                offerings: sec.offerings.map((o) => {
-                  if (o.id !== offeringId) return o;
-                  offName = o.name;
-                  const currentOverrides = o.venueOverrides || {};
-                  const existing = currentOverrides[venueId] || { venueId };
-                  return {
-                    ...o,
-                    venueOverrides: {
-                      ...currentOverrides,
-                      [venueId]: { ...existing, ...override, venueId },
-                    },
-                  };
-                }),
-              };
-            }),
+          const ok = mutateMenu(
+            menuId,
+            (ss) =>
+              ss.map((sec) => {
+                if (sectionId && sec.id !== sectionId) return sec;
+                return {
+                  ...sec,
+                  offerings: sec.offerings.map((o) => {
+                    if (o.id !== offeringId) return o;
+                    offName = o.name;
+                    const currentOverrides = o.venueOverrides || {};
+                    const existing = currentOverrides[venueId] || { venueId };
+                    return {
+                      ...o,
+                      venueOverrides: {
+                        ...currentOverrides,
+                        [venueId]: { ...existing, ...override, venueId },
+                      },
+                    };
+                  }),
+                };
+              }),
+            { venueId },
           );
           if (ok && offName) {
             get().log({
@@ -1987,23 +2721,26 @@ export const usePewa = create<PewaState & Actions>()(
           }
         },
         removeOfferingVenueOverride: (menuId, sectionId, offeringId, venueId) => {
-          mutateMenu(menuId, (ss) =>
-            ss.map((sec) => {
-              if (sectionId && sec.id !== sectionId) return sec;
-              return {
-                ...sec,
-                offerings: sec.offerings.map((o) => {
-                  if (o.id !== offeringId || !o.venueOverrides) return o;
-                  const nextOverrides = { ...o.venueOverrides };
-                  delete nextOverrides[venueId];
-                  return {
-                    ...o,
-                    venueOverrides:
-                      Object.keys(nextOverrides).length > 0 ? nextOverrides : undefined,
-                  };
-                }),
-              };
-            }),
+          mutateMenu(
+            menuId,
+            (ss) =>
+              ss.map((sec) => {
+                if (sectionId && sec.id !== sectionId) return sec;
+                return {
+                  ...sec,
+                  offerings: sec.offerings.map((o) => {
+                    if (o.id !== offeringId || !o.venueOverrides) return o;
+                    const nextOverrides = { ...o.venueOverrides };
+                    delete nextOverrides[venueId];
+                    return {
+                      ...o,
+                      venueOverrides:
+                        Object.keys(nextOverrides).length > 0 ? nextOverrides : undefined,
+                    };
+                  }),
+                };
+              }),
+            { venueId },
           );
         },
         toggleOfferingVenueAvailability: (menuId, sectionId, offeringId, venueId) => {
@@ -2034,7 +2771,7 @@ export const usePewa = create<PewaState & Actions>()(
                   }),
                 };
               }),
-            { allowAvailabilityOnly: true },
+            { allowAvailabilityOnly: true, venueId },
           );
           if (!ok || !offName) return;
           // Immediate venue availability changes apply to publishedSnapshot as well
@@ -2183,6 +2920,14 @@ export const usePewa = create<PewaState & Actions>()(
           if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return false;
           const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return false;
+          if (
+            !canActorOperateScope(s, {
+              venueId: m.venueId,
+              servicePoint: m.servicePointName,
+            })
+          ) {
+            return false;
+          }
           if (m.sections.length === 0 || !m.sections.some((sec) => sec.offerings.length > 0)) {
             return false;
           }
@@ -2222,6 +2967,14 @@ export const usePewa = create<PewaState & Actions>()(
           if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
           const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return;
+          if (
+            !canActorOperateScope(s, {
+              venueId: m.venueId,
+              servicePoint: m.servicePointName,
+            })
+          ) {
+            return;
+          }
           set((state) => ({
             menus: state.menus.map((x) =>
               x.id === menuId ? { ...x, status: "hidden" as MenuStatus, updatedAt: now() } : x,
@@ -2237,6 +2990,14 @@ export const usePewa = create<PewaState & Actions>()(
           if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
           const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return;
+          if (
+            !canActorOperateScope(s, {
+              venueId: m.venueId,
+              servicePoint: m.servicePointName,
+            })
+          ) {
+            return;
+          }
           set((state) => ({
             menus: state.menus.map((x) =>
               x.id === menuId ? { ...x, status: "archived" as MenuStatus, updatedAt: now() } : x,
@@ -2249,6 +3010,14 @@ export const usePewa = create<PewaState & Actions>()(
           if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
           const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m || !m.publishedSnapshot) return;
+          if (
+            !canActorOperateScope(s, {
+              venueId: m.venueId,
+              servicePoint: m.servicePointName,
+            })
+          ) {
+            return;
+          }
           const snap = m.publishedSnapshot;
           set((state) => ({
             menus: state.menus.map((x) =>
@@ -2487,9 +3256,118 @@ export const canToggleAvailability = (r: Role) => canAuthorMenus(r) || r === "st
 export const canManageOrders = (r: Role) => canAuthorMenus(r) || r === "staff";
 export const canManageBilling = (r: Role) => r === "owner" || r === "admin";
 export const canManagePromotions = (r: Role) => r === "owner" || r === "admin" || r === "manager";
+export const canManageTeam = (r: Role) => r === "owner" || r === "admin" || r === "manager";
 export const canViewActivity = (r: Role) => isBusinessRole(r);
 export const isBusinessRole = (r: Role) => r !== "customer" && r !== "operator";
 export const canAccessOperatorConsole = (r: Role) => r === "operator";
+
+export function canInviteRole(actorRole: Role, targetRole: MembershipRole): boolean {
+  if (actorRole === "owner") return true;
+  if (actorRole === "admin") return targetRole !== "owner";
+  if (actorRole === "manager") return targetRole === "staff";
+  return false;
+}
+
+export function canModifyMember(
+  actorRole: Role,
+  targetMembership: OrganisationMembership,
+): boolean {
+  if (actorRole === "owner") return true;
+  if (actorRole === "admin") return targetMembership.role !== "owner";
+  if (actorRole === "manager") return targetMembership.role === "staff";
+  return false;
+}
+
+export function canRevokeMember(
+  actorRole: Role,
+  actorIdentityId: string | undefined,
+  targetMembership: OrganisationMembership,
+  allMemberships: OrganisationMembership[],
+): { allowed: boolean; reason?: string } {
+  if (actorIdentityId && targetMembership.identityId === actorIdentityId) {
+    return { allowed: false, reason: "Self-revocation is prohibited to protect access." };
+  }
+  if (targetMembership.role === "owner") {
+    const activeOwners = allMemberships.filter(
+      (m) => m.orgId === targetMembership.orgId && m.role === "owner" && m.status === "active",
+    );
+    if (activeOwners.length <= 1) {
+      return { allowed: false, reason: "Cannot revoke the sole active organisation Owner." };
+    }
+  }
+  if (actorRole === "owner") {
+    return { allowed: true };
+  }
+  if (actorRole === "admin") {
+    if (targetMembership.role === "owner") {
+      return { allowed: false, reason: "Administrators cannot revoke an Owner." };
+    }
+    return { allowed: true };
+  }
+  if (actorRole === "manager") {
+    if (targetMembership.role !== "staff") {
+      return { allowed: false, reason: "Managers can only revoke Staff members." };
+    }
+    return { allowed: true };
+  }
+  return { allowed: false, reason: "Insufficient permissions to revoke team members." };
+}
+
+/**
+ * Validates operational scope for an actor against a target venue and/or service point.
+ * Owners and Administrators have organisation-wide access.
+ * Managers and Staff must be explicitly assigned to the venue and service point.
+ */
+export function canActorOperateScope(
+  state: {
+    role: Role;
+    personalIdentity?: PersonalIdentity | null | undefined;
+    organisation?: PewaState["organisation"] | undefined;
+    memberships?: OrganisationMembership[] | undefined;
+  },
+  target: {
+    venueId?: string | undefined;
+    servicePoint?: string | undefined;
+  },
+): boolean {
+  const role = getEffectiveBusinessRole(state);
+  if (!isBusinessRole(role)) return false;
+  if (role === "owner" || role === "admin") return true;
+
+  const activeMembership = getActiveOrganisationMembership(state);
+  if (!activeMembership || activeMembership.status !== "active") return false;
+
+  if (activeMembership.scopeType === "all") return true;
+
+  const assignedVenues =
+    activeMembership.venueIds && activeMembership.venueIds.length > 0
+      ? activeMembership.venueIds
+      : activeMembership.venueId
+        ? [activeMembership.venueId]
+        : [];
+
+  if (assignedVenues.length === 0) {
+    return false;
+  }
+
+  if (target.venueId && !assignedVenues.includes(target.venueId)) {
+    return false;
+  }
+
+  if (target.servicePoint) {
+    if (activeMembership.servicePoints !== undefined) {
+      if (activeMembership.servicePoints.length === 0) {
+        return false;
+      }
+      const actorPoints = activeMembership.servicePoints.map((p) => p.toLowerCase().trim());
+      if (!actorPoints.includes(target.servicePoint.toLowerCase().trim())) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
 
 export const formatPrice = (amount: number, currency: string) => {
   try {
