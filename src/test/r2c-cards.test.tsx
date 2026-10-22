@@ -324,4 +324,133 @@ describe("R2-C: Business Discovery Cards, Location & Delivery-Only Presentation"
       );
     });
   });
+
+  // =========================================================================
+  // R2-C CORR-001 — Consistent Discovery Hero Image Resolution
+  // =========================================================================
+  describe("R2-C CORR-001 — Consistent Discovery Hero Image Resolution", () => {
+    it("resolves Green Garden Café hero image through the shared coverImage path and reflects published cover-image changes", () => {
+      const { unmount } = render(<Discovery />);
+
+      const cafeCard = screen.getByTestId("venue-card-green-garden-cafe");
+      const heroImg = within(cafeCard).getByRole("img", { name: "Green Garden Café" });
+      expect(heroImg).toBeInTheDocument();
+      expect(heroImg.getAttribute("src")).toContain("cafe-breakfast");
+      unmount();
+
+      // Update coverImage in draft -> must NOT leak to public discovery before publishing
+      const customCoverUrl = "https://images.unsplash.com/photo-custom-published-cover";
+      usePewa.getState().updateMenuMeta("menu_ggc_allday", { coverImage: customCoverUrl });
+
+      const { unmount: unmountDraft } = render(<Discovery />);
+      const draftCard = screen.getByTestId("venue-card-green-garden-cafe");
+      const draftHeroImg = within(draftCard).getByRole("img", { name: "Green Garden Café" });
+      expect(draftHeroImg.getAttribute("src")).toContain("cafe-breakfast");
+      expect(draftHeroImg.getAttribute("src")).not.toBe(customCoverUrl);
+      unmountDraft();
+
+      // Publish the menu -> new coverImage must now be reflected on the Green Garden Café card
+      usePewa.getState().publishMenu("menu_ggc_allday");
+
+      render(<Discovery />);
+      const publishedCard = screen.getByTestId("venue-card-green-garden-cafe");
+      const publishedHeroImg = within(publishedCard).getByRole("img", {
+        name: "Green Garden Café",
+      });
+      expect(publishedHeroImg.getAttribute("src")).toBe(customCoverUrl);
+    });
+
+    it("falls back to the first eligible available offering image when coverImage is cleared and published, and does not leak draft offering images", () => {
+      // Clear coverImage on Green Garden Café and publish
+      usePewa.getState().updateMenuMeta("menu_ggc_allday", { coverImage: null });
+      usePewa.getState().publishMenu("menu_ggc_allday");
+
+      // Change the first offering's image in draft ONLY (without publishing)
+      const st = usePewa.getState();
+      const ggcMenu = st.menus.find((m) => m.id === "menu_ggc_allday")!;
+      const firstOff = ggcMenu.sections[0]!.offerings[0]!;
+      const publishedOffImage = firstOff.image!;
+      const draftOnlyOffImage = "https://images.unsplash.com/photo-draft-only-offering-leak";
+
+      st.upsertOffering("menu_ggc_allday", ggcMenu.sections[0]!.id, {
+        ...firstOff,
+        image: draftOnlyOffImage,
+      });
+
+      render(<Discovery />);
+      const cafeCard = screen.getByTestId("venue-card-green-garden-cafe");
+      const heroImg = within(cafeCard).getByRole("img", { name: "Green Garden Café" });
+      // Must show the published offering image, NOT the uncommitted draft image
+      expect(heroImg.getAttribute("src")).toBe(publishedOffImage);
+      expect(heroImg.getAttribute("src")).not.toBe(draftOnlyOffImage);
+    });
+
+    it("skips hidden or sold-out offerings when selecting hero image and renders monogram fallback when no eligible image exists", () => {
+      // Clear coverImage on Sol Artisan Bakery and remove images from all offerings except the first one,
+      // then mark the first one hidden at venue_sol
+      const st = usePewa.getState();
+      const solMenu = st.menus.find((m) => m.id === "menu_sol_bakery")!;
+      const firstSec = solMenu.sections[0]!;
+      const firstOff = firstSec.offerings[0]!;
+
+      // Hide the first offering at venue_sol
+      st.setOfferingVenueOverride(solMenu.id, firstSec.id, firstOff.id, "venue_sol", {
+        hidden: true,
+      });
+      st.publishMenu(solMenu.id);
+
+      const { unmount } = render(<Discovery />);
+      const solCard = screen.getByTestId("venue-card-sol-artisan-bakery");
+      const solHeroImg = within(solCard).getByRole("img", { name: "Sol Artisan Bakery" });
+      // Should NOT use the hidden sourdough image; should use the next available offering's image (croissant)
+      expect(solHeroImg.getAttribute("src")).not.toBe(firstOff.image);
+      expect(solHeroImg.getAttribute("src")).toBe(solMenu.sections[1]!.offerings[0]!.image);
+      unmount();
+
+      // Now create a venue whose published menu has no coverImage and no offering images -> monogram fallback
+      const noImgVenue = {
+        ...PROTOTYPE_DIRECTORY_VENUES[0]!,
+        id: "venue_no_img",
+        name: "Kibo Tea Room",
+        slug: "kibo-tea-room",
+      };
+      const noImgMenu = {
+        ...PROTOTYPE_DIRECTORY_MENUS[0]!,
+        id: "menu_no_img",
+        venueId: "venue_no_img",
+        coverImage: undefined,
+        publishedSnapshot: undefined,
+        sections: [
+          {
+            id: "sec_tea",
+            name: "Teas",
+            offerings: [
+              {
+                id: "off_chai",
+                name: "Masala Chai",
+                description: "Spiced Kenyan tea",
+                price: 200,
+                tags: ["Hot"],
+                available: true,
+                emoji: "🍵",
+                modifiers: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      usePewa.setState((prev) => ({
+        venues: [...prev.venues, noImgVenue],
+        menus: [...prev.menus, noImgMenu],
+      }));
+
+      render(<Discovery />);
+      const kiboCard = screen.getByTestId("venue-card-kibo-tea-room");
+      expect(
+        within(kiboCard).queryByRole("img", { name: "Kibo Tea Room" }),
+      ).not.toBeInTheDocument();
+      expect(within(kiboCard).getByText("K")).toBeInTheDocument();
+    });
+  });
 });

@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import { CustomerNav } from "./CustomerNav";
 import { cn } from "@/lib/utils";
-import breakfast from "@/assets/cafe-breakfast.jpg";
 
 export interface QualifyingOfferingMatch {
   offering: Offering;
@@ -1265,24 +1264,27 @@ function VenueCard({
   const venueMenu = publicMenus[0];
 
   const effectivePreviewImage = useMemo(() => {
-    if (!venueMenu) return undefined;
-    if (venueMenu.coverImage) return venueMenu.coverImage;
-    const effectiveShared = venueMenu.publishedSnapshot?.sharedOfferingsSnapshot || sharedOfferings;
-    for (const s of venueMenu.sections) {
-      for (const rawOff of s.offerings) {
-        if (isOfferingHiddenAtVenue(rawOff, venue.id, effectiveShared)) continue;
-        const avail = getEffectiveOfferingAvailability(rawOff, venue.id, {
-          simulatedTime,
-          sharedOfferings: effectiveShared,
-          venue,
-        });
-        if (!avail.available) continue;
-        const eff = getEffectiveOffering(rawOff, venue.id, effectiveShared);
-        if (eff.image) return eff.image;
+    for (const m of publicMenus) {
+      if (m.coverImage) return m.coverImage;
+    }
+    for (const m of publicMenus) {
+      const effectiveShared = m.publishedSnapshot?.sharedOfferingsSnapshot || sharedOfferings;
+      for (const s of m.sections) {
+        for (const rawOff of s.offerings) {
+          if (isOfferingHiddenAtVenue(rawOff, venue.id, effectiveShared)) continue;
+          const avail = getEffectiveOfferingAvailability(rawOff, venue.id, {
+            simulatedTime,
+            sharedOfferings: effectiveShared,
+            venue,
+          });
+          if (!avail.available) continue;
+          const eff = getEffectiveOffering(rawOff, venue.id, effectiveShared);
+          if (eff.image) return eff.image;
+        }
       }
     }
     return undefined;
-  }, [venueMenu, venue, sharedOfferings, simulatedTime]);
+  }, [publicMenus, venue, sharedOfferings, simulatedTime]);
 
   const isMenuOnly = !canAdmitOrder(orderPolicy);
 
@@ -1302,21 +1304,12 @@ function VenueCard({
       className="relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-sm"
     >
       <Link to="/m/$slug" params={{ slug: venue.slug }} className="block">
-        {venue.id === "venue_ggc" ? (
-          <img
-            src={breakfast}
-            alt="Green Garden Café breakfast platter"
-            width={1280}
-            height={768}
-            loading="lazy"
-            className="h-44 w-full object-cover"
-          />
-        ) : effectivePreviewImage ? (
+        {effectivePreviewImage ? (
           <img
             src={effectivePreviewImage}
             alt={venue.name}
             loading="lazy"
-            className="h-40 w-full object-cover"
+            className="h-44 w-full object-cover"
           />
         ) : (
           <div className="flex h-24 items-center justify-center bg-secondary font-display text-3xl font-bold text-primary">
