@@ -11,7 +11,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { formatPrice, usePewa } from "@/lib/pewa/store";
-import type { Menu, Offering, Venue } from "@/lib/pewa/types";
+import type { Menu, Offering, SharedOffering, Venue } from "@/lib/pewa/types";
 import { getVenuePublishedMenus } from "@/lib/pewa/taxonomy";
 import {
   getEffectiveOffering,
@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import { CustomerNav } from "./CustomerNav";
 import { cn } from "@/lib/utils";
-import breakfast from "@/assets/cafe-breakfast.jpg";
 
 export interface QualifyingOfferingMatch {
   offering: Offering;
@@ -340,12 +339,14 @@ export function Discovery({
       }
     }
 
-    // Sort qualifying offerings deterministically by score descending, then offering name
-    qualifyingOfferings.sort((a, b) => {
-      const scoreDiff = (b.score || 0) - (a.score || 0);
-      if (scoreDiff !== 0) return scoreDiff;
-      return a.offering.name.localeCompare(b.offering.name);
-    });
+    // Sort qualifying offerings deterministically by score descending, then offering name when a query is active
+    if (queryTokens.length > 0) {
+      qualifyingOfferings.sort((a, b) => {
+        const scoreDiff = (b.score || 0) - (a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.offering.name.localeCompare(b.offering.name);
+      });
+    }
 
     // 3. Determine if the business qualifies:
     if (tagFilter && qualifyingOfferings.length === 0) {
@@ -1191,6 +1192,10 @@ export function Discovery({
               searchQuery={q}
               allMenus={allMenus}
               allVenues={allVenues}
+              sharedOfferings={sharedOfferings}
+              simulatedTime={simulatedTime}
+              nearbyActive={nearbyStatus === "granted" && nearbyCoords !== null}
+              nearbyCoords={nearbyCoords}
               directory={directory}
             />
           ))}
@@ -1233,6 +1238,10 @@ function VenueCard({
   searchQuery = "",
   allMenus = [],
   allVenues = [],
+  sharedOfferings,
+  simulatedTime,
+  nearbyActive = false,
+  nearbyCoords = null,
   directory = false,
 }: {
   venue: Venue;
@@ -1241,86 +1250,163 @@ function VenueCard({
   searchQuery?: string;
   allMenus?: Menu[];
   allVenues?: Venue[];
+  sharedOfferings?: SharedOffering[] | undefined;
+  simulatedTime?: string | undefined;
+  nearbyActive?: boolean;
+  nearbyCoords?: VenueCoordinates | null;
   directory?: boolean;
 }) {
   const { favourites, toggleFavourite, orderPolicy } = usePewa();
   const saved = favourites.includes(venue.id);
-  const venueMenu = getVenuePublishedMenus(venue, allMenus, allVenues, {
+  const publicMenus = getVenuePublishedMenus(venue, allMenus, allVenues, {
     includeProtected: false,
-  })[0];
-  const previewImage = venueMenu?.sections.flatMap((s) => s.offerings).find((o) => o.image)?.image;
+  });
+  const venueMenu = publicMenus[0];
+
+  const effectivePreviewImage = useMemo(() => {
+    for (const m of publicMenus) {
+      if (m.coverImage) return m.coverImage;
+    }
+    for (const m of publicMenus) {
+      const effectiveShared = m.publishedSnapshot?.sharedOfferingsSnapshot || sharedOfferings;
+      for (const s of m.sections) {
+        for (const rawOff of s.offerings) {
+          if (isOfferingHiddenAtVenue(rawOff, venue.id, effectiveShared)) continue;
+          const avail = getEffectiveOfferingAvailability(rawOff, venue.id, {
+            simulatedTime,
+            sharedOfferings: effectiveShared,
+            venue,
+          });
+          if (!avail.available) continue;
+          const eff = getEffectiveOffering(rawOff, venue.id, effectiveShared);
+          if (eff.image) return eff.image;
+        }
+      }
+    }
+    return undefined;
+  }, [publicMenus, venue, sharedOfferings, simulatedTime]);
+
   const isMenuOnly = !canAdmitOrder(orderPolicy);
 
   // Home only renders matching offering previews when a search query is active;
   // Directory retains richer preview rendering.
   const shouldRenderOfferings = directory || Boolean(searchQuery.trim());
 
+  const proximityInfo =
+    nearbyActive && nearbyCoords ? evaluateVenueProximity(venue, nearbyCoords) : null;
+
+  const hasAddress = Boolean(venue.address && venue.address.trim().length > 0);
+  const hasServiceArea = Boolean(venue.serviceArea && venue.serviceArea.trim().length > 0);
+
   return (
-    <article className="relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-sm">
+    <article
+      data-testid={`venue-card-${venue.slug}`}
+      className="relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-sm"
+    >
       <Link to="/m/$slug" params={{ slug: venue.slug }} className="block">
-        {venue.id === "venue_ggc" ? (
+        {effectivePreviewImage ? (
           <img
-            src={breakfast}
-            alt="Green Garden Café breakfast platter"
-            width={1280}
-            height={768}
-            loading="lazy"
-            className="h-44 w-full object-cover"
-          />
-        ) : previewImage ? (
-          <img
-            src={previewImage}
+            src={effectivePreviewImage}
             alt={venue.name}
             loading="lazy"
-            className="h-40 w-full object-cover"
+            className="h-44 w-full object-cover"
           />
         ) : (
           <div className="flex h-24 items-center justify-center bg-secondary font-display text-3xl font-bold text-primary">
             {venue.name[0]}
           </div>
         )}
-        <div className="p-4 pr-14">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="font-sans font-semibold text-base">{venue.name}</h3>
-            {venue.category && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                {venue.category}
-              </span>
-            )}
-            {venue.deliveryOnly && (
-              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                🛵 Delivery Only
-              </span>
-            )}
-            {isMenuOnly && (
-              <span className="inline-flex items-center gap-0.5 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground border">
-                📖 Menu & Direct Contact
-              </span>
+        <div className="p-4">
+          <div className="pr-12">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h3 className="font-sans font-semibold text-base leading-snug">{venue.name}</h3>
+              {venue.category && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                  {venue.category}
+                </span>
+              )}
+              {venue.deliveryOnly && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                  🛵 Delivery Only
+                </span>
+              )}
+              {isMenuOnly && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground border">
+                  📖 Menu & Direct Contact
+                </span>
+              )}
+            </div>
+
+            {venue.tagline && (
+              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{venue.tagline}</p>
             )}
           </div>
 
-          <p className="mt-1 text-xs text-muted-foreground line-clamp-1">{venue.tagline}</p>
-
-          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-            <p className="flex items-start gap-1">
+          {/* Location & Service-Area Context */}
+          <div className="mt-2.5 space-y-1.5 text-xs text-muted-foreground">
+            <div className="flex items-start gap-1.5">
               <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
-              <span>
+              <div className="min-w-0 flex-1">
                 {venue.deliveryOnly ? (
                   <>
-                    <span className="font-medium text-foreground">Delivers to:</span>{" "}
-                    {venue.serviceArea}
-                    <span className="block text-[11px] text-muted-foreground italic">
-                      No dine-in storefront · Kitchen dispatch only
-                    </span>
+                    <p className="text-foreground">
+                      <span className="font-medium">Delivers to:</span>{" "}
+                      {hasServiceArea ? venue.serviceArea : "Service area provided on inquiry"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground italic">
+                      No dine-in storefront · Kitchen dispatch only (no walk-in service)
+                    </p>
+                    {venue.deliveryCoverageStatus !== "confirmed_merchant_coverage" &&
+                      hasServiceArea && (
+                        <p className="text-[10px] text-muted-foreground/90">
+                          Declared dispatch area · Confirm delivery availability with business
+                        </p>
+                      )}
                   </>
+                ) : hasAddress ? (
+                  <p className="text-foreground/90">{venue.address}</p>
                 ) : (
-                  venue.address
+                  <p className="italic text-muted-foreground">
+                    Location details unconfirmed · Contact business for directions
+                  </p>
                 )}
+
+                {proximityInfo && proximityInfo.isNearby && (
+                  <p className="mt-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                    {proximityInfo.isVerified
+                      ? venue.deliveryOnly
+                        ? "Within verified merchant delivery area"
+                        : "Within ~3 km of verified storefront location"
+                      : venue.deliveryOnly
+                        ? "Matches prototype dispatch preview zone (illustrative)"
+                        : "Within ~3 km sample reference area (illustrative)"}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Service Modes */}
+            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+              {venue.deliveryOnly ? (
+                <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                  Delivery only
+                </span>
+              ) : venue.services.length > 0 ? (
+                venue.services.map((srv) => (
+                  <span
+                    key={srv}
+                    className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
+                  >
+                    {srv}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[11px] font-medium text-primary">Direct inquiry</span>
+              )}
+              <span className="sr-only">
+                {venue.deliveryOnly ? "Delivery only" : venue.services.join(" · ")}
               </span>
-            </p>
-            <p className="font-medium text-primary text-[11px]">
-              {venue.deliveryOnly ? "Delivery only" : venue.services.join(" · ")}
-            </p>
+            </div>
           </div>
 
           {/* Contextual Matching Offerings or Business Match Explanation */}
@@ -1355,7 +1441,7 @@ function VenueCard({
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-1">
+                      <div className="flex items-baseline justify-between gap-1.5">
                         <span className="font-semibold text-xs truncate">{offering.name}</span>
                         <span className="shrink-0 font-bold text-xs text-primary">
                           {formatPrice(offering.price, venue.currency)}
@@ -1365,6 +1451,11 @@ function VenueCard({
                         <span className="rounded bg-muted px-1.5 py-0.2 font-medium">
                           {sectionName}
                         </span>
+                        {offering.specialBadge && (
+                          <span className="rounded-full bg-accent/20 px-1.5 py-0.2 font-semibold text-accent">
+                            ★ {offering.specialBadge}
+                          </span>
+                        )}
                         {offering.tags?.slice(0, 2).map((tag) => (
                           <span
                             key={tag}
@@ -1396,6 +1487,22 @@ function VenueCard({
               </p>
             </div>
           ) : null}
+
+          {/* Clear Route to Business Menu CTA Footer */}
+          <div className="mt-3 flex items-center justify-between border-t pt-2.5 text-xs">
+            <span className="text-[11px] text-muted-foreground truncate pr-2">
+              {venueMenu ? venueMenu.name : "Published menu"}
+              {publicMenus.length > 1 ? ` (+${publicMenus.length - 1} more)` : ""}
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-primary">
+              {venue.deliveryOnly
+                ? "View delivery menu"
+                : isMenuOnly
+                  ? "View menu & contact"
+                  : "View menu"}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </span>
+          </div>
         </div>
       </Link>
       <Button

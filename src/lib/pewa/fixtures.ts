@@ -11,6 +11,7 @@ import type {
   Venue,
 } from "./types";
 import { getCuratedLibraryImageUrl } from "./taxonomy";
+import breakfast from "@/assets/cafe-breakfast.jpg";
 
 export const sampleSharedOfferings: SharedOffering[] = [
   {
@@ -154,6 +155,7 @@ const greenGardenMenu = (soldOut: boolean): Menu => ({
   orgId: "org_ggc",
   venueId: "venue_ggc",
   name: "All-Day Menu",
+  coverImage: breakfast,
   status: "published",
   updatedAt: "2026-10-19T08:00:00.000Z",
   publishedAt: "2026-10-19T08:00:00.000Z",
