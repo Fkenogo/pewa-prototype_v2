@@ -1,9 +1,11 @@
 # Deliverable H — Experience Reference Freeze Candidate
+
 **Candidate Package: PEWA Prototype Build Revision v1.0.0-rc1**
 
 ---
 
 ## 1. Executive Summary & Freeze Declaration
+
 This document designates **PEWA Prototype Build Revision `v1.0.0-rc1`** as the formal **Experience Reference Freeze Candidate** submitted for Founder review and determination.
 
 This build integrates all seven experience slices (Slice P0 through P7), fully realizes the Master Builder Brief specifications, implements the 16 deterministic scenarios, and strictly enforces approved Product Truth boundaries.
@@ -30,7 +32,7 @@ The following 10 primary journeys constitute the **Binding Experience Reference*
 2. **Direct Manual Contact Safeguard**:
    - Contact drawer offering direct WhatsApp, Phone, and Email links that bypass platform order creation.
 3. **Structured Ordering Communication Protocol**:
-   - Non-sale disclaimer on review screen: *"This is a request, not a confirmed sale. PEWA transmits your order request directly to the venue."*
+   - Non-sale disclaimer on review screen: _"This is a request, not a confirmed sale. PEWA transmits your order request directly to the venue."_
    - Explicit confirmation checkbox before submission.
 4. **Merchant Order Cockpit & Kitchen State Machine (`/admin/orders`)**:
    - Real-time queue: `pending` → `accepted` → `ready`.
@@ -58,6 +60,7 @@ The following 10 primary journeys constitute the **Binding Experience Reference*
 ---
 
 ## 3. Known Prototype Exclusions (Non-Goals)
+
 In strict accordance with Master Brief Section 10 ("What Not to Build"), the following systems are explicitly excluded from this prototype:
 
 - **No Online Payment Gateway**: PEWA does not collect credit cards, charge customer wallets, or integrate payment processors. Fulfilment and payment remain between customer and venue.

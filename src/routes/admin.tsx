@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   ShieldAlert,
   Sparkles,
+  Users,
 } from "lucide-react";
 import {
   ROLE_LABELS,
@@ -16,6 +17,7 @@ import {
   canManageOrders,
   canManagePromotions,
   canManageBilling,
+  canManageTeam,
   canViewActivity,
   getActiveOrganisationMembership,
   getEffectiveBusinessRole,
@@ -77,6 +79,9 @@ function AdminLayout() {
         ready: canManageOrders(effectiveRole),
       },
     ];
+    if (canManageTeam(effectiveRole)) {
+      items.push({ label: "Team", icon: Users, to: "/admin/team", ready: true });
+    }
     if (canManagePromotions(effectiveRole)) {
       items.push({ label: "Promos", icon: Sparkles, to: "/admin/promotions", ready: true });
     }

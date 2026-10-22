@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import {
   canAuthorMenus,
   canManageBilling,
+  canManageTeam,
   formatPrice,
   getActiveOrganisationMembership,
   getEffectiveBusinessRole,
@@ -145,16 +146,18 @@ function Overview() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {(effectiveRole === "owner" || effectiveRole === "admin") && (
+          {canManageTeam(effectiveRole) && (
             <Button
+              asChild
               variant="outline"
               size="sm"
               className="h-9 shrink-0 font-semibold"
-              onClick={() => setInviteTeamModalOpen(true)}
               data-testid="workspace-invite-team-btn"
             >
-              <UserPlus className="mr-1.5 h-3.5 w-3.5 text-primary" />
-              Invite your team
+              <Link to="/admin/team">
+                <UserPlus className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                Invite your team
+              </Link>
             </Button>
           )}
           {canManageBilling(effectiveRole) && (

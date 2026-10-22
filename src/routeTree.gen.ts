@@ -21,6 +21,8 @@ import { Route as AdminActivityRouteImport } from './routes/admin.activity'
 import { Route as AdminBillingRouteImport } from './routes/admin.billing'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminPromotionsRouteImport } from './routes/admin.promotions'
+import { Route as AdminTeamRouteImport } from './routes/admin.team'
+import { Route as InviteInviteIdRouteImport } from './routes/invite.$inviteId'
 import { Route as MSlugRouteImport } from './routes/m.$slug'
 import { Route as OrdersIndexRouteImport } from './routes/orders.index'
 import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
@@ -86,6 +88,16 @@ const AdminPromotionsRoute = AdminPromotionsRouteImport.update({
   path: '/promotions',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTeamRoute = AdminTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AdminRoute,
+} as any)
+const InviteInviteIdRoute = InviteInviteIdRouteImport.update({
+  id: '/invite/$inviteId',
+  path: '/invite/$inviteId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MSlugRoute = MSlugRouteImport.update({
   id: '/m/$slug',
   path: '/m/$slug',
@@ -119,6 +131,8 @@ export interface FileRoutesByFullPath {
   '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/promotions': typeof AdminPromotionsRoute
+  '/admin/team': typeof AdminTeamRoute
+  '/invite/$inviteId': typeof InviteInviteIdRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin/': typeof AdminIndexRoute
@@ -135,6 +149,8 @@ export interface FileRoutesByTo {
   '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/promotions': typeof AdminPromotionsRoute
+  '/admin/team': typeof AdminTeamRoute
+  '/invite/$inviteId': typeof InviteInviteIdRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin': typeof AdminIndexRoute
@@ -154,6 +170,8 @@ export interface FileRoutesById {
   '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/promotions': typeof AdminPromotionsRoute
+  '/admin/team': typeof AdminTeamRoute
+  '/invite/$inviteId': typeof InviteInviteIdRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
   '/admin/': typeof AdminIndexRoute
@@ -174,6 +192,8 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/orders'
     | '/admin/promotions'
+    | '/admin/team'
+    | '/invite/$inviteId'
     | '/m/$slug'
     | '/orders/$orderId'
     | '/admin/'
@@ -190,6 +210,8 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/orders'
     | '/admin/promotions'
+    | '/admin/team'
+    | '/invite/$inviteId'
     | '/m/$slug'
     | '/orders/$orderId'
     | '/admin'
@@ -208,6 +230,8 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/orders'
     | '/admin/promotions'
+    | '/admin/team'
+    | '/invite/$inviteId'
     | '/m/$slug'
     | '/orders/$orderId'
     | '/admin/'
@@ -223,6 +247,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   OperatorRoute: typeof OperatorRoute
   OrdersRoute: typeof OrdersRouteWithChildren
+  InviteInviteIdRoute: typeof InviteInviteIdRoute
   MSlugRoute: typeof MSlugRoute
 }
 
@@ -312,6 +337,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPromotionsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/team': {
+      id: '/admin/team'
+      path: '/team'
+      fullPath: '/admin/team'
+      preLoaderRoute: typeof AdminTeamRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/invite/$inviteId': {
+      id: '/invite/$inviteId'
+      path: '/invite/$inviteId'
+      fullPath: '/invite/$inviteId'
+      preLoaderRoute: typeof InviteInviteIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/m/$slug': {
       id: '/m/$slug'
       path: '/m/$slug'
@@ -348,6 +387,7 @@ interface AdminRouteChildren {
   AdminBillingRoute: typeof AdminBillingRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPromotionsRoute: typeof AdminPromotionsRoute
+  AdminTeamRoute: typeof AdminTeamRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
 }
@@ -357,6 +397,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBillingRoute: AdminBillingRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPromotionsRoute: AdminPromotionsRoute,
+  AdminTeamRoute: AdminTeamRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
 }
@@ -384,6 +425,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   OperatorRoute: OperatorRoute,
   OrdersRoute: OrdersRouteWithChildren,
+  InviteInviteIdRoute: InviteInviteIdRoute,
   MSlugRoute: MSlugRoute,
 }
 export const routeTree = rootRouteImport

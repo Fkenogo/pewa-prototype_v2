@@ -1,4 +1,5 @@
 # PEWA — Master Interactive Prototype & Experience Reference
+
 **Build Revision: `v1.0.0-rc1` (Freeze Candidate)**
 
 > **Deliverable B — Prototype README**  
@@ -17,10 +18,12 @@ This interactive prototype demonstrates all 7 foundational and advanced experien
 ## 2. Quick Local Setup & Execution
 
 ### Prerequisites
+
 - Node.js 18+ or 20+
 - npm 9+
 
 ### Commands
+
 ```bash
 # 1. Install dependencies
 npm install
@@ -47,7 +50,9 @@ The application will be live at `http://localhost:3000`.
 The prototype is powered by a deterministic, client-persisted Zustand state engine (`src/lib/pewa/store.ts`).
 
 ### The Floating Scenario Control Panel
+
 Look at the **top right corner** of any screen for the floating purple button showing the active role (e.g., `Customer`, `Organisation Owner`).
+
 1. **Switch Roles**: Instantly switch between `Customer`, `Organisation Owner`, `Organisation Administrator`, `Business Manager`, `Operational Staff`, and `PEWA Operator`.
 2. **Jump to Key Views**: One-click navigation to Customer Home (`/`), Directory (`/directory`), Merchant Workspace (`/admin`), Merchant Orders (`/admin/orders`), Public Menus (`/m/:slug`), Operator Console (`/operator`), or Deliverables (`/docs`).
 3. **Simulate Offline Mode**: Click the **Offline Network Simulation** toggle to test network resilience and cached menu reading.
@@ -58,28 +63,29 @@ Look at the **top right corner** of any screen for the floating purple button sh
 
 ## 4. Key Route Directory
 
-| URL Route | Description | Target Role |
-| :--- | :--- | :--- |
-| `/` | Customer Home, search, recent venues, and Featured Offers | Customer / All |
-| `/directory` | Multi-criteria public menu directory | Customer / All |
-| `/m/green-garden-cafe` | Public menu for Green Garden Café (cart + contact) | Customer |
+| URL Route                | Description                                                  | Target Role               |
+| :----------------------- | :----------------------------------------------------------- | :------------------------ |
+| `/`                      | Customer Home, search, recent venues, and Featured Offers    | Customer / All            |
+| `/directory`             | Multi-criteria public menu directory                         | Customer / All            |
+| `/m/green-garden-cafe`   | Public menu for Green Garden Café (cart + contact)           | Customer                  |
 | `/m/grand-horizon-hotel` | Luxury hotel menu (public bistro + protected in-room dining) | Customer / In-House Guest |
-| `/m/cloudburger` | Delivery-only ghost kitchen menu | Customer |
-| `/onboarding` | 3-minute café quickstart setup wizard | Business Owner |
-| `/admin` | Business Workspace hub & QR code generator | Business Roles |
-| `/admin/menus/:menuId` | Menu authoring studio (sections, offerings, modifiers) | Owner / Admin / Manager |
-| `/admin/orders` | Merchant Order Cockpit & kitchen workflow | Owner / Admin / Staff |
-| `/admin/billing` | Acceptance units gauge, top-ups, and subscription engine | Owner / Admin |
-| `/admin/promotions` | Featured Offer campaign studio & in-menu badges | Owner / Admin / Manager |
-| `/admin/activity` | PEWA-observed digital interaction insights | Business Roles |
-| `/operator` | Dedicated PEWA Platform Operator Console | PEWA Operator |
-| `/docs` | Formal Deliverables Package (Deliverables A through H) | Reviewer / Founder |
+| `/m/cloudburger`         | Delivery-only ghost kitchen menu                             | Customer                  |
+| `/onboarding`            | 3-minute café quickstart setup wizard                        | Business Owner            |
+| `/admin`                 | Business Workspace hub & QR code generator                   | Business Roles            |
+| `/admin/menus/:menuId`   | Menu authoring studio (sections, offerings, modifiers)       | Owner / Admin / Manager   |
+| `/admin/orders`          | Merchant Order Cockpit & kitchen workflow                    | Owner / Admin / Staff     |
+| `/admin/billing`         | Acceptance units gauge, top-ups, and subscription engine     | Owner / Admin             |
+| `/admin/promotions`      | Featured Offer campaign studio & in-menu badges              | Owner / Admin / Manager   |
+| `/admin/activity`        | PEWA-observed digital interaction insights                   | Business Roles            |
+| `/operator`              | Dedicated PEWA Platform Operator Console                     | PEWA Operator             |
+| `/docs`                  | Formal Deliverables Package (Deliverables A through H)       | Reviewer / Founder        |
 
 ---
 
 ## 5. Formal Deliverables Package
 
 In accordance with Section 12 of the Master Builder Brief:
+
 - **Deliverable A — Working Interactive Prototype**: Responsive PWA runnable locally and via preview URL.
 - **Deliverable B — Prototype README**: This document (`README.md`).
 - **Deliverable C — Experience Map**: [`docs/EXPERIENCE_MAP.md`](docs/EXPERIENCE_MAP.md).

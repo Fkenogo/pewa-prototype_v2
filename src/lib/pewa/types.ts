@@ -44,10 +44,15 @@ export interface PersonalIdentity {
 export type MembershipRole = "owner" | "admin" | "manager" | "staff";
 export type MembershipStatus = "active" | "invited" | "revoked";
 
+export type ScopeType = "all" | "restricted";
+
+export type InvitationStatus = "pending" | "accepted" | "cancelled" | "expired";
+
 /**
  * Associates a PersonalIdentity with a specific Organisation and a distinct role
- * within that organisation (R3-A).
- * Supports one individual belonging to multiple organisations with distinct roles.
+ * within that organisation (R3-A, R3-B).
+ * Supports one individual belonging to multiple organisations with distinct roles,
+ * explicit location assignments, and restricted operational service points.
  */
 export interface OrganisationMembership {
   id: string;
@@ -55,8 +60,39 @@ export interface OrganisationMembership {
   orgId: string;
   role: MembershipRole;
   status: MembershipStatus;
-  venueId?: string | undefined;
+  venueId?: string | undefined; // preserved for backwards compatibility
+  venueIds?: string[] | undefined; // explicit multi-location assignments (R3-B)
+  servicePoints?: string[] | undefined; // assigned service points / stations (R3-B)
+  scopeType?: ScopeType | undefined; // "all" (organisation-wide) vs "restricted" (R3-B)
   joinedAt: string;
+  invitedAt?: string | undefined;
+  revokedAt?: string | undefined;
+  invitedBy?: string | undefined; // identityId of inviter
+}
+
+/**
+ * Prototype representation of a team invitation scoped to an organisation and recipient (R3-B).
+ * Note: Identity verification and token dispatch are prototype simulations; no external SMS/email is transmitted.
+ */
+export interface TeamInvitation {
+  id: string;
+  token: string;
+  orgId: string;
+  orgName: string;
+  recipientContact: string; // normalized email or mobile identifier
+  recipientName?: string | undefined;
+  role: MembershipRole;
+  scopeType: ScopeType;
+  venueIds?: string[] | undefined;
+  servicePoints?: string[] | undefined;
+  invitedById: string;
+  invitedByName: string;
+  createdAt: string;
+  expiresAt: string;
+  status: InvitationStatus;
+  acceptedAt?: string | undefined;
+  acceptedByIdentityId?: string | undefined;
+  cancelledAt?: string | undefined;
 }
 
 export type ContactVisibility = "public" | "private";
@@ -240,6 +276,7 @@ export interface Menu {
   name: string;
   description?: string | undefined;
   coverImage?: string | undefined;
+  servicePointName?: string | undefined;
   status: MenuStatus;
   sections: Section[];
   updatedAt: string;
@@ -326,6 +363,7 @@ export interface PewaState {
   personalIdentity?: PersonalIdentity | null | undefined;
   identities?: PersonalIdentity[] | undefined;
   memberships?: OrganisationMembership[] | undefined;
+  invitations?: TeamInvitation[] | undefined;
   onboardingDraft?: OnboardingDraft | null | undefined;
 }
 
@@ -367,6 +405,7 @@ export interface OrderRequest {
   resolvedAt?: string;
   declineReason?: string;
   unitConsumed: boolean;
+  servicePoint?: string | undefined;
 }
 
 export interface OrderPolicy {

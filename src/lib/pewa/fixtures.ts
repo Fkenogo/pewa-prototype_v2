@@ -11,6 +11,7 @@ import type {
   PromotionCampaign,
   ScenarioId,
   SharedOffering,
+  TeamInvitation,
   UsageDisputeCase,
   Venue,
 } from "./types";
@@ -768,11 +769,30 @@ export const SCENARIO_DEMO_IDENTITIES: PersonalIdentity[] = [
   SAMPLE_STAFF_IDENTITY,
 ];
 
+export const samplePendingInvitation: TeamInvitation = {
+  id: "inv_sample_brian",
+  token: "tok_sample_brian",
+  orgId: "org_ggc",
+  orgName: "Green Garden Café Ltd",
+  recipientContact: "brian@greengarden.example",
+  recipientName: "Brian Kiprop",
+  role: "manager",
+  scopeType: "restricted",
+  venueIds: ["venue_ggc"],
+  servicePoints: ["Main Counter", "Dine-in Area"],
+  invitedById: SAMPLE_FOUNDER_IDENTITY.id,
+  invitedByName: SAMPLE_FOUNDER_IDENTITY.fullName,
+  createdAt: "2026-10-21T09:00:00.000Z",
+  expiresAt: "2026-10-28T09:00:00.000Z",
+  status: "pending",
+};
+
 function buildScenarioMemberships(
   orgId: string,
   primaryRole: MembershipRole = "owner",
   venueId?: string,
 ): OrganisationMembership[] {
+  const venues = venueId ? [venueId] : [];
   return [
     {
       id: `mem_${orgId}_owner`,
@@ -781,6 +801,8 @@ function buildScenarioMemberships(
       role: "owner",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "all",
       joinedAt: "2026-10-19T07:55:00.000Z",
     },
     {
@@ -790,6 +812,8 @@ function buildScenarioMemberships(
       role: "admin",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "all",
       joinedAt: "2026-10-19T08:00:00.000Z",
     },
     {
@@ -799,6 +823,9 @@ function buildScenarioMemberships(
       role: "manager",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "restricted",
+      servicePoints: ["Main Counter", "Dine-in Area"],
       joinedAt: "2026-10-19T08:05:00.000Z",
     },
     {
@@ -808,6 +835,9 @@ function buildScenarioMemberships(
       role: "staff",
       status: "active",
       venueId,
+      venueIds: venues,
+      scopeType: "restricted",
+      servicePoints: ["Barista Station", "Main Counter"],
       joinedAt: "2026-10-19T08:10:00.000Z",
     },
   ];
@@ -862,6 +892,7 @@ export function buildScenario(
     personalIdentity: SAMPLE_FOUNDER_IDENTITY as PersonalIdentity | null,
     identities: SCENARIO_DEMO_IDENTITIES as PersonalIdentity[],
     memberships: buildScenarioMemberships("org_ggc", "owner", "venue_ggc"),
+    invitations: (id === "new-cafe" ? [] : [samplePendingInvitation]) as TeamInvitation[],
     onboardingDraft: null as OnboardingDraft | null,
   };
   if (id === "zero-units") {
@@ -887,6 +918,7 @@ export function buildScenario(
       personalIdentity: null,
       identities: [],
       memberships: [],
+      invitations: [],
       onboardingDraft: null,
     };
   }

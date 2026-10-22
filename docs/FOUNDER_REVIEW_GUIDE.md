@@ -159,11 +159,11 @@
 3. **CORR-C: Tag Semantics, Provenance & Disclaimers**:
    - In `/admin/menus/menu_ggc_allday`, open the item editor:
      - Suggested tags are structured into 3 distinct groups:
-       1. **Dietary & Consequential Claims** (Vegetarian, Vegan, Gluten-Free, Halal, etc.) with italic disclaimer: *"Merchant-asserted · Not certified by PEWA"*.
+       1. **Dietary & Consequential Claims** (Vegetarian, Vegan, Gluten-Free, Halal, etc.) with italic disclaimer: _"Merchant-asserted · Not certified by PEWA"_.
        2. **Promotional Highlights** (Chef's Special, Popular, Signature, etc.).
        3. **Preparation & Style Attributes** (Single Origin, Wood-Fired, Organic, etc.).
    - Visit `/m/grand-horizon-hotel` and tap `Wild Mushroom Risotto`:
-     - Item detail drawer shows highlighted dietary tags and the disclaimer: *"Dietary and attribute declarations are merchant-provided and have not been independently verified by PEWA."*
+     - Item detail drawer shows highlighted dietary tags and the disclaimer: _"Dietary and attribute declarations are merchant-provided and have not been independently verified by PEWA."_
 
 4. **CORR-D: Media Safeguards & Image Provenance**:
    - In the item editor, attach an image from the **Curated Prototype Library**:
@@ -189,6 +189,7 @@
 ## 4. Work Package R1-B — Mobile-First Menu Creation & Organisation Experience
 
 ### Overview of Capabilities Introduced in R1-B
+
 - **Guided 3-Step Mobile Creation Wizard (`CreateMenuModal.tsx`)**:
   - **Step 1 (Context)**: Intelligently auto-selects venue for single-venue businesses; presents clear checkboxes for multi-venue groups with "Select All" / "Clear" buttons.
   - **Step 2 (Details)**: Name input with 1-tap suggested names based on venue category (Café, Restaurant, Hotel, Bakery, Delivery), optional description, and Public vs Protected (In-Room / Resident) visibility toggle.
@@ -199,7 +200,7 @@
   - Direct quick actions: **Resume Draft / Edit**, **Customer Preview**, **Publish / Take down**, **Duplicate** (`(Copy)`), and **Delete**.
 - **Customer Preview Workflow**:
   - Customer route (`/m/:slug?preview=:menuId`) renders draft menus safely without publishing them to public directory or search.
-  - Prominent top preview banner explains: *"Draft Preview Mode — This menu is in draft and not yet visible to the public."* with a 1-tap **Back to editor** button.
+  - Prominent top preview banner explains: _"Draft Preview Mode — This menu is in draft and not yet visible to the public."_ with a 1-tap **Back to editor** button.
 - **In-Editor Organisation Controls (`/admin/menus/:menuId`)**:
   - Menu Settings drawer to update name, description, venue assignments, and protected visibility at any time.
   - Batch add suggested sections or custom sections directly in the editor.
@@ -212,22 +213,24 @@
 ### Scenario Walkthroughs for Founder Review
 
 #### Scenario A — New Café Menu Creation
+
 1. Open the floating Scenario Panel and select **New café** (`new-cafe`).
 2. Complete onboarding or navigate to `/admin` as Owner.
 3. Tap **+ New Menu**.
 4. Notice **Step 1 (Context)** automatically confirms the single café context without unnecessary dropdowns.
 5. In **Step 2 (Details)**:
    - Tap one of the suggested names (e.g., `All-Day Menu` or `Breakfast & Morning`) or type a custom name.
-   - Enter an optional description (e.g., *"Artisan espresso, sourdough bakes, and breakfast classics"*).
+   - Enter an optional description (e.g., _"Artisan espresso, sourdough bakes, and breakfast classics"_).
 6. In **Step 3 (Categories & Sections)**:
    - Tap suggested category chips to batch-select (e.g. `Espresso & Coffee`, `Pastries & Bakes`).
    - Type a custom section name (e.g., `Daily Sandwiches`) and tap **+ Add**.
 7. Tap **Create & Open Menu**:
    - The editor opens immediately at `/admin/menus/:menuId` with the 3 sections pre-created.
-8. Add a sample offering using the R1-A item editor (e.g., *Butter Croissant*, 450 KES, add tag *Freshly Baked*, pick library image).
+8. Add a sample offering using the R1-A item editor (e.g., _Butter Croissant_, 450 KES, add tag _Freshly Baked_, pick library image).
 9. Tap **Publish menu**: notice validation passes and status changes to `Published`.
 
 #### Scenario B — Established Restaurant (Second Menu & Draft Isolation)
+
 1. In the Scenario Panel, select **Established restaurant** (`established-restaurant`).
 2. Navigate to `/admin`. Notice the primary menu (`All-Day Menu`) is currently **Published**.
 3. Tap **+ New Menu**:
@@ -242,6 +245,7 @@
    - Tap **Back to editor** to return seamlessly.
 
 #### Scenario C — Multi-Venue Business Assignment & Isolation
+
 1. In the Scenario Panel, select **Multi-brand** (`multi-brand`).
 2. Go to `/admin`. Notice the organization has 3 distinct venues.
 3. Tap **+ New Menu**:
@@ -257,6 +261,7 @@
    - `/m/gelato-craft-lab` does NOT display the sourdough menu.
 
 #### Scenario D — Hotel Public vs Protected In-Room Dining Isolation
+
 1. In the Scenario Panel, select **Hotel** (`hotel`).
 2. In `/admin`, observe the existing menus:
    - `Terrace Bistro Menu` (Public)
@@ -269,6 +274,7 @@
 5. In `/m/grand-horizon-hotel`, verify protected menus require verified room credentials.
 
 #### Scenario E — Interrupted Setup & Draft Persistence
+
 1. In `/admin`, tap **+ New Menu** and create a draft menu with 3 sections.
 2. In the editor, add 1 item to the draft.
 3. Without publishing, navigate away (e.g. tap **Customer Home**, switch roles in the Scenario Panel, or refresh the browser).
@@ -278,35 +284,34 @@
    - The editor opens with all sections, items, and metadata exactly as left.
 
 #### Scenario F — Publication Correction, Draft vs Published State & Safe Archiving
+
 1. **Unpublished Draft Changes on Live Menu (CORR-B)**:
    - Select **Established restaurant** (`established-restaurant`).
    - Open the published **All-Day Menu** in `/admin/menus/:menuId`.
-   - Edit the price of *Flat White* from 280 to 350 KES.
-   - Notice the amber alert banner appears: *"Unpublished Draft Changes Pending — Customers continue seeing the last published snapshot until you publish these changes."*
-   - Open `/m/green-garden-cafe` as a customer in another tab: *Flat White* remains 280 KES on the live public menu.
+   - Edit the price of _Flat White_ from 280 to 350 KES.
+   - Notice the amber alert banner appears: _"Unpublished Draft Changes Pending — Customers continue seeing the last published snapshot until you publish these changes."_
+   - Open `/m/green-garden-cafe` as a customer in another tab: _Flat White_ remains 280 KES on the live public menu.
    - Return to the editor and tap **Customer Preview**: the draft preview shows the updated 350 KES price with the Merchant Preview banner.
    - Tap **Publish changes**: the live customer route now instantly serves the updated 350 KES price.
 
 2. **Immediate Availability Bypass (CORR-B)**:
-   - In `/admin/menus/:menuId`, toggle *Cardamom Mandazi* to **Sold out**.
+   - In `/admin/menus/:menuId`, toggle _Cardamom Mandazi_ to **Sold out**.
    - Notice it is marked sold out immediately in both working draft and published snapshot without needing full republication.
-   - Refresh the customer menu at `/m/green-garden-cafe`: *Cardamom Mandazi* is instantly marked *Sold out today*.
+   - Refresh the customer menu at `/m/green-garden-cafe`: _Cardamom Mandazi_ is instantly marked _Sold out today_.
 
 3. **Controlled Draft Preview Access & Ordering Denial (CORR-A)**:
-   - In `/admin`, create a new draft menu *Secret Chef's Table*.
+   - In `/admin`, create a new draft menu _Secret Chef's Table_.
    - Copy the preview URL (`/m/green-garden-cafe?preview=:menuId`).
    - Switch role to **Customer** in the Scenario Control Panel and visit that preview URL.
-   - Notice the preview is denied: the customer sees the live public menu and an explanatory notice: *"Preview link unavailable: requires merchant authorisation and venue assignment."*
+   - Notice the preview is denied: the customer sees the live public menu and an explanatory notice: _"Preview link unavailable: requires merchant authorisation and venue assignment."_
    - Switch role back to **Organisation Owner**: the draft preview loads with the prominent amber Merchant Preview Banner.
-   - Tap on an item in the draft preview: notice the order button is disabled with *"Ordering disabled in draft preview"* to prevent structured order leakage.
+   - Tap on an item in the draft preview: notice the order button is disabled with _"Ordering disabled in draft preview"_ to prevent structured order leakage.
 
 4. **Safe Archiving vs Hard Deletion (CORR-C)**:
    - In `/admin`, tap **Duplicate** on a menu to create an uncommitted draft copy.
    - Click **Delete** on the uncommitted draft copy: it is discarded and permanently removed from state.
-   - Now click **Delete** on the published *All-Day Menu*:
+   - Now click **Delete** on the published _All-Day Menu_:
      - A confirmation dialog explains that because this menu was published or has order history, it will be safely archived to preserve records.
      - Upon confirmation, status updates to `Archived`.
      - The menu is immediately excluded from customer discovery (`/` and `/directory`) and public venue pages (`/m/:slug`).
      - Past customer orders and receipts retain their original snapshots and line references with complete audit integrity.
-
-
