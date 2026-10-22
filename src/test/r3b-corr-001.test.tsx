@@ -305,7 +305,7 @@ describe("PEWA PROTOTYPE — R3-B CORR-001: Scope Delegation and Invitation Acce
       (m) => m.identityId === user.id && m.status === "active",
     );
     expect(initialMems.length).toBe(1);
-    expect(initialMems[0].orgId).toBe("org_ggc");
+    expect(initialMems[0]?.orgId).toBe("org_ggc");
 
     // Create an invitation to org_horizon
     const horizonInvite: TeamInvitation = {

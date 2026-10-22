@@ -1414,7 +1414,29 @@ export const usePewa = create<PewaState & Actions>()(
               : effectiveRole === "manager" && managerVenues.length > 0 && !input.scopeType
                 ? managerVenues
                 : undefined;
-          const assignedServicePoints = input.servicePoints;
+
+          const managerStations =
+            effectiveRole === "manager" &&
+            callerMembership?.servicePoints &&
+            callerMembership.servicePoints.length > 0
+              ? callerMembership.servicePoints
+              : undefined;
+
+          let assignedServicePoints = input.servicePoints;
+
+          // For restricted Manager: omitted servicePoints defaults to manager's authorised stations.
+          // Explicitly empty servicePoints [] is rejected because it would confer venue-wide station access.
+          if (effectiveRole === "manager" && managerStations) {
+            if (assignedServicePoints === undefined) {
+              assignedServicePoints = [...managerStations];
+            } else if (assignedServicePoints.length === 0) {
+              return {
+                success: false,
+                error:
+                  "Managers restricted to specific stations cannot grant venue-wide station access.",
+              };
+            }
+          }
 
           // Rule 2 & 1: Restricted Managers must not issue organisation-wide invitations
           if (effectiveRole === "manager") {
@@ -1437,20 +1459,16 @@ export const usePewa = create<PewaState & Actions>()(
               }
             }
 
-            if (callerMembership?.servicePoints && callerMembership.servicePoints.length > 0) {
-              const managerStationsLower = callerMembership.servicePoints.map((sp) =>
-                sp.toLowerCase().trim(),
+            if (managerStations && assignedServicePoints && assignedServicePoints.length > 0) {
+              const managerStationsLower = managerStations.map((sp) => sp.toLowerCase().trim());
+              const unpermittedStations = assignedServicePoints.filter(
+                (sp) => !managerStationsLower.includes(sp.toLowerCase().trim()),
               );
-              if (assignedServicePoints && assignedServicePoints.length > 0) {
-                const unpermittedStations = assignedServicePoints.filter(
-                  (sp) => !managerStationsLower.includes(sp.toLowerCase().trim()),
-                );
-                if (unpermittedStations.length > 0) {
-                  return {
-                    success: false,
-                    error: `Managers cannot delegate service points (${unpermittedStations.join(", ")}) beyond their own assigned stations.`,
-                  };
-                }
+              if (unpermittedStations.length > 0) {
+                return {
+                  success: false,
+                  error: `Managers cannot delegate service points (${unpermittedStations.join(", ")}) beyond their own assigned stations.`,
+                };
               }
             }
           }
@@ -1466,6 +1484,29 @@ export const usePewa = create<PewaState & Actions>()(
                 success: false,
                 error: "Assigned locations must belong to the target organisation.",
               };
+            }
+          }
+
+          // Validate selected service points against the selected venues' actual configured contexts
+          if (
+            assignedVenues &&
+            assignedVenues.length > 0 &&
+            assignedServicePoints &&
+            assignedServicePoints.length > 0
+          ) {
+            const targetVenues = s.venues.filter((v) => assignedVenues.includes(v.id));
+            const configuredContexts = targetVenues.flatMap((v) => v.serviceContexts || []);
+            if (configuredContexts.length > 0) {
+              const configuredLower = configuredContexts.map((c) => c.toLowerCase().trim());
+              const unconfigured = assignedServicePoints.filter(
+                (sp) => !configuredLower.includes(sp.toLowerCase().trim()),
+              );
+              if (unconfigured.length > 0) {
+                return {
+                  success: false,
+                  error: `Selected service points (${unconfigured.join(", ")}) must be configured in the assigned venue(s).`,
+                };
+              }
             }
           }
 
@@ -1751,6 +1792,9 @@ export const usePewa = create<PewaState & Actions>()(
           const orgVenues = s.venues.filter((v) => v.orgId === s.organisation?.id);
           const orgVenueIds = orgVenues.map((v) => v.id);
 
+          let nextServicePoints =
+            input.servicePoints !== undefined ? input.servicePoints : targetMem.servicePoints;
+
           // Rule 1 & Rule 2: Manager containment checks
           if (effectiveRole === "manager") {
             const callerMem = getActiveOrganisationMembership(s);
@@ -1781,12 +1825,24 @@ export const usePewa = create<PewaState & Actions>()(
                 };
               }
             }
+
             if (callerMem.servicePoints && callerMem.servicePoints.length > 0) {
+              // Submitting an empty station list would confer venue-wide access; reject for restricted managers
+              if (input.servicePoints && input.servicePoints.length === 0) {
+                return {
+                  success: false,
+                  error:
+                    "Managers restricted to specific stations cannot grant venue-wide station access.",
+                };
+              }
+              if (nextServicePoints === undefined) {
+                nextServicePoints = [...callerMem.servicePoints];
+              }
               const managerStationsLower = callerMem.servicePoints.map((sp) =>
                 sp.toLowerCase().trim(),
               );
-              if (input.servicePoints && input.servicePoints.length > 0) {
-                const unpermittedStations = input.servicePoints.filter(
+              if (nextServicePoints && nextServicePoints.length > 0) {
+                const unpermittedStations = nextServicePoints.filter(
                   (sp) => !managerStationsLower.includes(sp.toLowerCase().trim()),
                 );
                 if (unpermittedStations.length > 0) {
@@ -1810,6 +1866,26 @@ export const usePewa = create<PewaState & Actions>()(
             }
           }
 
+          // Validate selected service points against the selected venues' actual configured contexts
+          const targetVenueIds =
+            input.venueIds || targetMem.venueIds || (targetMem.venueId ? [targetMem.venueId] : []);
+          if (targetVenueIds.length > 0 && nextServicePoints && nextServicePoints.length > 0) {
+            const targetVenues = s.venues.filter((v) => targetVenueIds.includes(v.id));
+            const configuredContexts = targetVenues.flatMap((v) => v.serviceContexts || []);
+            if (configuredContexts.length > 0) {
+              const configuredLower = configuredContexts.map((c) => c.toLowerCase().trim());
+              const unconfigured = nextServicePoints.filter(
+                (sp) => !configuredLower.includes(sp.toLowerCase().trim()),
+              );
+              if (unconfigured.length > 0) {
+                return {
+                  success: false,
+                  error: `Selected service points (${unconfigured.join(", ")}) must be configured in the assigned venue(s).`,
+                };
+              }
+            }
+          }
+
           // Rule 6: Empty restricted assignments check
           if (input.scopeType === "restricted") {
             if (!input.venueIds || input.venueIds.length === 0) {
@@ -1826,10 +1902,13 @@ export const usePewa = create<PewaState & Actions>()(
                 ? {
                     ...m,
                     role: input.role || m.role,
-                    scopeType: input.scopeType,
-                    venueIds: input.venueIds,
+                    scopeType: input.scopeType !== undefined ? input.scopeType : m.scopeType,
+                    venueIds: input.venueIds !== undefined ? input.venueIds : m.venueIds,
                     venueId: input.venueIds?.[0] ?? m.venueId,
-                    servicePoints: input.servicePoints,
+                    servicePoints:
+                      nextServicePoints && nextServicePoints.length > 0
+                        ? nextServicePoints
+                        : undefined,
                   }
                 : m,
             ),
@@ -3275,14 +3354,15 @@ export function canActorOperateScope(
     return false;
   }
 
-  if (
-    target.servicePoint &&
-    activeMembership.servicePoints &&
-    activeMembership.servicePoints.length > 0
-  ) {
-    const actorPoints = activeMembership.servicePoints.map((p) => p.toLowerCase().trim());
-    if (!actorPoints.includes(target.servicePoint.toLowerCase().trim())) {
-      return false;
+  if (target.servicePoint) {
+    if (activeMembership.servicePoints !== undefined) {
+      if (activeMembership.servicePoints.length === 0) {
+        return false;
+      }
+      const actorPoints = activeMembership.servicePoints.map((p) => p.toLowerCase().trim());
+      if (!actorPoints.includes(target.servicePoint.toLowerCase().trim())) {
+        return false;
+      }
     }
   }
 
