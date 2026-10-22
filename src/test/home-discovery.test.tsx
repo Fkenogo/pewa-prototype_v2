@@ -381,16 +381,22 @@ describe("R2-A: PEWA Home Discovery & Navigation Alignment", () => {
 
       const camp = initialCampaigns[0]!;
       expect(camp.active).toBe(true);
+      const initialImpressions = camp.impressions;
       const initialClicks = camp.clicks;
       const initialSpent = camp.spent;
 
-      // Render Home discovery, which mounts and records impression
+      // Render Home discovery: mount alone does not charge an impression until qualifying viewport exposure (R2-D CORR-001)
       render(<Discovery />);
+      expect(usePewa.getState().campaigns.find((c) => c.id === camp.id)?.impressions).toBe(
+        initialImpressions,
+      );
 
-      // Click the featured offer
+      // Record a qualifying exposure impression and click the featured offer
+      usePewa.getState().recordPromotionImpression(camp.id);
       usePewa.getState().recordPromotionClick(camp.id);
 
       const updated = usePewa.getState().campaigns.find((c) => c.id === camp.id);
+      expect(updated?.impressions).toBe(initialImpressions + 1);
       expect(updated?.clicks).toBe(initialClicks + 1);
       expect(updated?.spent).toBeGreaterThan(initialSpent); // Impression incremented spend
 
