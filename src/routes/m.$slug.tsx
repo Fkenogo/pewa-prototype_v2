@@ -192,10 +192,17 @@ function PublicMenu() {
         </div>
         {venue.tagline && <p className="opacity-80">{venue.tagline}</p>}
         <p className="mt-2 flex items-center gap-1 text-sm opacity-80">
-          <MapPin className="h-4 w-4" />{" "}
-          {venue.deliveryOnly ? `Delivers to ${venue.serviceArea}` : venue.address}
+          <MapPin className="h-4 w-4 shrink-0" />{" "}
+          {venue.deliveryOnly
+            ? `Delivers to ${venue.serviceArea || "declared dispatch area"} · No walk-in storefront`
+            : venue.address || "Location details available on inquiry"}
         </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
+          {venue.deliveryOnly && (
+            <span className="rounded-full bg-amber-400/25 px-2.5 py-1 text-xs font-semibold text-amber-100">
+              🛵 Delivery Only
+            </span>
+          )}
           {venue.services.map((s) => (
             <span
               key={s}

@@ -114,10 +114,14 @@ function OrderCockpit() {
         </div>
 
         {orgVenues.length > 1 && (
-          <p className="text-[11px] text-muted-foreground italic border-t pt-2">
+          <p
+            data-testid="staff-station-scope-note"
+            className="text-[11px] text-muted-foreground italic border-t pt-2"
+          >
             Prototype note: In this demonstration prototype, staff can switch their active service
-            point across organisation venues. A production deployment will bind staff credentials to
-            a verified single service station.
+            point across organisation venues. Production staff assignments must be enforced by
+            verified organisation, venue and service-point permissions. A UI station selector is not
+            an authorisation boundary.
           </p>
         )}
       </div>
