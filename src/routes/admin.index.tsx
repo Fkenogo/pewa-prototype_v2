@@ -30,6 +30,7 @@ import {
   canManageBilling,
   formatPrice,
   getActiveOrganisationMembership,
+  getEffectiveBusinessRole,
   hasUnpublishedDraftChanges,
   ROLE_LABELS,
   usePewa,
@@ -69,7 +70,6 @@ function Overview() {
     organisation,
     venues,
     menus,
-    role,
     personalIdentity,
     orderPolicy,
     simulatedTime,
@@ -83,6 +83,7 @@ function Overview() {
     deleteMenu,
   } = state;
   const activeMembership = getActiveOrganisationMembership(state);
+  const effectiveRole = getEffectiveBusinessRole(state);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [inviteTeamModalOpen, setInviteTeamModalOpen] = useState(false);
@@ -130,7 +131,7 @@ function Overview() {
   const qrUrl = activeQrVenue ? `${origin}/m/${activeQrVenue.slug}` : "";
   const totalUnits = orderPolicy.included + orderPolicy.topUp;
   const isZeroUnits = totalUnits === 0 && !orderPolicy.expired;
-  const author = canAuthorMenus(role);
+  const author = canAuthorMenus(effectiveRole);
 
   return (
     <main className="mx-auto max-w-3xl px-4 pt-5 pb-24">
@@ -144,7 +145,7 @@ function Overview() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {(role === "owner" || role === "admin") && (
+          {(effectiveRole === "owner" || effectiveRole === "admin") && (
             <Button
               variant="outline"
               size="sm"
@@ -156,7 +157,7 @@ function Overview() {
               Invite your team
             </Button>
           )}
-          {canManageBilling(role) && (
+          {canManageBilling(effectiveRole) && (
             <Button asChild variant="outline" size="sm" className="h-9 shrink-0">
               <Link to="/admin/billing">
                 <Fuel className="mr-1.5 h-3.5 w-3.5 text-primary" />
@@ -196,10 +197,10 @@ function Overview() {
                   {personalIdentity ? (
                     <>
                       Signed in as <b className="text-foreground">{personalIdentity.fullName}</b> (
-                      {ROLE_LABELS[activeMembership?.role || role]})
+                      {ROLE_LABELS[activeMembership?.role || effectiveRole]})
                     </>
                   ) : (
-                    <>Active workspace role: {ROLE_LABELS[role]}</>
+                    <>Active workspace role: {ROLE_LABELS[effectiveRole]}</>
                   )}
                   {organisation.primaryContact && (
                     <>
@@ -415,7 +416,7 @@ function Overview() {
       )}
 
       {/* Zero Units Alert */}
-      {isZeroUnits && canManageBilling(role) && (
+      {isZeroUnits && canManageBilling(effectiveRole) && (
         <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-50/60 p-3 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-200">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />

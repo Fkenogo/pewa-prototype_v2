@@ -11,7 +11,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { canAuthorMenus, formatPrice, getLiveMenu, usePewa } from "@/lib/pewa/store";
+import {
+  canAuthorMenus,
+  formatPrice,
+  getEffectiveBusinessRole,
+  getLiveMenu,
+  usePewa,
+} from "@/lib/pewa/store";
 import type { Menu, Offering } from "@/lib/pewa/types";
 import { ContactDrawer } from "@/components/pewa/ContactDrawer";
 import {
@@ -66,8 +72,8 @@ function PublicMenu() {
   const { slug } = Route.useParams();
   const search = Route.useSearch();
   const previewMenuId = search.preview;
+  const state = usePewa();
   const {
-    role,
     organisation,
     venues,
     menus,
@@ -81,7 +87,8 @@ function PublicMenu() {
     guestSession,
     verifyGuestSession,
     clearGuestSession,
-  } = usePewa();
+  } = state;
+  const effectiveRole = getEffectiveBusinessRole(state);
   const allVenues = getAuthoritativeVenues({ venues });
   const allMenus = getAuthoritativeMenus({ menus });
   const venue = allVenues.find((v) => v.slug === slug);
@@ -90,7 +97,7 @@ function PublicMenu() {
   // Preview access requires an explicitly authorised simulated merchant role with appropriate organisation/venue scope.
   // The preview URL alone (?preview=...) must not grant access to private or unpublished content for unauthorised users.
   const isAuthorisedMerchant =
-    canAuthorMenus(role) && !!organisation && !!venue && organisation.id === venue.orgId;
+    canAuthorMenus(effectiveRole) && !!organisation && !!venue && organisation.id === venue.orgId;
 
   // Find preview menu ONLY if authorised and strictly eligible for this venue (no organisation-only cross-venue fallback)
   const previewMenu =
@@ -150,7 +157,7 @@ function PublicMenu() {
             <Eye className="h-4 w-4 shrink-0" />
             <span className="truncate">
               Merchant Preview ({previewMenu.status.toUpperCase()}): “{previewMenu.name}” ·{" "}
-              {venue.name} ({role.toUpperCase()})
+              {venue.name} ({effectiveRole.toUpperCase()})
             </span>
           </div>
           <Link

@@ -14,7 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { canManageBilling, usePewa } from "@/lib/pewa/store";
+import { canManageBilling, getEffectiveBusinessRole, usePewa } from "@/lib/pewa/store";
 import { canAdmitOrder } from "@/lib/pewa/ordering";
 import { pageHead } from "@/lib/pewa/metadata";
 import { Button } from "@/components/ui/button";
@@ -45,20 +45,21 @@ const TOP_UP_BUNDLES = [
 ];
 
 function BillingDashboard() {
+  const state = usePewa();
   const {
     organisation,
-    role,
     orderPolicy,
     activity,
     addTopUpUnits,
     renewBillingCycle,
     setSubscriptionExpired,
-  } = usePewa();
+  } = state;
+  const effectiveRole = getEffectiveBusinessRole(state);
 
   const [topUpModalOpen, setTopUpModalOpen] = useState(false);
   const [selectedBundle, setSelectedBundle] = useState<number>(100);
 
-  if (!canManageBilling(role)) {
+  if (!canManageBilling(effectiveRole)) {
     return (
       <main className="mx-auto max-w-lg px-4 pt-16 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">

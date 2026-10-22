@@ -58,8 +58,6 @@ function AdminLayout() {
     organisation,
     memberships,
   });
-  const lacksMembership =
-    isBusinessRole(role) && Boolean(organisation) && !isBusinessRole(effectiveRole);
 
   const navItems = useMemo(() => {
     if (effectiveRole === "staff") {
@@ -91,39 +89,20 @@ function AdminLayout() {
     return items;
   }, [effectiveRole]);
 
-  if (!isBusinessRole(effectiveRole)) {
+  if (!isBusinessRole(role)) {
     return (
       <Centered>
         <ShieldAlert className="h-10 w-10 text-muted-foreground" />
-        <h1 className="text-2xl">
-          {lacksMembership ? "Organisation membership required" : "Business workspace only"}
-        </h1>
+        <h1 className="text-2xl">Business workspace only</h1>
         <p className="text-muted-foreground">
-          {lacksMembership ? (
-            <>
-              Personal identity <b>{personalIdentity?.fullName || "Unverified User"}</b> does not
-              hold an active membership in <b>{organisation?.name}</b>. Switching a visual role
-              selector alone does not grant organisation permissions.
-            </>
-          ) : (
-            <>
-              You're acting as <b>{ROLE_LABELS[role]}</b>.{" "}
-              {role === "operator"
-                ? "Operators can't edit a business's menus or prices."
-                : "Customers don't need an account to browse."}
-            </>
-          )}
+          You're acting as <b>{ROLE_LABELS[role]}</b>.{" "}
+          {role === "operator"
+            ? "Operators can't edit a business's menus or prices."
+            : "Customers don't need an account to browse."}
         </p>
         <p className="text-sm text-muted-foreground">
-          {lacksMembership
-            ? "Register your own business or select an authorised membership in Scenario Control."
-            : "Switch role from the panel in the top-right."}
+          Switch role from the panel in the top-right.
         </p>
-        {lacksMembership && (
-          <Button asChild className="mt-3 h-10" size="sm">
-            <Link to="/onboarding">Register a business</Link>
-          </Button>
-        )}
         {role === "operator" && (
           <Button asChild className="mt-3 h-10" size="sm">
             <Link to="/operator">Open PEWA Operator Console</Link>
@@ -139,6 +118,25 @@ function AdminLayout() {
         <p className="text-muted-foreground">Set up your business to start building a menu.</p>
         <Button asChild size="lg" className="h-12">
           <Link to="/onboarding">Start setup</Link>
+        </Button>
+      </Centered>
+    );
+  }
+  if (!isBusinessRole(effectiveRole)) {
+    return (
+      <Centered>
+        <ShieldAlert className="h-10 w-10 text-muted-foreground" />
+        <h1 className="text-2xl">Organisation membership required</h1>
+        <p className="text-muted-foreground">
+          Personal identity <b>{personalIdentity?.fullName || "Unverified User"}</b> does not hold
+          an active membership in <b>{organisation.name}</b>. Switching a visual role selector alone
+          does not grant organisation permissions.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Register your own business or select an authorised membership in Scenario Control.
+        </p>
+        <Button asChild className="mt-3 h-10" size="sm">
+          <Link to="/onboarding">Register a business</Link>
         </Button>
       </Centered>
     );

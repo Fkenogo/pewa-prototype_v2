@@ -136,6 +136,7 @@ type Actions = {
     identityId: string;
     orgId: string;
     role: MembershipRole;
+    status?: OrganisationMembership["status"] | undefined;
     venueId?: string | undefined;
   }) => OrganisationMembership;
   saveOnboardingDraft: (draft: Partial<OnboardingDraft>) => void;
@@ -562,12 +563,26 @@ export function evaluateCampaignDelivery(
 export const usePewa = create<PewaState & Actions>()(
   persist(
     (set, get) => {
-      const mutateMenu = (menuId: string, fn: (sections: Section[]) => Section[]) =>
-        set((s) => ({
-          menus: s.menus.map((m) =>
+      const mutateMenu = (
+        menuId: string,
+        fn: (sections: Section[]) => Section[],
+        options?: { allowAvailabilityOnly?: boolean },
+      ): boolean => {
+        const s = get();
+        const effectiveRole = getEffectiveBusinessRole(s);
+        const permitted = options?.allowAvailabilityOnly
+          ? canToggleAvailability(effectiveRole)
+          : canAuthorMenus(effectiveRole);
+        if (!permitted) return false;
+        const target = s.menus.find((m) => m.id === menuId);
+        if (!target || !s.organisation || target.orgId !== s.organisation.id) return false;
+        set((state) => ({
+          menus: state.menus.map((m) =>
             m.id === menuId ? { ...m, sections: fn(m.sections), updatedAt: now() } : m,
           ),
         }));
+        return true;
+      };
       const initialSeed = buildScenario("new-cafe");
       return {
         ...initialSeed,
@@ -735,11 +750,12 @@ export const usePewa = create<PewaState & Actions>()(
         },
         acceptOrder: (id) => {
           const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
           const order = s.orders.find((o) => o.id === id);
           if (
             !order ||
             order.status !== "pending" ||
-            !canManageOrders(s.role) ||
+            !canManageOrders(effectiveRole) ||
             order.orgId !== s.organisation?.id
           )
             return false;
@@ -763,11 +779,12 @@ export const usePewa = create<PewaState & Actions>()(
         },
         declineOrder: (id, reason) => {
           const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
           const order = s.orders.find((o) => o.id === id);
           if (
             !order ||
             order.status !== "pending" ||
-            !canManageOrders(s.role) ||
+            !canManageOrders(effectiveRole) ||
             order.orgId !== s.organisation?.id ||
             !reason.trim()
           )
@@ -787,11 +804,12 @@ export const usePewa = create<PewaState & Actions>()(
         },
         markOrderReady: (id) => {
           const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
           const order = s.orders.find((o) => o.id === id);
           if (
             !order ||
             order.status !== "accepted" ||
-            !canManageOrders(s.role) ||
+            !canManageOrders(effectiveRole) ||
             order.orgId !== s.organisation?.id
           )
             return false;
@@ -823,6 +841,7 @@ export const usePewa = create<PewaState & Actions>()(
         },
         addTopUpUnits: (count) => {
           const s = get();
+          if (!canManageBilling(getEffectiveBusinessRole(s)) || !s.organisation) return;
           const policy = {
             ...s.orderPolicy,
             topUp: Math.max(0, s.orderPolicy.topUp + count),
@@ -835,6 +854,7 @@ export const usePewa = create<PewaState & Actions>()(
         },
         renewBillingCycle: () => {
           const s = get();
+          if (!canManageBilling(getEffectiveBusinessRole(s)) || !s.organisation) return;
           const renewDate = new Date();
           renewDate.setDate(renewDate.getDate() + 30);
           const policy = {
@@ -853,6 +873,7 @@ export const usePewa = create<PewaState & Actions>()(
         },
         setSubscriptionExpired: (expired) => {
           const s = get();
+          if (!canManageBilling(getEffectiveBusinessRole(s)) || !s.organisation) return;
           set({
             orderPolicy: { ...s.orderPolicy, expired },
           });
@@ -889,15 +910,24 @@ export const usePewa = create<PewaState & Actions>()(
           set({ guestSession: null });
         },
         createCampaign: (input) => {
+          const s = get();
+          if (
+            !canManagePromotions(getEffectiveBusinessRole(s)) ||
+            !s.organisation ||
+            (input.orgId && input.orgId !== s.organisation.id)
+          ) {
+            return "";
+          }
           const id = uid("camp");
           const campaign = {
             ...input,
+            orgId: s.organisation.id,
             id,
             spent: 0,
             impressions: 0,
             clicks: 0,
           };
-          set((s) => ({ campaigns: [campaign, ...s.campaigns] }));
+          set((state) => ({ campaigns: [campaign, ...state.campaigns] }));
           get().log({
             kind: "promo.created",
             message: `Campaign “${input.title}” launched with budget $${input.budget}`,
@@ -905,20 +935,26 @@ export const usePewa = create<PewaState & Actions>()(
           return id;
         },
         toggleCampaign: (id) => {
+          const s = get();
+          if (!canManagePromotions(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const target = s.campaigns.find((c) => c.id === id);
+          if (!target || target.orgId !== s.organisation.id) return;
           let title = "";
           let active = false;
-          set((s) => ({
-            campaigns: s.campaigns.map((c) => {
+          set((state) => ({
+            campaigns: state.campaigns.map((c) => {
               if (c.id !== id) return c;
               title = c.title;
               active = !c.active;
               return { ...c, active };
             }),
           }));
-          get().log({
-            kind: "promo.toggled",
-            message: `Campaign “${title}” ${active ? "activated" : "paused"}`,
-          });
+          if (title) {
+            get().log({
+              kind: "promo.toggled",
+              message: `Campaign “${title}” ${active ? "activated" : "paused"}`,
+            });
+          }
         },
         recordPromotionImpression: (campaignId) => {
           // Simulated non-authoritative exposure accounting per CORR-B & R2-D:
@@ -1025,18 +1061,37 @@ export const usePewa = create<PewaState & Actions>()(
           const sc = buildScenario(id);
           const currentRole = get().role;
           const nextRole = id === "new-cafe" ? "owner" : sc.role || currentRole;
+          const syncedMemberships =
+            sc.organisation && sc.personalIdentity && isBusinessRole(nextRole)
+              ? (sc.memberships || []).map((m) =>
+                  m.identityId === sc.personalIdentity?.id && m.orgId === sc.organisation?.id
+                    ? { ...m, role: nextRole as MembershipRole, status: "active" as const }
+                    : m,
+                )
+              : sc.memberships;
           set({
             ...sc,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
+            memberships: syncedMemberships,
           });
         },
         reset: () => {
           const sc = buildScenario(get().scenario);
+          const nextRole = get().role;
+          const syncedMemberships =
+            sc.organisation && sc.personalIdentity && isBusinessRole(nextRole)
+              ? (sc.memberships || []).map((m) =>
+                  m.identityId === sc.personalIdentity?.id && m.orgId === sc.organisation?.id
+                    ? { ...m, role: nextRole as MembershipRole, status: "active" as const }
+                    : m,
+                )
+              : sc.memberships;
           set({
             ...sc,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
-            role: get().role,
+            role: nextRole,
+            memberships: syncedMemberships,
           });
         },
         log: (e) =>
@@ -1109,7 +1164,7 @@ export const usePewa = create<PewaState & Actions>()(
             identityId: input.identityId,
             orgId: input.orgId,
             role: input.role,
-            status: "active",
+            status: input.status || "active",
             venueId: input.venueId ?? existing?.venueId,
             joinedAt: existing?.joinedAt || now(),
           };
@@ -1348,17 +1403,20 @@ export const usePewa = create<PewaState & Actions>()(
           return menuId;
         },
         addMenu: (nameOrInput, venueId) => {
-          const org = get().organisation;
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) {
+            return "";
+          }
+          const org = s.organisation;
           const id = uid("menu");
-          const orgId = org?.id ?? get().venues[0]?.orgId ?? "org_default";
+          const orgId = org.id;
 
           if (typeof nameOrInput === "string") {
             const targetVenueId =
-              venueId ||
-              (org ? get().venues.find((v) => v.orgId === org.id)?.id : get().venues[0]?.id);
-            set((s) => ({
+              venueId || (org ? s.venues.find((v) => v.orgId === org.id)?.id : s.venues[0]?.id);
+            set((state) => ({
               menus: [
-                ...s.menus,
+                ...state.menus,
                 {
                   id,
                   orgId,
@@ -1393,9 +1451,9 @@ export const usePewa = create<PewaState & Actions>()(
             offerings: [],
           }));
 
-          set((s) => ({
+          set((state) => ({
             menus: [
-              ...s.menus,
+              ...state.menus,
               {
                 id,
                 orgId,
@@ -1415,10 +1473,12 @@ export const usePewa = create<PewaState & Actions>()(
           return id;
         },
         updateMenuMeta: (menuId, updates) => {
-          const m = get().menus.find((x) => x.id === menuId);
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return;
-          set((s) => ({
-            menus: s.menus.map((x) => {
+          set((state) => ({
+            menus: state.menus.map((x) => {
               if (x.id !== menuId) return x;
               const next: Menu = {
                 ...x,
@@ -1449,7 +1509,14 @@ export const usePewa = create<PewaState & Actions>()(
         },
         deleteMenu: (menuId) => {
           const s = get();
-          const m = s.menus.find((x) => x.id === menuId);
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) {
+            return {
+              success: false,
+              action: "deleted",
+              message: "Not authorised to delete or archive menus",
+            };
+          }
+          const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return { success: false, action: "deleted", message: "Menu not found" };
 
           const wasPublished = m.status === "published" || !!m.publishedAt || !!m.publishedSnapshot;
@@ -1481,7 +1548,9 @@ export const usePewa = create<PewaState & Actions>()(
           return { success: true, action: "deleted", message };
         },
         duplicateMenu: (menuId) => {
-          const source = get().menus.find((x) => x.id === menuId);
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return "";
+          const source = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!source) return "";
           const newId = uid("menu");
           const duplicated: Menu = {
@@ -1501,36 +1570,45 @@ export const usePewa = create<PewaState & Actions>()(
               })),
             })),
           };
-          set((s) => ({
-            menus: [...s.menus, duplicated],
+          set((state) => ({
+            menus: [...state.menus, duplicated],
           }));
           get().log({ kind: "menu.duplicated", message: `Duplicated “${source.name}” as draft` });
           return newId;
         },
         addSection: (menuId, name, categoryTag) => {
-          mutateMenu(menuId, (ss) => [...ss, { id: uid("sec"), name, categoryTag, offerings: [] }]);
-          get().log({ kind: "section.created", message: `Section “${name}” added` });
+          const ok = mutateMenu(menuId, (ss) => [
+            ...ss,
+            { id: uid("sec"), name, categoryTag, offerings: [] },
+          ]);
+          if (ok) {
+            get().log({ kind: "section.created", message: `Section “${name}” added` });
+          }
         },
         addSectionsBatch: (menuId, names) => {
           const cleanNames = names.map((n) => n.trim()).filter(Boolean);
           if (cleanNames.length === 0) return;
-          mutateMenu(menuId, (ss) => {
+          const ok = mutateMenu(menuId, (ss) => {
             const existing = new Set(ss.map((s) => s.name.trim().toLowerCase()));
             const toAdd = cleanNames
               .filter((n) => !existing.has(n.toLowerCase()))
               .map((name) => ({ id: uid("sec"), name, offerings: [] }));
             return [...ss, ...toAdd];
           });
-          get().log({
-            kind: "section.created",
-            message: `Added ${cleanNames.length} sections to menu`,
-          });
+          if (ok) {
+            get().log({
+              kind: "section.created",
+              message: `Added ${cleanNames.length} sections to menu`,
+            });
+          }
         },
-        renameSection: (menuId, sectionId, name) =>
-          mutateMenu(menuId, (ss) => ss.map((x) => (x.id === sectionId ? { ...x, name } : x))),
-        removeSection: (menuId, sectionId) =>
-          mutateMenu(menuId, (ss) => ss.filter((x) => x.id !== sectionId)),
-        moveSection: (menuId, sectionId, dir) =>
+        renameSection: (menuId, sectionId, name) => {
+          mutateMenu(menuId, (ss) => ss.map((x) => (x.id === sectionId ? { ...x, name } : x)));
+        },
+        removeSection: (menuId, sectionId) => {
+          mutateMenu(menuId, (ss) => ss.filter((x) => x.id !== sectionId));
+        },
+        moveSection: (menuId, sectionId, dir) => {
           mutateMenu(menuId, (ss) => {
             const i = ss.findIndex((x) => x.id === sectionId);
             const j = i + dir;
@@ -1541,8 +1619,9 @@ export const usePewa = create<PewaState & Actions>()(
             if (!from || !to) return ss;
             [c[i], c[j]] = [to, from];
             return c;
-          }),
-        reorderSections: (menuId, sectionIds) =>
+          });
+        },
+        reorderSections: (menuId, sectionIds) => {
           mutateMenu(menuId, (ss) => {
             const map = new Map(ss.map((s) => [s.id, s]));
             const reordered: Section[] = [];
@@ -1557,11 +1636,12 @@ export const usePewa = create<PewaState & Actions>()(
               reordered.push(sec);
             }
             return reordered;
-          }),
+          });
+        },
         moveOfferingBetweenSections: (menuId, fromSectionId, toSectionId, offeringId) => {
           if (fromSectionId === toSectionId) return;
           let movedName = "";
-          mutateMenu(menuId, (ss) => {
+          const ok = mutateMenu(menuId, (ss) => {
             const fromSec = ss.find((s) => s.id === fromSectionId);
             const offering = fromSec?.offerings.find((o) => o.id === offeringId);
             if (!offering) return ss;
@@ -1576,7 +1656,7 @@ export const usePewa = create<PewaState & Actions>()(
               return s;
             });
           });
-          if (movedName) {
+          if (ok && movedName) {
             get().log({
               kind: "offering.moved",
               message: `Moved “${movedName}” to another section`,
@@ -1589,7 +1669,7 @@ export const usePewa = create<PewaState & Actions>()(
             ...o,
             venueOverrides: sanitizeVenueOverrides(o.venueOverrides),
           };
-          mutateMenu(menuId, (ss) =>
+          const ok = mutateMenu(menuId, (ss) =>
             ss.map((x) => {
               if (x.id !== sectionId) return x;
               const exists = o.id ? x.offerings.some((y) => y.id === o.id) : false;
@@ -1609,15 +1689,17 @@ export const usePewa = create<PewaState & Actions>()(
               };
             }),
           );
-          get().log({
-            kind: isNew ? "offering.created" : "offering.updated",
-            message: `${isNew ? "Added" : "Updated"} “${o.name}”`,
-          });
+          if (ok) {
+            get().log({
+              kind: isNew ? "offering.created" : "offering.updated",
+              message: `${isNew ? "Added" : "Updated"} “${o.name}”`,
+            });
+          }
         },
         duplicateOffering: (menuId, sectionId, offeringId) => {
           let newId = "";
           let clonedName = "";
-          mutateMenu(menuId, (ss) =>
+          const ok = mutateMenu(menuId, (ss) =>
             ss.map((x) => {
               if (x.id !== sectionId) return x;
               const targetIndex = x.offerings.findIndex((o) => o.id === offeringId);
@@ -1645,13 +1727,13 @@ export const usePewa = create<PewaState & Actions>()(
               return { ...x, offerings: updated };
             }),
           );
-          if (clonedName) {
+          if (ok && clonedName) {
             get().log({
               kind: "offering.created",
               message: `Duplicated offering “${clonedName}”`,
             });
           }
-          return newId;
+          return ok ? newId : "";
         },
         moveOfferingWithinSection: (menuId, sectionId, offeringId, dir) => {
           mutateMenu(menuId, (ss) =>
@@ -1670,33 +1752,38 @@ export const usePewa = create<PewaState & Actions>()(
             }),
           );
         },
-        removeOffering: (menuId, sectionId, offeringId) =>
+        removeOffering: (menuId, sectionId, offeringId) => {
           mutateMenu(menuId, (ss) =>
             ss.map((x) =>
               x.id === sectionId
                 ? { ...x, offerings: x.offerings.filter((y) => y.id !== offeringId) }
                 : x,
             ),
-          ),
+          );
+        },
         toggleAvailability: (menuId, sectionId, offeringId) => {
           let name = "";
           let avail = true;
-          mutateMenu(menuId, (ss) =>
-            ss.map((x) => {
-              if (sectionId && x.id !== sectionId) return x;
-              const hasOffering = x.offerings.some((y) => y.id === offeringId);
-              if (!hasOffering) return x;
-              return {
-                ...x,
-                offerings: x.offerings.map((y) => {
-                  if (y.id !== offeringId) return y;
-                  name = y.name;
-                  avail = !y.available;
-                  return { ...y, available: !y.available };
-                }),
-              };
-            }),
+          const ok = mutateMenu(
+            menuId,
+            (ss) =>
+              ss.map((x) => {
+                if (sectionId && x.id !== sectionId) return x;
+                const hasOffering = x.offerings.some((y) => y.id === offeringId);
+                if (!hasOffering) return x;
+                return {
+                  ...x,
+                  offerings: x.offerings.map((y) => {
+                    if (y.id !== offeringId) return y;
+                    name = y.name;
+                    avail = !y.available;
+                    return { ...y, available: !y.available };
+                  }),
+                };
+              }),
+            { allowAvailabilityOnly: true },
           );
+          if (!ok || !name) return;
           // Immediate availability changes apply to publishedSnapshot as well
           set((s) => ({
             menus: s.menus.map((m) => {
@@ -1726,7 +1813,7 @@ export const usePewa = create<PewaState & Actions>()(
         },
         setOfferingSchedule: (menuId, sectionId, offeringId, schedule) => {
           let offName = "";
-          mutateMenu(menuId, (ss) =>
+          const ok = mutateMenu(menuId, (ss) =>
             ss.map((sec) => {
               if (sectionId && sec.id !== sectionId) return sec;
               return {
@@ -1739,14 +1826,16 @@ export const usePewa = create<PewaState & Actions>()(
               };
             }),
           );
-          get().log({
-            kind: "offering.updated",
-            message: `Updated schedule for “${offName || "offering"}”`,
-          });
+          if (ok && offName) {
+            get().log({
+              kind: "offering.updated",
+              message: `Updated schedule for “${offName}”`,
+            });
+          }
         },
         setOfferingVenueOverride: (menuId, sectionId, offeringId, venueId, override) => {
           let offName = "";
-          mutateMenu(menuId, (ss) =>
+          const ok = mutateMenu(menuId, (ss) =>
             ss.map((sec) => {
               if (sectionId && sec.id !== sectionId) return sec;
               return {
@@ -1767,10 +1856,12 @@ export const usePewa = create<PewaState & Actions>()(
               };
             }),
           );
-          get().log({
-            kind: "offering.updated",
-            message: `Updated venue override for “${offName || "offering"}”`,
-          });
+          if (ok && offName) {
+            get().log({
+              kind: "offering.updated",
+              message: `Updated venue override for “${offName}”`,
+            });
+          }
         },
         removeOfferingVenueOverride: (menuId, sectionId, offeringId, venueId) => {
           mutateMenu(menuId, (ss) =>
@@ -1795,30 +1886,34 @@ export const usePewa = create<PewaState & Actions>()(
         toggleOfferingVenueAvailability: (menuId, sectionId, offeringId, venueId) => {
           let offName = "";
           let newAvail = false;
-          mutateMenu(menuId, (ss) =>
-            ss.map((sec) => {
-              if (sectionId && sec.id !== sectionId) return sec;
-              return {
-                ...sec,
-                offerings: sec.offerings.map((o) => {
-                  if (o.id !== offeringId) return o;
-                  offName = o.name;
-                  const currentOverrides = o.venueOverrides || {};
-                  const existing = currentOverrides[venueId] || { venueId };
-                  const currentAvail =
-                    existing.available !== undefined ? existing.available : o.available;
-                  newAvail = !currentAvail;
-                  return {
-                    ...o,
-                    venueOverrides: {
-                      ...currentOverrides,
-                      [venueId]: { ...existing, available: newAvail, venueId },
-                    },
-                  };
-                }),
-              };
-            }),
+          const ok = mutateMenu(
+            menuId,
+            (ss) =>
+              ss.map((sec) => {
+                if (sectionId && sec.id !== sectionId) return sec;
+                return {
+                  ...sec,
+                  offerings: sec.offerings.map((o) => {
+                    if (o.id !== offeringId) return o;
+                    offName = o.name;
+                    const currentOverrides = o.venueOverrides || {};
+                    const existing = currentOverrides[venueId] || { venueId };
+                    const currentAvail =
+                      existing.available !== undefined ? existing.available : o.available;
+                    newAvail = !currentAvail;
+                    return {
+                      ...o,
+                      venueOverrides: {
+                        ...currentOverrides,
+                        [venueId]: { ...existing, available: newAvail, venueId },
+                      },
+                    };
+                  }),
+                };
+              }),
+            { allowAvailabilityOnly: true },
           );
+          if (!ok || !offName) return;
           // Immediate venue availability changes apply to publishedSnapshot as well
           set((s) => ({
             menus: s.menus.map((m) => {
@@ -1866,21 +1961,22 @@ export const usePewa = create<PewaState & Actions>()(
         },
         upsertSharedOffering: (sharedOffering) => {
           const s = get();
-          const currentOrgId = s.organisation?.id;
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const currentOrgId = s.organisation.id;
           const list = s.sharedOfferings || [];
           const existing = list.find((x) => x.id === sharedOffering.id);
 
           // Enforce organisation isolation: cannot create or modify shared offerings for another organisation
-          if (existing && currentOrgId && existing.orgId && existing.orgId !== currentOrgId) {
+          if (existing && existing.orgId && existing.orgId !== currentOrgId) {
             return;
           }
-          if (currentOrgId && sharedOffering.orgId && sharedOffering.orgId !== currentOrgId) {
+          if (sharedOffering.orgId && sharedOffering.orgId !== currentOrgId) {
             return;
           }
 
           const sanitized: SharedOffering = {
             ...sharedOffering,
-            orgId: sharedOffering.orgId || currentOrgId || "",
+            orgId: sharedOffering.orgId || currentOrgId,
             venueOverrides: sanitizeVenueOverrides(sharedOffering.venueOverrides),
           };
 
@@ -1900,11 +1996,12 @@ export const usePewa = create<PewaState & Actions>()(
         },
         deleteSharedOffering: (sharedOfferingId) => {
           const s = get();
-          const currentOrgId = s.organisation?.id;
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const currentOrgId = s.organisation.id;
           const existing = (s.sharedOfferings || []).find((x) => x.id === sharedOfferingId);
           if (!existing) return;
           // Enforce organisation isolation: cannot delete another organisation's shared offering
-          if (currentOrgId && existing.orgId && existing.orgId !== currentOrgId) {
+          if (existing.orgId && existing.orgId !== currentOrgId) {
             return;
           }
 
@@ -1918,7 +2015,8 @@ export const usePewa = create<PewaState & Actions>()(
         },
         addSharedOfferingToMenu: (menuId, sectionId, sharedOfferingId) => {
           const s = get();
-          const menu = s.menus.find((m) => m.id === menuId);
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return "";
+          const menu = s.menus.find((m) => m.id === menuId && m.orgId === s.organisation?.id);
           if (!menu) return "";
           const shared = (s.sharedOfferings || []).find((x) => x.id === sharedOfferingId);
           if (!shared) return "";
@@ -1945,11 +2043,12 @@ export const usePewa = create<PewaState & Actions>()(
             venueOverrides: sanitizeVenueOverrides(shared.venueOverrides),
             available: true,
           };
-          mutateMenu(menuId, (ss) =>
+          const ok = mutateMenu(menuId, (ss) =>
             ss.map((sec) =>
               sec.id === sectionId ? { ...sec, offerings: [...sec.offerings, newOffering] } : sec,
             ),
           );
+          if (!ok) return "";
           get().log({
             kind: "offering.created",
             message: `Added shared offering “${shared.name}” to menu`,
@@ -1957,9 +2056,11 @@ export const usePewa = create<PewaState & Actions>()(
           return newId;
         },
         publishMenu: (menuId) => {
-          const m = get().menus.find((x) => x.id === menuId);
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return false;
+          const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m) return false;
-          if (m.sections.length === 0 || !m.sections.some((s) => s.offerings.length > 0)) {
+          if (m.sections.length === 0 || !m.sections.some((sec) => sec.offerings.length > 0)) {
             return false;
           }
           const snapshot: MenuPublishedSnapshot = {
@@ -1973,12 +2074,12 @@ export const usePewa = create<PewaState & Actions>()(
             publishedAt: now(),
             sharedOfferingsSnapshot: JSON.parse(
               JSON.stringify(
-                (get().sharedOfferings || []).filter((so) => !so.orgId || so.orgId === m.orgId),
+                (s.sharedOfferings || []).filter((so) => !so.orgId || so.orgId === m.orgId),
               ),
             ),
           };
-          set((s) => ({
-            menus: s.menus.map((x) =>
+          set((state) => ({
+            menus: state.menus.map((x) =>
               x.id === menuId
                 ? {
                     ...x,
@@ -1994,32 +2095,40 @@ export const usePewa = create<PewaState & Actions>()(
           return true;
         },
         unpublishMenu: (menuId) => {
-          const m = get().menus.find((x) => x.id === menuId);
-          set((s) => ({
-            menus: s.menus.map((x) =>
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
+          if (!m) return;
+          set((state) => ({
+            menus: state.menus.map((x) =>
               x.id === menuId ? { ...x, status: "hidden" as MenuStatus, updatedAt: now() } : x,
             ),
           }));
-          get().log({ kind: "menu.hidden", message: `Menu “${m?.name}” hidden from public view` });
+          get().log({ kind: "menu.hidden", message: `Menu “${m.name}” hidden from public view` });
         },
         hideMenu: (menuId) => {
           get().unpublishMenu(menuId);
         },
         archiveMenu: (menuId) => {
-          const m = get().menus.find((x) => x.id === menuId);
-          set((s) => ({
-            menus: s.menus.map((x) =>
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
+          if (!m) return;
+          set((state) => ({
+            menus: state.menus.map((x) =>
               x.id === menuId ? { ...x, status: "archived" as MenuStatus, updatedAt: now() } : x,
             ),
           }));
-          get().log({ kind: "menu.archived", message: `Menu “${m?.name}” archived` });
+          get().log({ kind: "menu.archived", message: `Menu “${m.name}” archived` });
         },
         discardDraftChanges: (menuId) => {
-          const m = get().menus.find((x) => x.id === menuId);
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
           if (!m || !m.publishedSnapshot) return;
           const snap = m.publishedSnapshot;
-          set((s) => ({
-            menus: s.menus.map((x) =>
+          set((state) => ({
+            menus: state.menus.map((x) =>
               x.id === menuId
                 ? {
                     ...x,
@@ -2053,9 +2162,12 @@ export const usePewa = create<PewaState & Actions>()(
             get().archiveMenu(menuId);
             return;
           }
-          const m = get().menus.find((x) => x.id === menuId);
-          set((s) => ({
-            menus: s.menus.map((x) =>
+          const s = get();
+          if (!canAuthorMenus(getEffectiveBusinessRole(s)) || !s.organisation) return;
+          const m = s.menus.find((x) => x.id === menuId && x.orgId === s.organisation?.id);
+          if (!m) return;
+          set((state) => ({
+            menus: state.menus.map((x) =>
               x.id === menuId
                 ? ({
                     ...x,
@@ -2065,14 +2177,16 @@ export const usePewa = create<PewaState & Actions>()(
                 : x,
             ),
           }));
-          get().log({ kind: `menu.${status}`, message: `Menu “${m?.name}” is now ${status}` });
+          get().log({ kind: `menu.${status}`, message: `Menu “${m.name}” is now ${status}` });
         },
         setOrganisationStatus: (orgId, status, note) => {
-          set((s) => ({
+          const s = get();
+          if (!canAccessOperatorConsole(s.role)) return;
+          set((state) => ({
             organisation:
-              s.organisation?.id === orgId
-                ? { ...s.organisation, status, statusNote: note }
-                : s.organisation,
+              state.organisation?.id === orgId
+                ? { ...state.organisation, status, statusNote: note }
+                : state.organisation,
           }));
           get().log({
             kind: "operator.org_status",
@@ -2080,8 +2194,10 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         resolveDisputeCase: (caseId, resolution, adjustmentUnits, note) => {
-          set((s) => {
-            const nextDisputes = s.disputes.map((d) =>
+          const s = get();
+          if (!canAccessOperatorConsole(s.role)) return;
+          set((state) => {
+            const nextDisputes = state.disputes.map((d) =>
               d.id === caseId
                 ? {
                     ...d,
@@ -2095,10 +2211,10 @@ export const usePewa = create<PewaState & Actions>()(
             const nextPolicy =
               adjustmentUnits > 0
                 ? {
-                    ...s.orderPolicy,
-                    included: s.orderPolicy.included + adjustmentUnits,
+                    ...state.orderPolicy,
+                    included: state.orderPolicy.included + adjustmentUnits,
                   }
-                : s.orderPolicy;
+                : state.orderPolicy;
             return {
               disputes: nextDisputes,
               orderPolicy: nextPolicy,
@@ -2110,8 +2226,10 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         resolveModerationCase: (caseId, actionTaken) => {
-          set((s) => ({
-            moderationCases: s.moderationCases.map((m) =>
+          const s = get();
+          if (!canAccessOperatorConsole(s.role)) return;
+          set((state) => ({
+            moderationCases: state.moderationCases.map((m) =>
               m.id === caseId
                 ? {
                     ...m,
@@ -2204,8 +2322,10 @@ export function getActiveOrganisationMembership(state: {
 
 /**
  * Resolves the effective business role from the active identity's organisation membership,
- * rather than granting business permissions merely from a visual role selector when an identity
- * lacks active membership in the target organisation (R3-A Requirement 2).
+ * failing closed (`"customer"`) when an organisation exists without a matching active membership,
+ * or when personalIdentity / memberships are missing (R3-A CORR-001).
+ *
+ * NOTE: This is a deterministic client-side prototype model and NOT production security enforcement.
  */
 export function getEffectiveBusinessRole(state: {
   role: Role;
@@ -2213,19 +2333,20 @@ export function getEffectiveBusinessRole(state: {
   organisation?: PewaState["organisation"] | undefined;
   memberships?: OrganisationMembership[] | undefined;
 }): Role {
+  // Preserve customer guest flow and separate PEWA platform-operator demonstration flow
   if (!isBusinessRole(state.role)) return state.role;
-  if (!state.organisation) return state.role;
 
-  // If memberships are populated, require a matching active membership for the current personal identity
-  if (state.memberships && state.memberships.length > 0 && state.personalIdentity) {
-    const activeMembership = getActiveOrganisationMembership(state);
-    if (!activeMembership) {
-      return "customer";
-    }
-    return activeMembership.role;
+  // Fail closed when no organisation, no personal identity, or no active matching membership exists
+  if (!state.organisation || !state.personalIdentity) {
+    return "customer";
   }
 
-  return state.role;
+  const activeMembership = getActiveOrganisationMembership(state);
+  if (!activeMembership) {
+    return "customer";
+  }
+
+  return activeMembership.role;
 }
 
 export function hasActiveBusinessMembership(state: {

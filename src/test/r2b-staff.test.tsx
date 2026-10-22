@@ -105,9 +105,10 @@ describe("R2-B: Operational Staff Experience Alignment & Boundaries", () => {
 
   describe("Scenario Staff C — Staff accepts order with unit deduction", () => {
     it("atomically consumes exactly 1 unit and moves order to accepted preparing queue", () => {
-      usePewa.getState().setRole("staff");
-      // Add units for acceptance
+      // Owner replenishes capacity first (staff cannot purchase top-up units)
+      usePewa.getState().setRole("owner");
       usePewa.getState().addTopUpUnits(10);
+      usePewa.getState().setRole("staff");
       const initialTotalUnits =
         usePewa.getState().orderPolicy.included + usePewa.getState().orderPolicy.topUp;
 
@@ -127,8 +128,9 @@ describe("R2-B: Operational Staff Experience Alignment & Boundaries", () => {
 
   describe("Scenario Staff D — Staff declines order with required reason", () => {
     it("prompts for decline reason, preserves capacity, and updates order status", () => {
-      usePewa.getState().setRole("staff");
+      usePewa.getState().setRole("owner");
       usePewa.getState().addTopUpUnits(10);
+      usePewa.getState().setRole("staff");
       const initialUnits =
         usePewa.getState().orderPolicy.included + usePewa.getState().orderPolicy.topUp;
 
@@ -153,8 +155,9 @@ describe("R2-B: Operational Staff Experience Alignment & Boundaries", () => {
 
   describe("Scenario Staff E — Staff marks order ready milestone", () => {
     it("progresses order from preparing to ready queue", () => {
-      usePewa.getState().setRole("staff");
+      usePewa.getState().setRole("owner");
       usePewa.getState().addTopUpUnits(10);
+      usePewa.getState().setRole("staff");
 
       // First accept a pending order
       const pendingOrder = usePewa.getState().orders.find((o) => o.status === "pending");
