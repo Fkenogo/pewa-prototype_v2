@@ -16,6 +16,7 @@ import { Route as DocsRouteImport } from './routes/docs'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as OrdersRouteImport } from './routes/orders'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAccessRouteImport } from './routes/admin.access'
@@ -64,6 +65,11 @@ const OperatorRoute = OperatorRouteImport.update({
 const OrdersRoute = OrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScanRoute = ScanRouteImport.update({
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/profile': typeof ProfileRoute
   '/scan': typeof ScanRoute
   '/admin/access': typeof AdminAccessRoute
   '/admin/activity': typeof AdminActivityRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByTo {
   '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
+  '/profile': typeof ProfileRoute
   '/scan': typeof ScanRoute
   '/admin/access': typeof AdminAccessRoute
   '/admin/activity': typeof AdminActivityRoute
@@ -190,6 +198,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/profile': typeof ProfileRoute
   '/scan': typeof ScanRoute
   '/admin/access': typeof AdminAccessRoute
   '/admin/activity': typeof AdminActivityRoute
@@ -215,6 +224,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/operator'
     | '/orders'
+    | '/profile'
     | '/scan'
     | '/admin/access'
     | '/admin/activity'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/onboarding'
     | '/operator'
+    | '/profile'
     | '/scan'
     | '/admin/access'
     | '/admin/activity'
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/operator'
     | '/orders'
+    | '/profile'
     | '/scan'
     | '/admin/access'
     | '/admin/activity'
@@ -283,6 +295,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   OperatorRoute: typeof OperatorRoute
   OrdersRoute: typeof OrdersRouteWithChildren
+  ProfileRoute: typeof ProfileRoute
   ScanRoute: typeof ScanRoute
   CCodeRoute: typeof CCodeRoute
   InviteInviteIdRoute: typeof InviteInviteIdRoute
@@ -338,6 +351,13 @@ declare module '@tanstack/react-router' {
       path: '/orders'
       fullPath: '/orders'
       preLoaderRoute: typeof OrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scan': {
@@ -486,6 +506,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   OperatorRoute: OperatorRoute,
   OrdersRoute: OrdersRouteWithChildren,
+  ProfileRoute: ProfileRoute,
   ScanRoute: ScanRoute,
   CCodeRoute: CCodeRoute,
   InviteInviteIdRoute: InviteInviteIdRoute,

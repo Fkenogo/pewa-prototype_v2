@@ -10,7 +10,12 @@ export const Route = createFileRoute("/orders/")({
   component: Requests,
 });
 function Requests() {
-  const orders = usePewa((s) => s.orders);
+  const { orders, customerContext } = usePewa();
+  const visibleOrders = orders.filter((order) =>
+    customerContext.kind === "identified"
+      ? order.customerIdentityId === customerContext.identityId
+      : !order.customerIdentityId,
+  );
   return (
     <main className="mx-auto min-h-screen max-w-lg px-4 pb-28 pt-16">
       <Link to="/" className="font-display text-xl text-primary">
@@ -18,7 +23,7 @@ function Requests() {
       </Link>
       <h1 className="mt-4 text-3xl">My requests</h1>
       <div className="mt-6 space-y-3">
-        {orders.map((o) => (
+        {visibleOrders.map((o) => (
           <Link
             key={o.id}
             to="/orders/$orderId"
@@ -36,7 +41,12 @@ function Requests() {
           </Link>
         ))}
       </div>
-      {!orders.length && <p className="mt-8 text-muted-foreground">No order requests yet.</p>}
+      {!visibleOrders.length && (
+        <p className="mt-8 text-muted-foreground">No order requests yet for this customer mode.</p>
+      )}
+      <p className="mt-5 text-xs text-muted-foreground">
+        Requests are stored locally in this prototype. They are not synced between devices.
+      </p>
       <CustomerNav />
     </main>
   );

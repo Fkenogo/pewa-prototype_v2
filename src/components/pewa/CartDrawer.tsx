@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Minus, Plus, Trash2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -34,10 +34,22 @@ export function CartDrawer({
   const navigate = useNavigate();
   const [review, setReview] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [guestName, setName] = useState("");
-  const [guestContact, setContact] = useState("");
-  const [service, setService] = useState("");
-  const [note, setNote] = useState("");
+  const draft = state.orderDraft || { guestName: "", guestContact: "", service: "", note: "" };
+  const guestName = draft.guestName;
+  const guestContact = draft.guestContact;
+  const service = draft.service;
+  const note = draft.note;
+  useEffect(() => {
+    const context = state.customerContext;
+    if (context.kind !== "identified") return;
+    const identity = state.identities?.find((item) => item.id === context.identityId);
+    if (!identity) return;
+    const guestName = draft.guestName || identity.fullName;
+    const guestContact = draft.guestContact || identity.email || identity.mobile;
+    if (guestName !== draft.guestName || guestContact !== draft.guestContact) {
+      state.updateOrderDraft({ guestName, guestContact });
+    }
+  }, [draft.guestContact, draft.guestName, state]);
   const venue = getAuthoritativeVenues(state).find((v) => v.id === state.cart?.venueId);
   const lines = state.cart?.lines ?? [];
   const error = lines.length ? validateCart(state, state.cart) : null;
@@ -202,17 +214,17 @@ export function CartDrawer({
                       <Input
                         required
                         value={guestName}
-                        onChange={(e) => setName(e.target.value)}
+                        onChange={(e) => state.updateOrderDraft({ guestName: e.target.value })}
                         autoComplete="name"
                       />
                     </label>
                     <label className="block space-y-1 text-sm">
-                      Phone number
+                      Phone or email
                       <Input
                         required
-                        type="tel"
+                        type="text"
                         value={guestContact}
-                        onChange={(e) => setContact(e.target.value)}
+                        onChange={(e) => state.updateOrderDraft({ guestContact: e.target.value })}
                         autoComplete="tel"
                       />
                     </label>
@@ -222,7 +234,7 @@ export function CartDrawer({
                         aria-label="Service"
                         className="h-11 w-full rounded-md border bg-background px-3"
                         value={chosenService}
-                        onChange={(e) => setService(e.target.value)}
+                        onChange={(e) => state.updateOrderDraft({ service: e.target.value })}
                       >
                         {venue?.services.map((s) => (
                           <option key={s}>{s}</option>
@@ -233,7 +245,7 @@ export function CartDrawer({
                       Table, pickup or delivery notes
                       <Textarea
                         value={note}
-                        onChange={(e) => setNote(e.target.value)}
+                        onChange={(e) => state.updateOrderDraft({ note: e.target.value })}
                         maxLength={500}
                       />
                     </label>

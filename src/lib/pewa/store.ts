@@ -33,6 +33,8 @@ import type {
   AccessStatus,
   MenuAccessReference,
   Venue,
+  CustomerContext,
+  CustomerOrderDraft,
 } from "./types";
 import {
   buildScenario,
@@ -137,6 +139,18 @@ export interface CompleteOnboardingInput {
 }
 
 type Actions = {
+  customerContext: CustomerContext;
+  orderDraft: CustomerOrderDraft;
+  createCustomerProfile: (input: { fullName: string; email?: string; mobile?: string }) => {
+    ok: boolean;
+    error?: string;
+  };
+  continueAsExistingCustomer: () => boolean;
+  updateCustomerProfile: (input: { fullName?: string; email?: string; mobile?: string }) => boolean;
+  continueAsGuest: () => void;
+  resumePreviousCustomerProfile: () => boolean;
+  updateOrderDraft: (draft: Partial<CustomerOrderDraft>) => void;
+  clearOrderDraft: () => void;
   setRole: (r: Role) => void;
   loadScenario: (id: ScenarioId) => void;
   reset: () => void;
@@ -705,6 +719,8 @@ export const usePewa = create<PewaState & Actions>()(
       const initialSeed = buildScenario("new-cafe");
       return {
         ...initialSeed,
+        customerContext: { kind: "guest" },
+        orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
         menus: ensurePublishedSnapshots(initialSeed.menus, initialSeed.sharedOfferings),
         visitVenue: (id) =>
           set((s) => {
@@ -860,8 +876,15 @@ export const usePewa = create<PewaState & Actions>()(
             status: "pending",
             submittedAt: now(),
             unitConsumed: false,
+            customerIdentityId:
+              s.customerContext.kind === "identified" ? s.customerContext.identityId : undefined,
           };
-          set({ orders: [order, ...s.orders], cart: null, orderSequence: sequence });
+          set({
+            orders: [order, ...s.orders],
+            cart: null,
+            orderSequence: sequence,
+            orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
+          });
           get().log({
             kind: "order.submitted",
             message: `${order.reference} submitted — awaiting business acceptance; no unit consumed`,
@@ -1215,6 +1238,8 @@ export const usePewa = create<PewaState & Actions>()(
           }
           set({
             ...sc,
+            customerContext: { kind: "guest" },
+            orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
@@ -1242,6 +1267,8 @@ export const usePewa = create<PewaState & Actions>()(
           }
           set({
             ...sc,
+            customerContext: { kind: "guest" },
+            orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
@@ -1258,6 +1285,101 @@ export const usePewa = create<PewaState & Actions>()(
               200,
             ),
           })),
+        createCustomerProfile: (input) => {
+          const fullName = input.fullName.trim();
+          const email = (input.email || "").trim();
+          const mobile = (input.mobile || "").trim();
+          if (get().customerContext.kind !== "guest")
+            return { ok: false, error: "Return to guest mode before creating a profile." };
+          if (!fullName) return { ok: false, error: "Enter your name." };
+          if (!email && !mobile)
+            return { ok: false, error: "Add an email address or mobile number." };
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+            return { ok: false, error: "Enter a valid email address." };
+          if (mobile && !/^\+?[0-9 ()-]{7,20}$/.test(mobile))
+            return { ok: false, error: "Enter a valid mobile number." };
+          const identity: PersonalIdentity = {
+            id: uid("id"),
+            fullName,
+            email,
+            mobile,
+            preferredSignIn: email ? "email" : "mobile",
+            verifiedSimulation: false,
+            createdAt: now(),
+          };
+          const s = get();
+          set({
+            identities: [identity, ...(s.identities || [])],
+            customerContext: { kind: "identified", identityId: identity.id },
+          });
+          return { ok: true };
+        },
+        continueAsExistingCustomer: () => {
+          const s = get();
+          const identity =
+            s.personalIdentity &&
+            (s.identities || []).find((item) => item.id === s.personalIdentity?.id);
+          if (!identity || s.customerContext.kind !== "guest") return false;
+          set({ customerContext: { kind: "identified", identityId: identity.id } });
+          return true;
+        },
+        updateCustomerProfile: (input) => {
+          const s = get();
+          if (s.customerContext.kind !== "identified") return false;
+          const id = s.customerContext.identityId;
+          const existing = (s.identities || []).find((identity) => identity.id === id);
+          if (!existing) return false;
+          const fullName = input.fullName === undefined ? existing.fullName : input.fullName.trim();
+          const email = input.email === undefined ? existing.email : input.email.trim();
+          const mobile = input.mobile === undefined ? existing.mobile : input.mobile.trim();
+          if (
+            !fullName ||
+            (!email && !mobile) ||
+            (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ||
+            (mobile && !/^\+?[0-9 ()-]{7,20}$/.test(mobile))
+          )
+            return false;
+          const identity = {
+            ...existing,
+            fullName,
+            email,
+            mobile,
+            preferredSignIn: email ? ("email" as const) : ("mobile" as const),
+            verifiedSimulation: false,
+            verifiedAt: undefined,
+          };
+          set({
+            identities: (s.identities || []).map((item) => (item.id === id ? identity : item)),
+            personalIdentity: s.personalIdentity?.id === id ? identity : s.personalIdentity,
+          });
+          return true;
+        },
+        continueAsGuest: () =>
+          set((s) => {
+            const current = s.customerContext;
+            const previousIdentityId =
+              current?.kind === "identified" ? current.identityId : current?.previousIdentityId;
+            return {
+              customerContext: {
+                kind: "guest",
+                ...(previousIdentityId ? { previousIdentityId } : {}),
+              },
+            };
+          }),
+        resumePreviousCustomerProfile: () => {
+          const s = get();
+          const context = s.customerContext;
+          if (context?.kind !== "guest" || !context.previousIdentityId) return false;
+          const identity = (s.identities || []).find(
+            (item) => item.id === context.previousIdentityId,
+          );
+          if (!identity) return false;
+          set({ customerContext: { kind: "identified", identityId: identity.id } });
+          return true;
+        },
+        updateOrderDraft: (draft) => set((s) => ({ orderDraft: { ...s.orderDraft, ...draft } })),
+        clearOrderDraft: () =>
+          set({ orderDraft: { guestName: "", guestContact: "", service: "", note: "" } }),
         upsertPersonalIdentity: (input) => {
           const s = get();
           const cleanEmail = (input.email || "").trim();
@@ -3467,6 +3589,8 @@ export const usePewa = create<PewaState & Actions>()(
         return {
           ...current,
           ...p,
+          customerContext: p.customerContext || current.customerContext,
+          orderDraft: p.orderDraft || current.orderDraft,
           venues: (p.venues || current.venues).map((v) => ({
             ...v,
             category: v.category || current.venues.find((cv) => cv.id === v.id)?.category || "Café",
