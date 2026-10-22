@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import jsQR from "jsqr";
 import {
   ArrowLeft,
   Camera,
-  CheckCircle2,
+  Image as ImageIcon,
   KeyRound,
   QrCode,
   Scan,
@@ -15,7 +16,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CustomerNav } from "@/components/pewa/CustomerNav";
-import { resolveMenuAccess, usePewa } from "@/lib/pewa/store";
+import { parsePewaQrPayload, resolveMenuAccess, usePewa } from "@/lib/pewa/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/scan")({
@@ -38,9 +39,16 @@ export function ScanPage() {
   const state = usePewa();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const isScanningRef = useRef<boolean>(false);
+  const lastScannedRef = useRef<string | null>(null);
+  const isNavigatingRef = useRef<boolean>(false);
 
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>("idle");
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"camera" | "code">("camera");
@@ -52,7 +60,12 @@ export function ScanPage() {
     return venue && menu && menu.status === "published";
   });
 
-  const stopCamera = () => {
+  const stopCamera = useCallback(() => {
+    isScanningRef.current = false;
+    if (animFrameRef.current !== null) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -60,16 +73,101 @@ export function ScanPage() {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  };
+    setCameraStatus("idle");
+  }, []);
 
   useEffect(() => {
     return () => {
       stopCamera();
     };
-  }, []);
+  }, [stopCamera]);
+
+  const handleProcessPayload = useCallback(
+    (rawPayload: string) => {
+      if (isNavigatingRef.current) return;
+      setScanError(null);
+      setCodeError(null);
+
+      // CORR-A: Validate decoded URL or short code against unified menu-access system
+      const parsed = parsePewaQrPayload(rawPayload);
+      if (!parsed) {
+        const errorMsg =
+          "Unsupported QR code. Only PEWA menu QR codes or short codes are recognized.";
+        setScanError(errorMsg);
+        setCodeError(errorMsg);
+        toast.error("Unsupported QR code.");
+        return;
+      }
+
+      const result = resolveMenuAccess({ code: parsed.code, accessId: parsed.accessId }, state);
+      if (!result.success) {
+        const errorMsg = result.error || "The scanned menu code is invalid or disabled.";
+        setScanError(errorMsg);
+        setCodeError(errorMsg);
+        toast.error(errorMsg);
+        return;
+      }
+
+      // CORR-A: Stop camera tracks after successful resolution and avoid duplicate navigation
+      isNavigatingRef.current = true;
+      stopCamera();
+      toast.success(`Opening ${result.venue?.name} menu...`);
+      navigate({
+        to: "/m/$slug",
+        params: { slug: result.venue!.slug },
+        search: {
+          menu: result.menu!.id,
+          access: result.reference!.id,
+          code: result.reference!.shortCode,
+          sp: result.reference!.servicePoint,
+          channel: result.reference!.channel,
+        },
+      });
+    },
+    [navigate, state, stopCamera],
+  );
+
+  const scanFrame = useCallback(() => {
+    if (!isScanningRef.current) return;
+    const video = videoRef.current;
+    if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement("canvas");
+      }
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        try {
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const decoded = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert",
+          });
+          if (decoded && decoded.data) {
+            const raw = decoded.data.trim();
+            if (raw && raw !== lastScannedRef.current && !isNavigatingRef.current) {
+              lastScannedRef.current = raw;
+              handleProcessPayload(raw);
+            }
+          }
+        } catch {
+          // ignore transient canvas frame capture errors
+        }
+      }
+    }
+    if (isScanningRef.current) {
+      animFrameRef.current = requestAnimationFrame(scanFrame);
+    }
+  }, [handleProcessPayload]);
 
   const startCamera = async () => {
     setCameraError(null);
+    setScanError(null);
+    lastScannedRef.current = null;
+    isNavigatingRef.current = false;
+
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setCameraStatus("unsupported");
       setCameraError(
@@ -87,9 +185,11 @@ export function ScanPage() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+        await videoRef.current.play().catch(() => {});
       }
       setCameraStatus("active");
+      isScanningRef.current = true;
+      animFrameRef.current = requestAnimationFrame(scanFrame);
     } catch (err: unknown) {
       const error = err as { name?: string };
       stopCamera();
@@ -107,33 +207,31 @@ export function ScanPage() {
     }
   };
 
-  const handleResolveCode = (codeToResolve: string) => {
-    const trimmed = codeToResolve.trim().toUpperCase();
-    if (!trimmed) {
-      setCodeError("Please enter a menu code.");
-      return;
-    }
-    setCodeError(null);
-
-    const result = resolveMenuAccess({ code: trimmed }, state);
-    if (!result.success) {
-      setCodeError(result.error || "Invalid or unknown menu code.");
-      return;
-    }
-
-    stopCamera();
-    toast.success(`Opening ${result.venue?.name} menu...`);
-    navigate({
-      to: "/m/$slug",
-      params: { slug: result.venue!.slug },
-      search: {
-        menu: result.menu!.id,
-        access: result.reference!.id,
-        code: result.reference!.shortCode,
-        sp: result.reference!.servicePoint,
-        channel: result.reference!.channel,
-      },
-    });
+  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (code && code.data) {
+          handleProcessPayload(code.data);
+        } else {
+          setScanError("No QR code detected in the selected image. Please try another image.");
+          toast.error("No QR code detected.");
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -176,7 +274,10 @@ export function ScanPage() {
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab("code")}
+          onClick={() => {
+            stopCamera();
+            setActiveTab("code");
+          }}
           className={cn(
             "flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-all",
             activeTab === "code"
@@ -206,7 +307,7 @@ export function ScanPage() {
                   <div className="h-48 w-48 rounded-2xl border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]" />
                   <div className="absolute h-0.5 w-44 animate-pulse bg-primary" />
                 </div>
-                <div className="absolute bottom-3 inset-x-0 flex justify-center">
+                <div className="absolute bottom-3 inset-x-0 flex justify-center gap-2 px-3">
                   <Button
                     size="sm"
                     variant="secondary"
@@ -214,6 +315,15 @@ export function ScanPage() {
                     onClick={stopCamera}
                   >
                     Stop camera
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="bg-background/80 backdrop-blur-xs text-xs font-medium"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <ImageIcon className="h-3.5 w-3.5 mr-1" />
+                    Upload Image
                   </Button>
                 </div>
               </>
@@ -226,15 +336,19 @@ export function ScanPage() {
                     : "Camera scanning unavailable"}
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground max-w-xs">{cameraError}</p>
-                <Button
-                  size="sm"
-                  className="mt-4"
-                  onClick={() => {
-                    setActiveTab("code");
-                  }}
-                >
-                  Use short code instead
-                </Button>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setActiveTab("code");
+                    }}
+                  >
+                    Use short code instead
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                    <ImageIcon className="h-3.5 w-3.5 mr-1" /> Scan image file
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-6 text-center">
@@ -246,17 +360,38 @@ export function ScanPage() {
                   Point your camera at any PEWA QR code on table stands, counter tents, or room
                   service binders.
                 </p>
-                <Button
-                  size="sm"
-                  className="mt-4"
-                  onClick={startCamera}
-                  disabled={cameraStatus === "requesting"}
-                >
-                  {cameraStatus === "requesting" ? "Opening camera..." : "Enable camera"}
-                </Button>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <Button size="sm" onClick={startCamera} disabled={cameraStatus === "requesting"}>
+                    {cameraStatus === "requesting" ? "Opening camera..." : "Enable camera"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                    <ImageIcon className="h-3.5 w-3.5 mr-1" /> Scan image
+                  </Button>
+                </div>
               </div>
             )}
           </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageFile}
+          />
+
+          {scanError && (
+            <div
+              role="alert"
+              className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive flex items-start gap-2"
+            >
+              <XCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold">Scan Error</p>
+                <p className="mt-0.5 text-muted-foreground">{scanError}</p>
+              </div>
+            </div>
+          )}
 
           {/* Prototype Simulation Section */}
           <div className="rounded-xl border bg-card p-4">
@@ -272,7 +407,7 @@ export function ScanPage() {
                 <button
                   key={ref.id}
                   type="button"
-                  onClick={() => handleResolveCode(ref.shortCode)}
+                  onClick={() => handleProcessPayload(ref.shortCode)}
                   className="flex items-center justify-between rounded-lg border bg-muted/40 p-2 text-left text-xs hover:border-primary hover:bg-muted transition-colors"
                 >
                   <div className="min-w-0 pr-2">
@@ -310,7 +445,7 @@ export function ScanPage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                handleResolveCode(manualCode);
+                handleProcessPayload(manualCode);
               }}
               className="mt-4 space-y-3"
             >
@@ -358,7 +493,7 @@ export function ScanPage() {
                   type="button"
                   onClick={() => {
                     setManualCode(ref.shortCode);
-                    handleResolveCode(ref.shortCode);
+                    handleProcessPayload(ref.shortCode);
                   }}
                   className="rounded-full border bg-background px-2.5 py-1 text-xs font-mono font-medium hover:border-primary hover:text-primary transition-colors"
                 >

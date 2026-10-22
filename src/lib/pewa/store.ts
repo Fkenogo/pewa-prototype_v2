@@ -3764,8 +3764,74 @@ export function generateUniqueShortCode(existingCodes: string[], prefixHint?: st
   return `${basePrefix}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
 }
 
+/**
+ * Validates and extracts PEWA access parameters (shortCode or accessId) from raw QR payloads.
+ * Recognizes PEWA short codes, direct short-code URLs (/c/:code), menu URLs (/m/:slug?code=...),
+ * and WhatsApp concierge prompts. Rejects unsupported, invalid, and non-PEWA QR payloads.
+ */
+export function parsePewaQrPayload(
+  raw: string,
+): { code?: string | undefined; accessId?: string | undefined } | null {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // 1. Direct short-code format: e.g. "GGC-DINE", "HRZ-ROOM", "CB-DEL", "GC-8K2A"
+  const shortCodeRegex = /^[A-Za-z0-9]{2,8}-[A-Za-z0-9]{2,8}$/;
+  if (shortCodeRegex.test(trimmed)) {
+    return { code: trimmed.toUpperCase() };
+  }
+
+  // 2. URL payloads (absolute or relative)
+  try {
+    let url: URL;
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      url = new URL(trimmed);
+    } else if (trimmed.startsWith("/")) {
+      url = new URL(trimmed, "https://pewa.local");
+    } else {
+      return null;
+    }
+
+    // A. Direct short code route: /c/:code
+    const codePathMatch = url.pathname.match(/\/c\/([A-Za-z0-9_-]+)/i);
+    if (codePathMatch && codePathMatch[1]) {
+      return { code: codePathMatch[1].toUpperCase() };
+    }
+
+    // B. Menu route with query parameters: /m/:slug?code=... or ?access=...
+    if (url.pathname.includes("/m/")) {
+      const codeParam = url.searchParams.get("code")?.trim().toUpperCase();
+      const accessParam = url.searchParams.get("access")?.trim();
+      if (codeParam || accessParam) {
+        return {
+          code: codeParam || undefined,
+          accessId: accessParam || undefined,
+        };
+      }
+    }
+
+    // C. WhatsApp concierge link containing a menu code in query text
+    if (url.hostname.includes("wa.me") || url.pathname.includes("whatsapp")) {
+      const textParam = url.searchParams.get("text") || "";
+      const extractedCode = textParam.match(/\b([A-Za-z0-9]{2,8}-[A-Za-z0-9]{2,8})\b/);
+      if (extractedCode && extractedCode[1]) {
+        return { code: extractedCode[1].toUpperCase() };
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 export function resolveMenuAccess(
-  input: { code?: string | undefined; accessId?: string | undefined },
+  input: {
+    code?: string | undefined;
+    accessId?: string | undefined;
+    venueId?: string | undefined;
+  },
   state: PewaState,
 ): MenuAccessResolutionResult {
   const codeParam = input.code?.trim().toUpperCase();
@@ -3804,6 +3870,17 @@ export function resolveMenuAccess(
       success: false,
       error: "The venue associated with this menu is no longer available.",
       reference: ref,
+    };
+  }
+
+  // Cross-venue reference integrity (CORR-C):
+  // When resolving in the context of a specific venue page, the reference must belong to that venue.
+  if (input.venueId && ref.venueId !== input.venueId) {
+    return {
+      success: false,
+      error: "Cross-venue access error: access reference does not match this location.",
+      reference: ref,
+      venue,
     };
   }
 

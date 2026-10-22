@@ -9,6 +9,7 @@ import {
   MessageCircle,
   ShoppingBag,
   Sparkles,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -143,16 +144,27 @@ function PublicMenu() {
   const venueId = venue?.id;
   const hasPublishedMenu = live.length > 0 && !isPreviewMode;
 
+  const isAccessSupplied = Boolean(search.access || search.code);
   const resolvedAccess = useMemo(() => {
-    if (search.access || search.code) {
-      return resolveMenuAccess({ accessId: search.access, code: search.code }, state);
+    if (isAccessSupplied) {
+      return resolveMenuAccess(
+        { accessId: search.access, code: search.code, venueId: venue?.id },
+        state,
+      );
     }
     return null;
-  }, [search.access, search.code, state]);
+  }, [isAccessSupplied, search.access, search.code, venue?.id, state]);
 
-  const requestedMenuId = resolvedAccess?.menu?.id || search.menu;
-  const activeServicePoint = resolvedAccess?.reference?.servicePoint || search.sp;
-  const accessChannel = resolvedAccess?.reference?.channel || search.channel;
+  // CORR-B & CORR-C:
+  // Explicitly invalid, disabled or mismatched access references must not fall through to the published-menu view.
+  const isAccessFailed = Boolean(isAccessSupplied && (!resolvedAccess || !resolvedAccess.success));
+
+  // Trust validated service context: derive strictly from validated reference, never allow forged query params to override it.
+  const requestedMenuId = resolvedAccess?.success ? resolvedAccess.menu?.id : search.menu;
+  const activeServicePoint = resolvedAccess?.success
+    ? resolvedAccess.reference?.servicePoint
+    : undefined;
+  const accessChannel = resolvedAccess?.success ? resolvedAccess.reference?.channel : undefined;
 
   useEffect(() => {
     if (requestedMenuId && live.length > 0) {
@@ -164,8 +176,11 @@ function PublicMenu() {
   }, [requestedMenuId, live]);
 
   useEffect(() => {
-    if (venueId && hasPublishedMenu) visitVenue(venueId);
-  }, [venueId, hasPublishedMenu, visitVenue]);
+    // CORR-B: Do not create recent-menu entries from a failed access-reference journey
+    if (venueId && hasPublishedMenu && !isAccessFailed) {
+      visitVenue(venueId);
+    }
+  }, [venueId, hasPublishedMenu, isAccessFailed, visitVenue]);
 
   if (!venue) {
     return (
@@ -178,6 +193,41 @@ function PublicMenu() {
       </main>
     );
   }
+
+  // CORR-B: Display clear unavailable-access screen when access reference is invalid, disabled, or cross-venue
+  if (isAccessFailed) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center p-6 text-center pb-24">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+          <ShieldAlert className="h-8 w-8" />
+        </div>
+        <h1 className="font-display text-2xl font-bold">Access Link Unavailable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {resolvedAccess?.error ||
+            "The menu access code or QR reference is invalid, expired, or disabled by the business."}
+        </p>
+        <div className="mt-6 flex w-full flex-col gap-2.5">
+          <Link
+            to="/scan"
+            className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90"
+          >
+            Scan or Enter Another Code
+          </Link>
+          <Link
+            to="/m/$slug"
+            params={{ slug: venue.slug }}
+            className="inline-flex h-11 w-full items-center justify-center rounded-xl border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted"
+          >
+            Browse Public Menu
+          </Link>
+          <Link to="/" className="mt-2 text-xs font-medium text-muted-foreground hover:underline">
+            Back to Discovery
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   const menu = live[Math.min(menuIdx, live.length - 1)];
   const currency = venue.currency;
 
@@ -216,15 +266,6 @@ function PublicMenu() {
             {venue.name}.
           </span>
           <span className="font-medium text-foreground">Showing public menu</span>
-        </aside>
-      )}
-      {resolvedAccess && !resolvedAccess.success && (
-        <aside
-          role="status"
-          aria-label="Access link inactive"
-          className="bg-amber-100 border-b border-amber-300 text-amber-950 px-4 py-2.5 text-xs font-medium flex items-center justify-between gap-2"
-        >
-          <span>⚠️ {resolvedAccess.error} Showing standard published menu.</span>
         </aside>
       )}
       {activeServicePoint && (
