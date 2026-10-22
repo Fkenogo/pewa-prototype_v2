@@ -513,11 +513,11 @@ describe("CORR-B: Impression-based promotion accounting", () => {
     const updated = usePewa.getState().campaigns[0]!;
     expect(updated.spent).toBe(10.0); // Capped at budget
 
-    // Additional impressions do not exceed budget
+    // Additional impressions do not exceed budget or continue generating billable impressions once exhausted (R2-D)
     usePewa.getState().recordPromotionImpression(camp.id);
     const afterSecond = usePewa.getState().campaigns[0]!;
     expect(afterSecond.spent).toBe(10.0);
-    expect(afterSecond.impressions).toBe(updated.impressions + 1);
+    expect(afterSecond.impressions).toBe(updated.impressions);
   });
 
   it("preserves campaign configuration and metadata across impression/click updates", () => {

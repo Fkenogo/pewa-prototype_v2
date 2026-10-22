@@ -10,8 +10,8 @@ import {
   X,
   SlidersHorizontal,
 } from "lucide-react";
-import { formatPrice, usePewa } from "@/lib/pewa/store";
-import type { Menu, Offering, SharedOffering, Venue } from "@/lib/pewa/types";
+import { evaluateCampaignDelivery, formatPrice, usePewa } from "@/lib/pewa/store";
+import type { Menu, Offering, PromotionCampaign, SharedOffering, Venue } from "@/lib/pewa/types";
 import { getVenuePublishedMenus } from "@/lib/pewa/taxonomy";
 import {
   getEffectiveOffering,
@@ -121,12 +121,16 @@ export function Discovery({
   initialArea?: string | undefined;
 }) {
   const {
+    organisation,
     venues,
     menus,
     sharedOfferings,
     simulatedTime,
     recents,
+    clearRecents,
+    removeRecent,
     favourites,
+    toggleFavourite,
     campaigns,
     recordPromotionClick,
     recordPromotionImpression,
@@ -401,13 +405,15 @@ export function Discovery({
     return [{ venue: v, matchingOfferings: qualifyingOfferings, isVenueMatch, score: venueScore }];
   });
 
-  // Sort overall results deterministically by score when a query is present
+  // Sort overall results deterministically by score when a query is present, or by recent visit order when recentsOnly is active
   if (queryTokens.length > 0) {
     results.sort((a, b) => {
       const scoreDiff = (b.score || 0) - (a.score || 0);
       if (scoreDiff !== 0) return scoreDiff;
       return a.venue.name.localeCompare(b.venue.name);
     });
+  } else if (recentsOnly) {
+    results.sort((a, b) => recents.indexOf(a.venue.id) - recents.indexOf(b.venue.id));
   }
 
   const recentVenues = recents.flatMap((id) => {
@@ -415,12 +421,36 @@ export function Discovery({
     return v ? [v] : [];
   });
 
+  const unavailableRecents = recents.flatMap((id) => {
+    if (live.some((x) => x.id === id)) return [];
+    const v = allVenues.find((x) => x.id === id);
+    return [{ id, name: v?.name || "Previously visited menu" }];
+  });
+
   const favouriteVenues = favourites.flatMap((id) => {
     const v = live.find((x) => x.id === id);
     return v ? [v] : [];
   });
 
-  const activeCampaigns = campaigns.filter((c) => c.active);
+  const unavailableFavourites = favourites.flatMap((id) => {
+    if (live.some((x) => x.id === id)) return [];
+    const v = allVenues.find((x) => x.id === id);
+    return [{ id, name: v?.name || "Saved business" }];
+  });
+
+  const activeCampaigns = useMemo(
+    () =>
+      campaigns.filter(
+        (c) =>
+          evaluateCampaignDelivery(c, {
+            organisation,
+            venues,
+            menus,
+            referenceTimeIso: simulatedTime,
+          }).eligible,
+      ),
+    [campaigns, organisation, venues, menus, simulatedTime],
+  );
 
   const venuesWithLocationData = useMemo(() => live.filter((v) => hasVenueLocationData(v)), [live]);
 
@@ -1008,7 +1038,10 @@ export function Discovery({
 
       {/* Featured Offers (Sponsored, Home only) */}
       {!directory && !hasActiveFilters && activeCampaigns.length > 0 && (
-        <section className="mt-6 rounded-2xl border border-accent/30 bg-accent/5 p-4 shadow-xs">
+        <section
+          aria-label="Featured Offers"
+          className="mt-6 rounded-2xl border border-accent/30 bg-accent/5 p-4 shadow-xs"
+        >
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-accent" />
@@ -1022,28 +1055,19 @@ export function Discovery({
             {activeCampaigns.map((camp) => {
               const v = allVenues.find((x) => x.id === camp.venueId);
               if (!v) return null;
+              const pubMenus = getVenuePublishedMenus(v, allMenus, allVenues, {
+                includeProtected: false,
+              });
+              const pubMenu = pubMenus[0];
+              if (!pubMenu) return null;
               return (
-                <Link
+                <FeaturedCampaignPlacementCard
                   key={camp.id}
-                  to="/m/$slug"
-                  params={{ slug: v.slug }}
+                  campaign={camp}
+                  venue={v}
+                  publishedMenu={pubMenu}
                   onClick={() => recordPromotionClick(camp.id)}
-                  className="block rounded-xl border bg-card p-3 shadow-xs transition-colors hover:border-accent"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold">{camp.title}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{camp.tagline}</p>
-                    </div>
-                    <span className="shrink-0 rounded-md bg-accent px-2 py-0.5 text-[10px] font-bold text-accent-foreground">
-                      Offer
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs font-medium text-primary">
-                    <span>{v.name}</span>
-                    <span>View offer →</span>
-                  </div>
-                </Link>
+                />
               );
             })}
           </div>
@@ -1054,72 +1078,144 @@ export function Discovery({
       )}
 
       {/* Recently Visited (Home only, max 2, hidden if empty) */}
-      {!directory && !hasActiveFilters && recentVenues.length > 0 && (
-        <section className="mt-6">
-          <div className="mb-2.5 flex items-center justify-between">
-            <h2 className="text-base font-bold">Recently opened</h2>
-            <Link
-              to="/directory"
-              search={{ filter: "recents" }}
-              className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5"
-            >
-              View all ({recentVenues.length}) →
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            {recentVenues.slice(0, 2).map((v) => (
-              <Link
-                key={v.id}
-                to="/m/$slug"
-                params={{ slug: v.slug }}
-                className="block rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
-              >
-                <span className="block truncate font-semibold text-sm">{v.name}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                  {v.category || "Menu"}
+      {!directory &&
+        !hasActiveFilters &&
+        (recentVenues.length > 0 || unavailableRecents.length > 0) && (
+          <section className="mt-6" aria-label="Recently opened">
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <h2 className="text-base font-bold">Recently opened</h2>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={clearRecents}
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground underline"
+                  aria-label="Clear recent history"
+                >
+                  Clear history
+                </button>
+                {recentVenues.length + unavailableRecents.length > 0 && (
+                  <Link
+                    to="/directory"
+                    search={{ filter: "recents" }}
+                    className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5"
+                  >
+                    View all ({recentVenues.length + unavailableRecents.length}) →
+                  </Link>
+                )}
+              </div>
+            </div>
+            {recentVenues.length > 0 && (
+              <div className="grid grid-cols-2 gap-2.5">
+                {recentVenues.slice(0, 2).map((v) => (
+                  <Link
+                    key={v.id}
+                    to="/m/$slug"
+                    params={{ slug: v.slug }}
+                    className="block rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
+                  >
+                    <span className="block truncate font-semibold text-sm">{v.name}</span>
+                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                      {v.category || "Menu"}
+                    </span>
+                    <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
+                      Open menu <ArrowRight className="h-3 w-3" />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+            {recentVenues.length === 0 && unavailableRecents.length > 0 && (
+              <div className="rounded-xl border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground flex items-center justify-between gap-2">
+                <span>
+                  {unavailableRecents.length}{" "}
+                  {unavailableRecents.length === 1
+                    ? "recently viewed menu is"
+                    : "recently viewed menus are"}{" "}
+                  currently unavailable.
                 </span>
-                <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
-                  Open menu <ArrowRight className="h-3 w-3" />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+                <button
+                  type="button"
+                  onClick={clearRecents}
+                  className="shrink-0 font-semibold text-primary hover:underline"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+          </section>
+        )}
 
       {/* Saved Favourites (Home only, max 2, hidden if empty) */}
-      {!directory && !hasActiveFilters && favouriteVenues.length > 0 && (
-        <section className="mt-5">
-          <div className="mb-2.5 flex items-center justify-between">
-            <h2 className="text-base font-bold">Saved favourites</h2>
-            <Link
-              to="/directory"
-              search={{ filter: "saved" }}
-              className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5"
-            >
-              View all ({favouriteVenues.length}) →
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            {favouriteVenues.slice(0, 2).map((v) => (
+      {!directory &&
+        !hasActiveFilters &&
+        (favouriteVenues.length > 0 || unavailableFavourites.length > 0) && (
+          <section className="mt-5" aria-label="Saved favourites">
+            <div className="mb-2.5 flex items-center justify-between">
+              <h2 className="text-base font-bold">Saved favourites</h2>
               <Link
-                key={v.id}
-                to="/m/$slug"
-                params={{ slug: v.slug }}
-                className="block rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
+                to="/directory"
+                search={{ filter: "saved" }}
+                className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5"
               >
-                <span className="block truncate font-semibold text-sm">{v.name}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                  {v.deliveryOnly ? "Delivery only" : v.address.split(",")[0]}
-                </span>
-                <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
-                  <Heart className="h-3 w-3 fill-primary text-primary" /> View menu
-                </span>
+                View all ({favouriteVenues.length + unavailableFavourites.length}) →
               </Link>
-            ))}
-          </div>
-        </section>
-      )}
+            </div>
+            {favouriteVenues.length > 0 && (
+              <div className="grid grid-cols-2 gap-2.5">
+                {favouriteVenues.slice(0, 2).map((v) => (
+                  <div
+                    key={v.id}
+                    className="relative rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
+                  >
+                    <Link to="/m/$slug" params={{ slug: v.slug }} className="block pr-6">
+                      <span className="block truncate font-semibold text-sm">{v.name}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                        {v.deliveryOnly ? "Delivery only" : v.address.split(",")[0]}
+                      </span>
+                      <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
+                        <Heart className="h-3 w-3 fill-primary text-primary" /> View menu
+                      </span>
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label={`Unsave ${v.name}`}
+                      onClick={() => toggleFavourite(v.id)}
+                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-primary hover:bg-muted transition-colors"
+                    >
+                      <Heart className="h-3.5 w-3.5 fill-current" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {favouriteVenues.length === 0 && unavailableFavourites.length > 0 && (
+              <div className="space-y-2">
+                {unavailableFavourites.slice(0, 2).map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-dashed bg-muted/40 p-3 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-muted-foreground">{item.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Menu currently unavailable
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs shrink-0"
+                      onClick={() => toggleFavourite(item.id)}
+                      aria-label={`Unsave ${item.name}`}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
       {/* Organic Discover Menus List */}
       <section className="mt-6">
@@ -1159,6 +1255,17 @@ export function Discovery({
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {recentsOnly && recents.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={clearRecents}
+                className="h-8 px-2.5 text-xs"
+                aria-label="Clear recent history"
+              >
+                Clear history
+              </Button>
+            )}
             {hasActiveFilters && (
               <Button
                 variant="ghost"
@@ -1201,14 +1308,77 @@ export function Discovery({
           ))}
         </div>
 
-        {!results.length && (
-          <div className="border-y py-8 text-center space-y-2">
-            <p className="text-muted-foreground">No menus match your active filters.</p>
-            <Button variant="outline" size="sm" onClick={clearAllFilters}>
-              Clear all filters
-            </Button>
+        {/* Graceful handling of unavailable saved or recent businesses */}
+        {savedOnly && unavailableFavourites.length > 0 && (
+          <div className="mt-4 space-y-2 rounded-xl border border-dashed bg-muted/30 p-3">
+            <p className="text-xs font-semibold text-muted-foreground">
+              Unavailable saved businesses ({unavailableFavourites.length})
+            </p>
+            {unavailableFavourites.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-2 rounded-lg border bg-card p-2.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground truncate">{item.name}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Menu is currently unpublished or unavailable
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs shrink-0"
+                  onClick={() => toggleFavourite(item.id)}
+                  aria-label={`Unsave ${item.name}`}
+                >
+                  Remove from saved
+                </Button>
+              </div>
+            ))}
           </div>
         )}
+
+        {recentsOnly && unavailableRecents.length > 0 && (
+          <div className="mt-4 space-y-2 rounded-xl border border-dashed bg-muted/30 p-3">
+            <p className="text-xs font-semibold text-muted-foreground">
+              Previously visited menus currently unavailable ({unavailableRecents.length})
+            </p>
+            {unavailableRecents.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-2 rounded-lg border bg-card p-2.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground truncate">{item.name}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Menu is currently unpublished or archived
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs shrink-0"
+                  onClick={() => removeRecent(item.id)}
+                  aria-label={`Remove ${item.name} from history`}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!results.length &&
+          !(savedOnly && unavailableFavourites.length > 0) &&
+          !(recentsOnly && unavailableRecents.length > 0) && (
+            <div className="border-y py-8 text-center space-y-2">
+              <p className="text-muted-foreground">No menus match your active filters.</p>
+              <Button variant="outline" size="sm" onClick={clearAllFilters}>
+                Clear all filters
+              </Button>
+            </div>
+          )}
       </section>
 
       {!directory && (
@@ -1519,5 +1689,129 @@ function VenueCard({
         <Heart className={saved ? "fill-current text-primary" : "text-muted-foreground"} />
       </Button>
     </article>
+  );
+}
+
+export function FeaturedCampaignPlacementCard({
+  campaign,
+  venue,
+  publishedMenu,
+  onClick,
+  previewOnly = false,
+}: {
+  campaign: Pick<PromotionCampaign, "id" | "title" | "tagline" | "badgeText">;
+  venue: Venue;
+  publishedMenu?: Menu | undefined;
+  onClick?: () => void;
+  previewOnly?: boolean;
+}) {
+  const { sharedOfferings, simulatedTime } = usePewa();
+
+  const publishedCoverImage = useMemo(() => {
+    if (!publishedMenu) return undefined;
+    if (publishedMenu.coverImage) return publishedMenu.coverImage;
+    const effectiveShared =
+      publishedMenu.publishedSnapshot?.sharedOfferingsSnapshot || sharedOfferings;
+    for (const s of publishedMenu.sections) {
+      for (const rawOff of s.offerings) {
+        if (isOfferingHiddenAtVenue(rawOff, venue.id, effectiveShared)) continue;
+        const avail = getEffectiveOfferingAvailability(rawOff, venue.id, {
+          simulatedTime,
+          sharedOfferings: effectiveShared,
+          venue,
+        });
+        if (!avail.available) continue;
+        const eff = getEffectiveOffering(rawOff, venue.id, effectiveShared);
+        if (eff.image) return eff.image;
+      }
+    }
+    return undefined;
+  }, [publishedMenu, venue, sharedOfferings, simulatedTime]);
+
+  const locationSummary = venue.deliveryOnly
+    ? `Delivery only · ${venue.serviceArea || "Declared dispatch area"}`
+    : venue.address
+      ? venue.address.split(",")[0]
+      : "Direct inquiry";
+
+  const content = (
+    <div className="flex items-start gap-3">
+      {publishedCoverImage ? (
+        <img
+          src={publishedCoverImage}
+          alt={venue.name}
+          loading="lazy"
+          className="h-14 w-14 shrink-0 rounded-lg object-cover border"
+        />
+      ) : (
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border bg-secondary font-display text-xl font-bold text-primary">
+          {venue.name[0]}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            {(previewOnly ||
+              (campaign.badgeText && campaign.badgeText.toLowerCase() !== "sponsored")) && (
+              <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+                  Sponsored
+                </span>
+                {campaign.badgeText && campaign.badgeText.toLowerCase() !== "sponsored" && (
+                  <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-foreground">
+                    {campaign.badgeText}
+                  </span>
+                )}
+              </div>
+            )}
+            <p className="text-sm font-semibold leading-snug text-foreground">
+              {campaign.title || "Featured Offer Title"}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+              {campaign.tagline || venue.tagline || "Available on our published menu"}
+            </p>
+          </div>
+          <span className="shrink-0 rounded-md bg-accent px-2 py-0.5 text-[10px] font-bold text-accent-foreground">
+            Offer
+          </span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t pt-1.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground min-w-0">
+            <span className="font-semibold text-primary truncate">{venue.name}</span>
+            {venue.category && <span>· {venue.category}</span>}
+            <span className="truncate">· {locationSummary}</span>
+            {publishedMenu && (
+              <span className="text-[11px] text-muted-foreground truncate">
+                · {publishedMenu.name}
+              </span>
+            )}
+          </div>
+          <span className="shrink-0 font-semibold text-primary">View offer →</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (previewOnly) {
+    return (
+      <div
+        data-testid={`featured-preview-${campaign.id}`}
+        className="block rounded-xl border border-accent/40 bg-card p-3 shadow-xs"
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      to="/m/$slug"
+      params={{ slug: venue.slug }}
+      onClick={onClick}
+      data-testid={`featured-card-${campaign.id}`}
+      className="block rounded-xl border bg-card p-3 shadow-xs transition-colors hover:border-accent"
+    >
+      {content}
+    </Link>
   );
 }

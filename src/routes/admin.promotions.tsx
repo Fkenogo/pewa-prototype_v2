@@ -1,20 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  ArrowRight,
-  Check,
-  Eye,
-  Info,
-  MousePointerClick,
-  Plus,
-  ShieldAlert,
-  Sparkles,
-  Tag,
-  ToggleLeft,
-  ToggleRight,
-} from "lucide-react";
+import { Eye, Info, MousePointerClick, Plus, ShieldAlert, Sparkles, Tag } from "lucide-react";
 import { toast } from "sonner";
-import { canManagePromotions, usePewa } from "@/lib/pewa/store";
+import {
+  canManagePromotions,
+  evaluateCampaignDelivery,
+  getAuthoritativeMenus,
+  getAuthoritativeVenues,
+  getVenuePublishedMenus,
+  usePewa,
+} from "@/lib/pewa/store";
+import { FeaturedCampaignPlacementCard } from "@/components/pewa/Discovery";
 import { pageHead } from "@/lib/pewa/metadata";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +33,16 @@ export const Route = createFileRoute("/admin/promotions")({
 });
 
 function PromotionsPage() {
-  const { organisation, venues, campaigns, role, createCampaign, toggleCampaign } = usePewa();
+  const {
+    organisation,
+    venues,
+    menus,
+    simulatedTime,
+    campaigns,
+    role,
+    createCampaign,
+    toggleCampaign,
+  } = usePewa();
   const [tab, setTab] = useState<"paid" | "specials">("paid");
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -46,6 +51,9 @@ function PromotionsPage() {
   const [tagline, setTagline] = useState("");
   const [venueId, setVenueId] = useState(venues[0]?.id || "");
   const [budget, setBudget] = useState("50");
+
+  const allVenues = getAuthoritativeVenues({ venues });
+  const allMenus = getAuthoritativeMenus({ menus });
 
   if (!canManagePromotions(role)) {
     return (
@@ -98,8 +106,13 @@ function PromotionsPage() {
     venues.some((v) => v.id === c.venueId && v.orgId === organisation?.id),
   );
 
+  const selectedFormVenue = venues.find((v) => v.id === venueId) || venues[0];
+  const selectedFormPublicMenu = selectedFormVenue
+    ? getVenuePublishedMenus(selectedFormVenue, allMenus, allVenues, { includeProtected: false })[0]
+    : undefined;
+
   return (
-    <main className="mx-auto max-w-4xl px-4 pt-16 md:pt-6">
+    <main className="mx-auto max-w-4xl px-4 pt-16 pb-16 md:pt-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm text-muted-foreground">{organisation?.name}</p>
@@ -176,26 +189,47 @@ function PromotionsPage() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {orgCampaigns.map((camp) => {
-                  const targetVenue = venues.find((v) => v.id === camp.venueId);
+                  const targetVenue =
+                    allVenues.find((v) => v.id === camp.venueId) ||
+                    venues.find((v) => v.id === camp.venueId);
+                  const publicMenus = targetVenue
+                    ? getVenuePublishedMenus(targetVenue, allMenus, allVenues, {
+                        includeProtected: false,
+                      })
+                    : [];
+                  const publishedMenu = publicMenus[0];
+                  const evaluation = evaluateCampaignDelivery(camp, {
+                    organisation,
+                    venues,
+                    menus,
+                    referenceTimeIso: simulatedTime,
+                  });
                   const ctr =
                     camp.impressions > 0
                       ? ((camp.clicks / camp.impressions) * 100).toFixed(1)
                       : "0.0";
+
+                  const badgeColors =
+                    evaluation.state === "eligible"
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                      : evaluation.state === "suspended" || evaluation.state === "unpublished_venue"
+                        ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                        : evaluation.state === "exhausted" || evaluation.state === "expired"
+                          ? "bg-destructive/15 text-destructive"
+                          : "bg-muted text-muted-foreground";
+
                   return (
                     <article
                       key={camp.id}
+                      data-testid={`campaign-admin-card-${camp.id}`}
                       className="rounded-2xl border bg-card p-5 shadow-xs flex flex-col justify-between"
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2">
                           <span
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                              camp.active
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                                : "bg-muted text-muted-foreground"
-                            }`}
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${badgeColors}`}
                           >
-                            {camp.active ? "Active" : "Paused"}
+                            {evaluation.label}
                           </span>
                           <span className="rounded-md bg-accent/20 px-2 py-0.5 text-[10px] font-bold text-accent">
                             {camp.badgeText}
@@ -206,6 +240,34 @@ function PromotionsPage() {
                         <p className="mt-2 text-xs font-medium text-primary">
                           Venue: {targetVenue?.name}
                         </p>
+
+                        {evaluation.reason && (
+                          <div className="mt-2.5 rounded-lg border border-amber-500/30 bg-amber-50/60 p-2.5 text-[11px] text-amber-950 dark:bg-amber-950/20 dark:text-amber-200">
+                            {evaluation.reason}
+                          </div>
+                        )}
+
+                        {/* Customer Placement Preview */}
+                        {targetVenue && (
+                          <div className="mt-4 rounded-xl border border-dashed bg-muted/20 p-3">
+                            <div className="mb-2 flex items-center justify-between text-[11px]">
+                              <span className="font-semibold text-muted-foreground uppercase tracking-wider">
+                                Customer Placement Preview (PEWA Home)
+                              </span>
+                              <span className="text-[10px] font-medium text-muted-foreground">
+                                {publishedMenu
+                                  ? "Using published menu"
+                                  : "No public menu published"}
+                              </span>
+                            </div>
+                            <FeaturedCampaignPlacementCard
+                              campaign={camp}
+                              venue={targetVenue}
+                              publishedMenu={publishedMenu}
+                              previewOnly
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-5 border-t pt-4">
@@ -228,10 +290,14 @@ function PromotionsPage() {
                           </div>
                         </div>
 
-                        <div className="mt-4 flex items-center justify-between">
+                        <div className="mt-4 flex items-center justify-between gap-2">
                           <div>
                             <span className="text-xs text-muted-foreground">
                               Spend: <b>${camp.spent.toFixed(2)}</b> / ${camp.budget.toFixed(2)}
+                            </span>
+                            <span className="block text-[11px] font-medium text-foreground/80">
+                              Remaining entitlement: <b>${evaluation.remainingBudget.toFixed(2)}</b>{" "}
+                              ({evaluation.remainingImpressionsEntitlement} views)
                             </span>
                             <span className="block text-[10px] text-muted-foreground italic">
                               Simulated exposure rate ($0.10/view); clicks do not consume budget
@@ -241,7 +307,7 @@ function PromotionsPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => toggleCampaign(camp.id)}
-                            className="h-8 text-xs"
+                            className="h-8 text-xs shrink-0"
                           >
                             {camp.active ? "Pause campaign" : "Resume campaign"}
                           </Button>
@@ -305,7 +371,7 @@ function PromotionsPage() {
 
       {/* Create Campaign Modal */}
       <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-xl">Create Featured Offer</DialogTitle>
             <DialogDescription>
@@ -365,6 +431,35 @@ function PromotionsPage() {
                 className="mt-1 h-11"
               />
             </div>
+
+            {/* Live Customer Placement Preview in Modal */}
+            {selectedFormVenue && (
+              <div className="rounded-xl border border-dashed bg-muted/20 p-3">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Live Customer Placement Preview
+                </p>
+                <FeaturedCampaignPlacementCard
+                  campaign={{
+                    id: "draft_preview",
+                    title: title.trim() || "20% Off Slow Cold Brews All Week",
+                    tagline:
+                      tagline.trim() ||
+                      selectedFormVenue.tagline ||
+                      "Available on our published menu",
+                    badgeText: "Sponsored",
+                  }}
+                  venue={selectedFormVenue}
+                  publishedMenu={selectedFormPublicMenu}
+                  previewOnly
+                />
+                {!selectedFormPublicMenu && (
+                  <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
+                    Note: {selectedFormVenue.name} does not currently have a public published menu.
+                    Campaign will remain withheld until a menu is published.
+                  </p>
+                )}
+              </div>
+            )}
 
             <DialogFooter className="pt-2">
               <Button type="submit" className="h-11 w-full">

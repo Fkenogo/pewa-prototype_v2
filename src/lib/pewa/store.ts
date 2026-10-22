@@ -181,6 +181,8 @@ type Actions = {
   duplicateMenu: (menuId: string) => string;
   log: (e: Omit<ActivityEvent, "id" | "at" | "role">) => void;
   visitVenue: (id: string) => void;
+  clearRecents: () => void;
+  removeRecent: (id: string) => void;
   toggleFavourite: (id: string) => void;
   addCartLine: (venueId: string, line: Omit<CartLine, "id">) => string | null;
   updateCartQuantity: (id: string, quantity: number) => void;
@@ -362,6 +364,144 @@ const ensurePublishedSnapshots = (menus: Menu[], sharedOfferings?: SharedOfferin
     return m;
   });
 
+export const SIMULATED_IMPRESSION_COST = 0.1;
+
+export type CampaignDeliveryState =
+  "eligible" | "paused" | "expired" | "scheduled" | "exhausted" | "suspended" | "unpublished_venue";
+
+export interface CampaignDeliveryEvaluation {
+  eligible: boolean;
+  state: CampaignDeliveryState;
+  label: string;
+  remainingBudget: number;
+  remainingImpressionsEntitlement: number;
+  reason?: string | undefined;
+}
+
+/**
+ * Evaluates whether a featured campaign is eligible for customer delivery and impression charging.
+ * Enforces:
+ * - Campaign is active
+ * - Budget is not exhausted (remaining budget >= SIMULATED_IMPRESSION_COST)
+ * - Campaign is within its start/end window
+ * - Organisation is not suspended (suspension halts delivery while preserving remaining exposure entitlement)
+ * - Target venue exists and has at least one eligible public published menu
+ */
+export function evaluateCampaignDelivery(
+  campaign: PromotionCampaign,
+  context: {
+    organisation?: PewaState["organisation"];
+    venues: PewaState["venues"];
+    menus: PewaState["menus"];
+    referenceTimeIso?: string | undefined;
+  },
+): CampaignDeliveryEvaluation {
+  const remainingBudget = Math.max(0, +(campaign.budget - campaign.spent).toFixed(2));
+  const remainingImpressionsEntitlement = Math.floor(
+    +(remainingBudget / SIMULATED_IMPRESSION_COST).toFixed(4),
+  );
+
+  // Check organisation suspension first so preserved entitlement is clearly surfaced
+  if (
+    context.organisation &&
+    context.organisation.id === campaign.orgId &&
+    context.organisation.status === "suspended"
+  ) {
+    return {
+      eligible: false,
+      state: "suspended",
+      label: "Suspended (Entitlement Preserved)",
+      remainingBudget,
+      remainingImpressionsEntitlement,
+      reason: `Organisation is suspended. Delivery is halted and $${remainingBudget.toFixed(2)} (${remainingImpressionsEntitlement} impressions) of remaining exposure entitlement is preserved.`,
+    };
+  }
+
+  const allVenues = getAuthoritativeVenues({ venues: context.venues });
+  const allMenus = getAuthoritativeMenus({ menus: context.menus });
+  const venue = allVenues.find((v) => v.id === campaign.venueId);
+  const publicMenus = venue
+    ? getVenuePublishedMenus(venue, allMenus, allVenues, { includeProtected: false })
+    : [];
+
+  if (!venue || publicMenus.length === 0) {
+    return {
+      eligible: false,
+      state: "unpublished_venue",
+      label: "Awaiting Published Menu",
+      remainingBudget,
+      remainingImpressionsEntitlement,
+      reason:
+        "Target business does not currently have an eligible public published menu. Campaign is withheld from customer placement without charging impressions.",
+    };
+  }
+
+  if (remainingBudget <= 0 || campaign.spent >= campaign.budget) {
+    return {
+      eligible: false,
+      state: "exhausted",
+      label: "Budget Exhausted",
+      remainingBudget: 0,
+      remainingImpressionsEntitlement: 0,
+      reason:
+        "Campaign budget has been fully utilised. No further billable impressions will be generated.",
+    };
+  }
+
+  const refNow =
+    context.referenceTimeIso && !Number.isNaN(Date.parse(context.referenceTimeIso))
+      ? Date.parse(context.referenceTimeIso)
+      : Date.now();
+
+  if (campaign.endDate) {
+    const endMs = Date.parse(campaign.endDate);
+    if (!Number.isNaN(endMs) && refNow > endMs) {
+      return {
+        eligible: false,
+        state: "expired",
+        label: "Expired",
+        remainingBudget,
+        remainingImpressionsEntitlement,
+        reason:
+          "Campaign end date has passed. Expired campaigns do not appear in discovery or incur charges.",
+      };
+    }
+  }
+
+  if (campaign.startDate) {
+    const startMs = Date.parse(campaign.startDate);
+    if (!Number.isNaN(startMs) && refNow < startMs) {
+      return {
+        eligible: false,
+        state: "scheduled",
+        label: "Scheduled",
+        remainingBudget,
+        remainingImpressionsEntitlement,
+        reason: "Campaign start date is in the future.",
+      };
+    }
+  }
+
+  if (!campaign.active) {
+    return {
+      eligible: false,
+      state: "paused",
+      label: "Paused",
+      remainingBudget,
+      remainingImpressionsEntitlement,
+      reason: `Campaign is paused by the business. $${remainingBudget.toFixed(2)} (${remainingImpressionsEntitlement} impressions) remaining.`,
+    };
+  }
+
+  return {
+    eligible: true,
+    state: "eligible",
+    label: "Active · Delivering",
+    remainingBudget,
+    remainingImpressionsEntitlement,
+  };
+}
+
 export const usePewa = create<PewaState & Actions>()(
   persist(
     (set, get) => {
@@ -376,7 +516,12 @@ export const usePewa = create<PewaState & Actions>()(
         ...initialSeed,
         menus: ensurePublishedSnapshots(initialSeed.menus, initialSeed.sharedOfferings),
         visitVenue: (id) =>
-          set((s) => ({ recents: [id, ...s.recents.filter((v) => v !== id)].slice(0, 12) })),
+          set((s) => {
+            if (!id) return s;
+            return { recents: [id, ...s.recents.filter((v) => v !== id)] };
+          }),
+        clearRecents: () => set({ recents: [] }),
+        removeRecent: (id) => set((s) => ({ recents: s.recents.filter((v) => v !== id) })),
         toggleFavourite: (id) =>
           set((s) => ({
             favourites: s.favourites.includes(id)
@@ -719,26 +864,48 @@ export const usePewa = create<PewaState & Actions>()(
           });
         },
         recordPromotionImpression: (campaignId) => {
-          // Simulated non-authoritative exposure accounting per CORR-B:
+          // Simulated non-authoritative exposure accounting per CORR-B & R2-D:
           // Prototype simulates an exposure fee ($0.10) per delivered impression, capped at available budget.
-          const SIMULATED_IMPRESSION_COST = 0.1;
-          set((s) => ({
-            campaigns: s.campaigns.map((c) =>
-              c.id === campaignId
-                ? {
-                    ...c,
-                    impressions: c.impressions + 1,
-                    spent: Math.min(c.budget, +(c.spent + SIMULATED_IMPRESSION_COST).toFixed(2)),
-                  }
-                : c,
-            ),
-          }));
+          // Expired, inactive, exhausted, suspended-org, or unpublished-venue campaigns must NOT generate billable impressions.
+          set((s) => {
+            const target = s.campaigns.find((c) => c.id === campaignId);
+            if (!target) return s;
+            const evaluation = evaluateCampaignDelivery(target, {
+              organisation: s.organisation,
+              venues: s.venues,
+              menus: s.menus,
+              referenceTimeIso: s.simulatedTime,
+            });
+            if (!evaluation.eligible) return s;
+            return {
+              campaigns: s.campaigns.map((c) =>
+                c.id === campaignId
+                  ? {
+                      ...c,
+                      impressions: c.impressions + 1,
+                      spent: Math.min(c.budget, +(c.spent + SIMULATED_IMPRESSION_COST).toFixed(2)),
+                    }
+                  : c,
+              ),
+            };
+          });
         },
         recordPromotionClick: (campaignId) => {
-          // Engagement tracking per CORR-B:
+          // Engagement tracking per CORR-B & R2-D:
           // Clicks are tracked separately as engagement metrics and MUST NOT draw down promotional budget.
-          set((s) => ({
-            campaigns: s.campaigns.map((c) =>
+          // Only record engagement for campaigns eligible for customer delivery.
+          const s = get();
+          const target = s.campaigns.find((c) => c.id === campaignId);
+          if (!target) return;
+          const evaluation = evaluateCampaignDelivery(target, {
+            organisation: s.organisation,
+            venues: s.venues,
+            menus: s.menus,
+            referenceTimeIso: s.simulatedTime,
+          });
+          if (!evaluation.eligible) return;
+          set((state) => ({
+            campaigns: state.campaigns.map((c) =>
               c.id === campaignId
                 ? {
                     ...c,

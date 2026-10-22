@@ -119,9 +119,10 @@ function PublicMenu() {
   const [roomInput, setRoomInput] = useState("");
   const [nameInput, setNameInput] = useState("");
   const venueId = venue?.id;
+  const hasPublishedMenu = live.length > 0 && !isPreviewMode;
   useEffect(() => {
-    if (venueId) visitVenue(venueId);
-  }, [venueId, visitVenue]);
+    if (venueId && hasPublishedMenu) visitVenue(venueId);
+  }, [venueId, hasPublishedMenu, visitVenue]);
 
   if (!venue) {
     return (
