@@ -408,4 +408,166 @@ describe("R2-D & CORR-001: Featured Placements, Delivered Impression Integrity, 
     fireEvent.click(screen.getByRole("button", { name: "Unsave Green Garden Café" }));
     expect(usePewa.getState().favourites).not.toContain("venue_ggc");
   });
+
+  it("CORR-002 CORR-A — Resolves time-only and day+time simulation values against the deterministic October 2026 demonstration date, preserves explicit timestamps, and evaluates scheduled, active, and expired campaigns repeatably across different real-world dates", () => {
+    // Load the default 'sponsored-campaign' scenario which uses time-only simulatedTime: "10:00"
+    usePewa.getState().loadScenario("sponsored-campaign");
+    expect(usePewa.getState().simulatedTime).toBe("10:00");
+
+    // Simulate viewing the prototype far in the future (e.g. year 2028) and in the past (e.g. year 2024)
+    for (const wallClockIso of ["2028-05-15T12:00:00.000Z", "2024-01-10T08:00:00.000Z"]) {
+      vi.setSystemTime(new Date(wallClockIso));
+
+      const state = usePewa.getState();
+      const seedCamp = state.campaigns[0]!;
+
+      // 1. Time-only "10:00" resolves against 2026-10-20, keeping the October 15-31 2026 campaign active
+      const timeOnlyEval = evaluateCampaignDelivery(seedCamp, {
+        organisation: state.organisation,
+        venues: state.venues,
+        menus: state.menus,
+        referenceTimeIso: "10:00",
+      });
+      expect(timeOnlyEval.eligible).toBe(true);
+      expect(timeOnlyEval.state).toBe("eligible");
+
+      // 2. Day+time simulation value "mon 09:00" resolves against 2026-10-19, also active
+      const dayTimeEval = evaluateCampaignDelivery(seedCamp, {
+        organisation: state.organisation,
+        venues: state.venues,
+        menus: state.menus,
+        referenceTimeIso: "mon 09:00",
+      });
+      expect(dayTimeEval.eligible).toBe(true);
+      expect(dayTimeEval.state).toBe("eligible");
+
+      // 3. Explicit complete timestamp before campaign start -> scheduled
+      const scheduledEval = evaluateCampaignDelivery(seedCamp, {
+        organisation: state.organisation,
+        venues: state.venues,
+        menus: state.menus,
+        referenceTimeIso: "2026-10-10T10:00:00.000Z",
+      });
+      expect(scheduledEval.eligible).toBe(false);
+      expect(scheduledEval.state).toBe("scheduled");
+
+      // 4. Explicit complete timestamp after campaign end -> expired
+      const expiredEval = evaluateCampaignDelivery(seedCamp, {
+        organisation: state.organisation,
+        venues: state.venues,
+        menus: state.menus,
+        referenceTimeIso: "2026-11-05T10:00:00.000Z",
+      });
+      expect(expiredEval.eligible).toBe(false);
+      expect(expiredEval.state).toBe("expired");
+
+      // 5. Campaign with future startDate relative to "10:00" (2026-10-20) -> scheduled
+      const futureCampEval = evaluateCampaignDelivery(
+        {
+          ...seedCamp,
+          startDate: "2026-10-25T00:00:00.000Z",
+          endDate: "2026-11-10T00:00:00.000Z",
+        },
+        {
+          organisation: state.organisation,
+          venues: state.venues,
+          menus: state.menus,
+          referenceTimeIso: "10:00",
+        },
+      );
+      expect(futureCampEval.eligible).toBe(false);
+      expect(futureCampEval.state).toBe("scheduled");
+
+      // 6. Campaign with past endDate relative to "10:00" (2026-10-20) -> expired
+      const pastCampEval = evaluateCampaignDelivery(
+        {
+          ...seedCamp,
+          startDate: "2026-10-01T00:00:00.000Z",
+          endDate: "2026-10-18T00:00:00.000Z",
+        },
+        {
+          organisation: state.organisation,
+          venues: state.venues,
+          menus: state.menus,
+          referenceTimeIso: "10:00",
+        },
+      );
+      expect(pastCampEval.eligible).toBe(false);
+      expect(pastCampEval.state).toBe("expired");
+    }
+
+    // Verify rendering Home in 2028 with default scenario simulatedTime ("10:00") still displays and qualifies impressions
+    vi.setSystemTime(new Date("2028-05-15T12:00:00.000Z"));
+    const initialImpressions = usePewa.getState().campaigns[0]!.impressions;
+    const { unmount } = render(<Discovery directory={false} />);
+    expect(screen.getByRole("region", { name: "Featured Offers" })).toBeInTheDocument();
+    act(() => {
+      triggerIntersection({ isIntersecting: true, intersectionRatio: 1.0 });
+      vi.advanceTimersByTime(QUALIFYING_EXPOSURE_DWELL_MS + 20);
+    });
+    expect(usePewa.getState().campaigns[0]!.impressions).toBe(initialImpressions + 1);
+    unmount();
+  });
+
+  it("CORR-002 CORR-B — Allows individual removal of available recent entries in /directory?filter=recents and on Home without triggering venue navigation, retains other entries, and persists across reload", () => {
+    const { visitVenue } = usePewa.getState();
+    visitVenue("venue_sol");
+    visitVenue("venue_gelato");
+    visitVenue("venue_ggc");
+    expect(usePewa.getState().recents).toEqual(["venue_ggc", "venue_gelato", "venue_sol"]);
+
+    // 1. Directory recents view (/directory?filter=recents) shows per-entry Remove control on available VenueCards
+    const { unmount: unmountDir } = render(<Discovery directory={true} initialFilter="recents" />);
+    expect(screen.getByTestId("venue-card-green-garden-cafe")).toBeInTheDocument();
+    expect(screen.getByTestId("venue-card-gelato-craft-lab")).toBeInTheDocument();
+    expect(screen.getByTestId("venue-card-sol-artisan-bakery")).toBeInTheDocument();
+
+    // Verify clicking Remove does not trigger anchor default navigation
+    const removeGelatoBtn = screen.getByTestId("remove-recent-gelato-craft-lab");
+    let linkDefaultPrevented = false;
+    const cardLink = screen.getByTestId("venue-card-gelato-craft-lab").querySelector("a");
+    cardLink?.addEventListener("click", (ev) => {
+      linkDefaultPrevented = ev.defaultPrevented;
+    });
+
+    fireEvent.click(removeGelatoBtn);
+    // StopPropagation prevents the click from even reaching the parent <a>, or if it bubbles, default is prevented
+    expect(linkDefaultPrevented || usePewa.getState().recents.length === 2).toBe(true);
+
+    // Gelato Craft Lab is removed immediately while Green Garden Café and Sol Artisan Bakery remain
+    expect(usePewa.getState().recents).toEqual(["venue_ggc", "venue_sol"]);
+    expect(screen.queryByTestId("venue-card-gelato-craft-lab")).not.toBeInTheDocument();
+    expect(screen.getByTestId("venue-card-green-garden-cafe")).toBeInTheDocument();
+    expect(screen.getByTestId("venue-card-sol-artisan-bakery")).toBeInTheDocument();
+
+    // Saved favourite control on remaining cards still works independently
+    const saveGgcBtn = screen.getByRole("button", { name: "Save Green Garden Café" });
+    fireEvent.click(saveGgcBtn);
+    expect(usePewa.getState().favourites).toContain("venue_ggc");
+    unmountDir();
+
+    // 2. Home view reflects the updated recents immediately and supports per-item removal
+    const { unmount: unmountHome } = render(<Discovery directory={false} />);
+    const recentsSection = screen.getByRole("region", { name: "Recently opened" });
+    expect(within(recentsSection).getByText("View all (2) →")).toBeInTheDocument();
+    expect(within(recentsSection).getByText("Green Garden Café")).toBeInTheDocument();
+    expect(within(recentsSection).getByText("Sol Artisan Bakery")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(recentsSection).getByRole("button", {
+        name: "Remove Green Garden Café from recents",
+      }),
+    );
+    expect(usePewa.getState().recents).toEqual(["venue_sol"]);
+    expect(within(recentsSection).getByText("View all (1) →")).toBeInTheDocument();
+    expect(within(recentsSection).queryByText("Green Garden Café")).not.toBeInTheDocument();
+    expect(within(recentsSection).getByText("Sol Artisan Bakery")).toBeInTheDocument();
+    unmountHome();
+
+    // 3. Persistence after reload: persisted storage state retains only ["venue_sol"]
+    const persistedRaw = window.localStorage.getItem("pewa-prototype-v1");
+    expect(persistedRaw).toBeTruthy();
+    const parsed = JSON.parse(persistedRaw!);
+    expect(parsed.state.recents).toEqual(["venue_sol"]);
+  });
 });

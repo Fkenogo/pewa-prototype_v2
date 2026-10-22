@@ -233,6 +233,102 @@ export interface ParsedScheduleReferenceTime {
 }
 
 /**
+ * Canonical demonstration reference date for PEWA fixed prototype scenarios (October 2026).
+ * Fixed demonstration scenarios specify time-only or day+time simulation values (e.g. "10:00", "mon 09:00")
+ * that must resolve against this documented demonstration calendar week rather than the viewer's
+ * real-world wall clock, ensuring deterministic repeatability across any real-world date.
+ */
+export const PROTOTYPE_DEMO_DATE_ISO = "2026-10-20";
+
+const PROTOTYPE_DEMO_DAY_DATE_MAP: Record<DayOfWeek, string> = {
+  mon: "2026-10-19",
+  tue: "2026-10-20",
+  wed: "2026-10-21",
+  thu: "2026-10-22",
+  fri: "2026-10-23",
+  sat: "2026-10-24",
+  sun: "2026-10-25",
+};
+
+/**
+ * Resolves a prototype simulation reference time into a deterministic epoch millisecond timestamp.
+ *
+ * Distinguishes demonstration simulation time from production clock behaviour:
+ * - Explicit complete ISO timestamps or Date instances resolve directly to their exact timestamp.
+ * - Time-only simulation strings (e.g. "10:00") or day+time strings (e.g. "mon 09:00") resolve
+ *   against the documented October 2026 demonstration date (`PROTOTYPE_DEMO_DATE_ISO`) rather than
+ *   the viewer's real-world calendar date.
+ * - When no simulation value is provided (or it is cleared to undefined/empty), falls back to the
+ *   deterministic demonstration reference timestamp (`2026-10-20T10:00:00.000Z`) by default unless
+ *   `fallbackToSystemClock` is explicitly requested.
+ */
+export function resolveScenarioReferenceTimeMs(
+  ref?: string | Date | undefined,
+  options?: { fallbackToSystemClock?: boolean },
+): number {
+  const defaultDemoFallbackMs = Date.parse(`${PROTOTYPE_DEMO_DATE_ISO}T10:00:00.000Z`);
+
+  if (!ref) {
+    return options?.fallbackToSystemClock ? Date.now() : defaultDemoFallbackMs;
+  }
+
+  if (ref instanceof Date) {
+    const ms = ref.getTime();
+    return !Number.isNaN(ms)
+      ? ms
+      : options?.fallbackToSystemClock
+        ? Date.now()
+        : defaultDemoFallbackMs;
+  }
+
+  const trimmed = ref.trim();
+  if (!trimmed) {
+    return options?.fallbackToSystemClock ? Date.now() : defaultDemoFallbackMs;
+  }
+
+  // 1. Explicit date or ISO date-time string (starts with YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    const parsedMs = Date.parse(trimmed);
+    if (!Number.isNaN(parsedMs)) {
+      return parsedMs;
+    }
+  }
+
+  // 2. Day + HH:MM simulation string (e.g. "mon 09:00", "Tuesday 14:00")
+  const lower = trimmed.toLowerCase();
+  const parts = lower.split(/\s+/);
+  if (parts.length >= 2) {
+    const dayRaw = parts[0]!.slice(0, 3) as DayOfWeek;
+    const timeRaw = parts[1]!;
+    const minutes = parseTimeToMinutes(timeRaw);
+    if (DAY_ORDER.includes(dayRaw) && minutes !== null) {
+      const datePart = PROTOTYPE_DEMO_DAY_DATE_MAP[dayRaw] || PROTOTYPE_DEMO_DATE_ISO;
+      const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+      const mm = String(minutes % 60).padStart(2, "0");
+      return Date.parse(`${datePart}T${hh}:${mm}:00.000Z`);
+    }
+  }
+
+  // 3. Time-only simulation string (e.g. "10:00", "09:30")
+  if (lower.includes(":")) {
+    const minutes = parseTimeToMinutes(lower);
+    if (minutes !== null) {
+      const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+      const mm = String(minutes % 60).padStart(2, "0");
+      return Date.parse(`${PROTOTYPE_DEMO_DATE_ISO}T${hh}:${mm}:00.000Z`);
+    }
+  }
+
+  // 4. Any other parseable full date string (e.g. RFC 2822 / UTC string)
+  const genericMs = Date.parse(trimmed);
+  if (!Number.isNaN(genericMs)) {
+    return genericMs;
+  }
+
+  return options?.fallbackToSystemClock ? Date.now() : defaultDemoFallbackMs;
+}
+
+/**
  * Parses a simulated schedule reference time.
  * Supports:
  * - "09:00" (HH:MM -> uses venue's current day)

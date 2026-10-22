@@ -1112,20 +1112,28 @@ export function Discovery({
             {recentVenues.length > 0 && (
               <div className="grid grid-cols-2 gap-2.5">
                 {recentVenues.slice(0, 2).map((v) => (
-                  <Link
+                  <div
                     key={v.id}
-                    to="/m/$slug"
-                    params={{ slug: v.slug }}
-                    className="block rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
+                    className="relative rounded-xl border bg-card p-3 shadow-xs hover:border-primary transition-colors"
                   >
-                    <span className="block truncate font-semibold text-sm">{v.name}</span>
-                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                      {v.category || "Menu"}
-                    </span>
-                    <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
-                      Open menu <ArrowRight className="h-3 w-3" />
-                    </span>
-                  </Link>
+                    <Link to="/m/$slug" params={{ slug: v.slug }} className="block pr-6">
+                      <span className="block truncate font-semibold text-sm">{v.name}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                        {v.category || "Menu"}
+                      </span>
+                      <span className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
+                        Open menu <ArrowRight className="h-3 w-3" />
+                      </span>
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${v.name} from recents`}
+                      onClick={() => removeRecent(v.id)}
+                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -1309,6 +1317,7 @@ export function Discovery({
               nearbyActive={nearbyStatus === "granted" && nearbyCoords !== null}
               nearbyCoords={nearbyCoords}
               directory={directory}
+              onRemoveRecent={recentsOnly ? () => removeRecent(venue.id) : undefined}
             />
           ))}
         </div>
@@ -1418,6 +1427,7 @@ function VenueCard({
   nearbyActive = false,
   nearbyCoords = null,
   directory = false,
+  onRemoveRecent,
 }: {
   venue: Venue;
   matchingOfferings?: QualifyingOfferingMatch[];
@@ -1430,6 +1440,7 @@ function VenueCard({
   nearbyActive?: boolean;
   nearbyCoords?: VenueCoordinates | null;
   directory?: boolean;
+  onRemoveRecent?: (() => void) | undefined;
 }) {
   const { favourites, toggleFavourite, orderPolicy } = usePewa();
   const saved = favourites.includes(venue.id);
@@ -1492,7 +1503,7 @@ function VenueCard({
           </div>
         )}
         <div className="p-4">
-          <div className="pr-12">
+          <div className={onRemoveRecent ? "pr-28" : "pr-12"}>
             <div className="flex flex-wrap items-center gap-1.5">
               <h3 className="font-sans font-semibold text-base leading-snug">{venue.name}</h3>
               {venue.category && (
@@ -1680,19 +1691,41 @@ function VenueCard({
           </div>
         </div>
       </Link>
-      <Button
-        size="icon"
-        variant="secondary"
-        className="absolute right-3 top-3 h-9 w-9 rounded-full bg-background/80 backdrop-blur shadow-xs"
-        aria-label={`${saved ? "Unsave" : "Save"} ${venue.name}`}
-        aria-pressed={saved}
-        onClick={(e) => {
-          e.preventDefault();
-          toggleFavourite(venue.id);
-        }}
-      >
-        <Heart className={saved ? "fill-current text-primary" : "text-muted-foreground"} />
-      </Button>
+      <div className="absolute right-3 top-3 flex items-center gap-1.5">
+        {onRemoveRecent && (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            data-testid={`remove-recent-${venue.slug}`}
+            aria-label={`Remove ${venue.name} from recents`}
+            className="h-8 rounded-full bg-background/85 px-2.5 text-xs font-medium backdrop-blur shadow-xs"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onRemoveRecent();
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+            Remove
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          className="h-9 w-9 rounded-full bg-background/80 backdrop-blur shadow-xs"
+          aria-label={`${saved ? "Unsave" : "Save"} ${venue.name}`}
+          aria-pressed={saved}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleFavourite(venue.id);
+          }}
+        >
+          <Heart className={saved ? "fill-current text-primary" : "text-muted-foreground"} />
+        </Button>
+      </div>
     </article>
   );
 }

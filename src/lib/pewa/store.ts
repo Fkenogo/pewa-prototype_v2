@@ -44,6 +44,8 @@ import {
   getSharedOfferingUsage,
   parseScheduleReferenceTime,
   getVenueLocalTime,
+  PROTOTYPE_DEMO_DATE_ISO,
+  resolveScenarioReferenceTimeMs,
 } from "./availability";
 
 export {
@@ -236,6 +238,8 @@ export {
   getSharedOfferingUsage,
   parseScheduleReferenceTime,
   getVenueLocalTime,
+  PROTOTYPE_DEMO_DATE_ISO,
+  resolveScenarioReferenceTimeMs,
 } from "./availability";
 
 /**
@@ -383,7 +387,9 @@ export interface CampaignDeliveryEvaluation {
  * Enforces:
  * - Campaign is active
  * - Budget is not exhausted (remaining budget >= SIMULATED_IMPRESSION_COST)
- * - Campaign is within its start/end window
+ * - Campaign is within its start/end window (using `resolveScenarioReferenceTimeMs` so time-only
+ *   or day+time demonstration values resolve deterministically against the October 2026 fixture date
+ *   rather than falling back to the viewer's real-world wall clock)
  * - Organisation is not suspended (suspension halts delivery while preserving remaining exposure entitlement)
  * - Target venue exists and has at least one eligible public published menu
  */
@@ -448,10 +454,9 @@ export function evaluateCampaignDelivery(
     };
   }
 
-  const refNow =
-    context.referenceTimeIso && !Number.isNaN(Date.parse(context.referenceTimeIso))
-      ? Date.parse(context.referenceTimeIso)
-      : Date.now();
+  // Resolve reference time deterministically: time-only ("10:00"), day+time ("mon 09:00"),
+  // or full ISO timestamps resolve via the canonical scenario reference resolver instead of Date.now().
+  const refNow = resolveScenarioReferenceTimeMs(context.referenceTimeIso);
 
   if (campaign.endDate) {
     const endMs = Date.parse(campaign.endDate);

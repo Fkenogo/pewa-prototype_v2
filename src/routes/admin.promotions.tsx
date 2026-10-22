@@ -8,6 +8,8 @@ import {
   getAuthoritativeMenus,
   getAuthoritativeVenues,
   getVenuePublishedMenus,
+  PROTOTYPE_DEMO_DATE_ISO,
+  resolveScenarioReferenceTimeMs,
   usePewa,
 } from "@/lib/pewa/store";
 import { FeaturedCampaignPlacementCard } from "@/components/pewa/Discovery";
@@ -84,6 +86,8 @@ function PromotionsPage() {
     const targetVenue = venues.find((v) => v.id === venueId) || venues[0];
     if (!targetVenue) return;
 
+    const refStartMs = resolveScenarioReferenceTimeMs(simulatedTime);
+
     createCampaign({
       orgId: targetVenue.orgId,
       venueId: targetVenue.id,
@@ -92,8 +96,8 @@ function PromotionsPage() {
       badgeText: "Sponsored",
       budget: parseFloat(budget) || 50,
       active: true,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 14 * 86400000).toISOString(),
+      startDate: new Date(refStartMs).toISOString(),
+      endDate: new Date(refStartMs + 14 * 86400000).toISOString(),
     });
 
     setCreateModalOpen(false);
@@ -166,9 +170,10 @@ function PromotionsPage() {
                   Only delivered, on-screen qualifying impressions (at least 50% of the sponsored
                   card visible in the customer viewport for ≥300ms) count toward campaign activity.
                   Clicks are tracked separately as engagement and do not draw down budget.
-                  (Client-side IntersectionObserver exposure tracking and $0.10/impression pricing
-                  are non-authoritative prototype simulations, not production advertising billing or
-                  fraud prevention).
+                  (Client-side IntersectionObserver exposure tracking, deterministic demonstration
+                  reference date {PROTOTYPE_DEMO_DATE_ISO} for time-only scenario clocks, and
+                  $0.10/impression pricing are non-authoritative prototype simulations rather than
+                  production clock or advertising billing infrastructure).
                 </p>
               </div>
             </div>
