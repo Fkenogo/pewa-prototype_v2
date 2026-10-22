@@ -344,6 +344,7 @@ export interface PewaState {
   scenario: ScenarioId;
   role: Role;
   organisation: Organisation | null;
+  organisations?: Organisation[] | undefined;
   venues: Venue[];
   menus: Menu[];
   activity: ActivityEvent[];

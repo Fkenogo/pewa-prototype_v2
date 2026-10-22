@@ -4,6 +4,7 @@ import type {
   MembershipRole,
   ModerationCase,
   OnboardingDraft,
+  Organisation,
   OrganisationMembership,
   OrderRequest,
   PersonalIdentity,
@@ -843,6 +844,45 @@ function buildScenarioMemberships(
   ];
 }
 
+export const KNOWN_ORGANISATIONS: Record<string, Organisation> = {
+  org_ggc: {
+    id: "org_ggc",
+    name: "Green Garden Café Ltd",
+    businessType: "Single-venue café",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+  org_horizon: {
+    id: "org_horizon",
+    name: "The Grand Horizon Hotel Ltd",
+    businessType: "Hotel & Hospitality",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+  org_cloudburger: {
+    id: "org_cloudburger",
+    name: "CloudBurger Kitchen Ltd",
+    businessType: "Delivery-only cloud kitchen",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+  org_multi_brand: {
+    id: "org_multi_brand",
+    name: "Horizon Hospitality Group",
+    businessType: "Multi-brand restaurant group",
+    country: "Kenya",
+    currency: "KES",
+    ownerIdentityId: SAMPLE_FOUNDER_IDENTITY.id,
+    status: "active",
+  },
+};
+
 export function buildScenario(
   id: ScenarioId,
 ): Omit<PewaState, "role"> & { role: PewaState["role"] } {
@@ -891,6 +931,7 @@ export function buildScenario(
     simulatedTime: "10:00",
     personalIdentity: SAMPLE_FOUNDER_IDENTITY as PersonalIdentity | null,
     identities: SCENARIO_DEMO_IDENTITIES as PersonalIdentity[],
+    organisations: Object.values(KNOWN_ORGANISATIONS) as Organisation[],
     memberships: buildScenarioMemberships("org_ggc", "owner", "venue_ggc"),
     invitations: (id === "new-cafe" ? [] : [samplePendingInvitation]) as TeamInvitation[],
     onboardingDraft: null as OnboardingDraft | null,
@@ -912,6 +953,7 @@ export function buildScenario(
       scenario: id,
       role: "owner",
       organisation: null,
+      organisations: [],
       venues: [greenGardenVenue],
       menus: [greenGardenMenu(false)].map((m) => ({ ...m, orgId: "org_ggc" })),
       activity: [],

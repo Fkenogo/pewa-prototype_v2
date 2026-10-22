@@ -170,6 +170,19 @@ function AdminTeamPage() {
     return [];
   }, [effectiveRole, activeMembership, orgVenues]);
 
+  // Permitted service points for manager scoping
+  const permittedServicePointsForCaller = useMemo(() => {
+    if (effectiveRole === "owner" || effectiveRole === "admin") return COMMON_SERVICE_POINTS;
+    if (
+      effectiveRole === "manager" &&
+      activeMembership?.servicePoints &&
+      activeMembership.servicePoints.length > 0
+    ) {
+      return activeMembership.servicePoints;
+    }
+    return COMMON_SERVICE_POINTS;
+  }, [effectiveRole, activeMembership]);
+
   const handleOpenInviteModal = () => {
     setRecipientContact("");
     setRecipientName("");
@@ -177,7 +190,7 @@ function AdminTeamPage() {
     setInviteRole(defaultRole);
     setInviteScopeType("restricted");
     setSelectedVenues(permittedVenuesForCaller.map((v) => v.id));
-    setSelectedServicePoints(["Main Counter"]);
+    setSelectedServicePoints([permittedServicePointsForCaller[0] || "Main Counter"]);
     setCustomPointInput("");
     setGeneratedInvite(null);
     setInviteModalOpen(true);
@@ -228,14 +241,18 @@ function AdminTeamPage() {
     setEditScopeType(
       m.scopeType || (m.role === "owner" || m.role === "admin" ? "all" : "restricted"),
     );
-    setEditVenues(
+    const initialVenues =
       m.venueIds && m.venueIds.length > 0
         ? [...m.venueIds]
         : m.venueId
           ? [m.venueId]
-          : orgVenues.map((v) => v.id),
+          : permittedVenuesForCaller.map((v) => v.id);
+    setEditVenues(initialVenues);
+    setEditServicePoints(
+      m.servicePoints
+        ? [...m.servicePoints]
+        : [permittedServicePointsForCaller[0] || "Main Counter"],
     );
-    setEditServicePoints(m.servicePoints ? [...m.servicePoints] : ["Main Counter"]);
     setEditRole(m.role);
     setEditCustomPoint("");
   };
@@ -863,7 +880,7 @@ function AdminTeamPage() {
                         Operational Service Points / Stations
                       </Label>
                       <div className="flex flex-wrap gap-1.5">
-                        {COMMON_SERVICE_POINTS.map((pt) => {
+                        {permittedServicePointsForCaller.map((pt) => {
                           const active = selectedServicePoints.includes(pt);
                           return (
                             <button
@@ -890,35 +907,41 @@ function AdminTeamPage() {
                         })}
                       </div>
 
-                      {/* Custom point entry */}
-                      <div className="flex gap-1.5 pt-1">
-                        <Input
-                          placeholder="Add custom station (e.g. Pastry Counter)"
-                          value={customPointInput}
-                          onChange={(e) => setCustomPointInput(e.target.value)}
-                          className="h-7 text-xs"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            if (
-                              customPointInput.trim() &&
-                              !selectedServicePoints.includes(customPointInput.trim())
-                            ) {
-                              setSelectedServicePoints([
-                                ...selectedServicePoints,
-                                customPointInput.trim(),
-                              ]);
-                              setCustomPointInput("");
-                            }
-                          }}
-                        >
-                          Add
-                        </Button>
-                      </div>
+                      {/* Custom point entry (for Owner/Admin or unconstrained roles) */}
+                      {!(
+                        effectiveRole === "manager" &&
+                        activeMembership?.servicePoints &&
+                        activeMembership.servicePoints.length > 0
+                      ) && (
+                        <div className="flex gap-1.5 pt-1">
+                          <Input
+                            placeholder="Add custom station (e.g. Pastry Counter)"
+                            value={customPointInput}
+                            onChange={(e) => setCustomPointInput(e.target.value)}
+                            className="h-7 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              if (
+                                customPointInput.trim() &&
+                                !selectedServicePoints.includes(customPointInput.trim())
+                              ) {
+                                setSelectedServicePoints([
+                                  ...selectedServicePoints,
+                                  customPointInput.trim(),
+                                ]);
+                                setCustomPointInput("");
+                              }
+                            }}
+                          >
+                            Add
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -960,6 +983,9 @@ function AdminTeamPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    disabled={
+                      effectiveRole === "manager" && activeMembership?.scopeType === "restricted"
+                    }
                     onClick={() => setEditScopeType("all")}
                     className={`flex-1 rounded-md border py-1.5 text-xs font-medium ${
                       editScopeType === "all"
@@ -988,7 +1014,7 @@ function AdminTeamPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Assigned Locations</Label>
                     <div className="grid grid-cols-1 gap-1.5">
-                      {orgVenues.map((v) => {
+                      {permittedVenuesForCaller.map((v) => {
                         const checked = editVenues.includes(v.id);
                         return (
                           <label
@@ -1017,7 +1043,7 @@ function AdminTeamPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Stations</Label>
                     <div className="flex flex-wrap gap-1">
-                      {COMMON_SERVICE_POINTS.map((pt) => {
+                      {permittedServicePointsForCaller.map((pt) => {
                         const active = editServicePoints.includes(pt);
                         return (
                           <button

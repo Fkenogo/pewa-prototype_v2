@@ -10,6 +10,7 @@ import type {
   OnboardingDraft,
   Offering,
   OfferingSchedule,
+  Organisation,
   OrganisationMembership,
   PersonalIdentity,
   PewaState,
@@ -31,6 +32,7 @@ import type {
 } from "./types";
 import {
   buildScenario,
+  KNOWN_ORGANISATIONS,
   PROTOTYPE_DIRECTORY_VENUES,
   PROTOTYPE_DIRECTORY_MENUS,
   SAMPLE_FOUNDER_IDENTITY,
@@ -334,6 +336,10 @@ type Actions = {
     error?: string | undefined;
   };
   revokeMembership: (membershipId: string) => {
+    success: boolean;
+    error?: string | undefined;
+  };
+  switchOrganisation: (orgId: string) => {
     success: boolean;
     error?: string | undefined;
   };
@@ -1174,6 +1180,7 @@ export const usePewa = create<PewaState & Actions>()(
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
+            organisations: sc.organisations || (sc.organisation ? [sc.organisation] : []),
             memberships: sc.memberships,
             invitations: sc.invitations || [],
           });
@@ -1199,6 +1206,7 @@ export const usePewa = create<PewaState & Actions>()(
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
+            organisations: sc.organisations || (sc.organisation ? [sc.organisation] : []),
             memberships: sc.memberships,
             invitations: sc.invitations || [],
           });
@@ -1383,30 +1391,91 @@ export const usePewa = create<PewaState & Actions>()(
           }
 
           const callerMembership = getActiveOrganisationMembership(s);
-          let assignedVenues = input.venueIds;
-          const assignedServicePoints = input.servicePoints;
           const requestedScopeType: ScopeType =
             input.scopeType ||
-            (input.role === "owner" || input.role === "admin" ? "all" : "restricted");
+            (input.role === "owner" ||
+            input.role === "admin" ||
+            (!input.venueIds?.length && (effectiveRole === "owner" || effectiveRole === "admin"))
+              ? "all"
+              : "restricted");
 
-          if (effectiveRole === "manager") {
-            const managerVenues =
-              callerMembership?.venueIds && callerMembership.venueIds.length > 0
+          const managerVenues =
+            effectiveRole === "manager"
+              ? callerMembership?.venueIds && callerMembership.venueIds.length > 0
                 ? callerMembership.venueIds
                 : callerMembership?.venueId
                   ? [callerMembership.venueId]
-                  : [];
-            if (!assignedVenues || assignedVenues.length === 0) {
-              assignedVenues = managerVenues;
-            } else {
-              const outOfScope = assignedVenues.some((vid) => !managerVenues.includes(vid));
-              if (outOfScope) {
+                  : []
+              : [];
+
+          const assignedVenues =
+            input.venueIds && input.venueIds.length > 0
+              ? input.venueIds
+              : effectiveRole === "manager" && managerVenues.length > 0 && !input.scopeType
+                ? managerVenues
+                : undefined;
+          const assignedServicePoints = input.servicePoints;
+
+          // Rule 2 & 1: Restricted Managers must not issue organisation-wide invitations
+          if (effectiveRole === "manager") {
+            if (callerMembership?.scopeType === "restricted" && requestedScopeType === "all") {
+              return {
+                success: false,
+                error: "Restricted managers cannot issue organisation-wide invitations.",
+              };
+            }
+
+            // Rule 1 & Rule 5: Manager scope containment
+            if (assignedVenues && assignedVenues.length > 0) {
+              const outOfScopeVenues = assignedVenues.filter((vid) => !managerVenues.includes(vid));
+              if (outOfScopeVenues.length > 0) {
                 return {
                   success: false,
                   error:
                     "Managers can only assign team members within their own assigned locations.",
                 };
               }
+            }
+
+            if (callerMembership?.servicePoints && callerMembership.servicePoints.length > 0) {
+              const managerStationsLower = callerMembership.servicePoints.map((sp) =>
+                sp.toLowerCase().trim(),
+              );
+              if (assignedServicePoints && assignedServicePoints.length > 0) {
+                const unpermittedStations = assignedServicePoints.filter(
+                  (sp) => !managerStationsLower.includes(sp.toLowerCase().trim()),
+                );
+                if (unpermittedStations.length > 0) {
+                  return {
+                    success: false,
+                    error: `Managers cannot delegate service points (${unpermittedStations.join(", ")}) beyond their own assigned stations.`,
+                  };
+                }
+              }
+            }
+          }
+
+          // Rule 3: Target organisation venue check (for all roles)
+          const orgVenues = s.venues.filter((v) => v.orgId === s.organisation?.id);
+          const orgVenueIds = orgVenues.map((v) => v.id);
+
+          if (assignedVenues && assignedVenues.length > 0) {
+            const foreignVenues = assignedVenues.filter((vid) => !orgVenueIds.includes(vid));
+            if (foreignVenues.length > 0) {
+              return {
+                success: false,
+                error: "Assigned locations must belong to the target organisation.",
+              };
+            }
+          }
+
+          // Rule 6: Empty restricted assignments must not silently mean organisation-wide access
+          if (requestedScopeType === "restricted") {
+            if (!assignedVenues || assignedVenues.length === 0) {
+              return {
+                success: false,
+                error: "Restricted invitations require at least one assigned location.",
+              };
             }
           }
 
@@ -1542,6 +1611,20 @@ export const usePewa = create<PewaState & Actions>()(
             };
           }
 
+          // Rule 5: Do not silently overwrite an existing active membership's role or scope through invitation acceptance
+          const existingActiveMem = (s.memberships || []).find(
+            (m) =>
+              m.identityId === targetIdentity.id &&
+              m.orgId === invitation.orgId &&
+              m.status === "active",
+          );
+          if (existingActiveMem) {
+            return {
+              success: false,
+              error: `You already hold an active “${ROLE_LABELS[existingActiveMem.role]}” membership in ${invitation.orgName}. An invitation cannot overwrite an existing active membership.`,
+            };
+          }
+
           const newMembership: OrganisationMembership = {
             id: uid("mem"),
             identityId: targetIdentity.id,
@@ -1557,6 +1640,7 @@ export const usePewa = create<PewaState & Actions>()(
             invitedBy: invitation.invitedById,
           };
 
+          // Rule 2: Where a person already belongs to another organisation, acceptance must preserve that existing membership
           const nextMemberships = [
             ...(s.memberships || []).filter(
               (m) => !(m.identityId === targetIdentity.id && m.orgId === invitation.orgId),
@@ -1575,9 +1659,29 @@ export const usePewa = create<PewaState & Actions>()(
               : i,
           );
 
+          // Rule 3 & 4: Provide a deterministic way to enter the newly joined organisation's workspace.
+          // Immediately align active organisation context to the target organisation.
+          const targetOrg: Organisation = (s.organisations || []).find(
+            (o) => o.id === invitation.orgId,
+          ) ||
+            (s.organisation?.id === invitation.orgId ? s.organisation : null) ||
+            KNOWN_ORGANISATIONS[invitation.orgId] || {
+              id: invitation.orgId,
+              name: invitation.orgName,
+              businessType: "Food & Beverage",
+              currency: "KES",
+              status: "active" as const,
+            };
+
+          const nextOrganisations = (s.organisations || []).some((o) => o.id === targetOrg.id)
+            ? (s.organisations || []).map((o) => (o.id === targetOrg.id ? targetOrg : o))
+            : [...(s.organisations || []), targetOrg];
+
           set({
             memberships: nextMemberships,
             invitations: nextInvitations,
+            organisations: nextOrganisations,
+            organisation: targetOrg,
             role: invitation.role,
             personalIdentity: targetIdentity,
           });
@@ -1644,6 +1748,78 @@ export const usePewa = create<PewaState & Actions>()(
             };
           }
 
+          const orgVenues = s.venues.filter((v) => v.orgId === s.organisation?.id);
+          const orgVenueIds = orgVenues.map((v) => v.id);
+
+          // Rule 1 & Rule 2: Manager containment checks
+          if (effectiveRole === "manager") {
+            const callerMem = getActiveOrganisationMembership(s);
+            if (!callerMem) {
+              return { success: false, error: "Caller membership not found or inactive." };
+            }
+            if (callerMem.scopeType === "restricted" && input.scopeType === "all") {
+              return {
+                success: false,
+                error: "Restricted managers cannot grant organisation-wide access.",
+              };
+            }
+            const managerVenues =
+              callerMem.venueIds && callerMem.venueIds.length > 0
+                ? callerMem.venueIds
+                : callerMem.venueId
+                  ? [callerMem.venueId]
+                  : [];
+            if (input.venueIds && input.venueIds.length > 0) {
+              const unpermittedVenues = input.venueIds.filter(
+                (vid) => !managerVenues.includes(vid),
+              );
+              if (unpermittedVenues.length > 0) {
+                return {
+                  success: false,
+                  error:
+                    "Managers can only assign team members within their own assigned locations.",
+                };
+              }
+            }
+            if (callerMem.servicePoints && callerMem.servicePoints.length > 0) {
+              const managerStationsLower = callerMem.servicePoints.map((sp) =>
+                sp.toLowerCase().trim(),
+              );
+              if (input.servicePoints && input.servicePoints.length > 0) {
+                const unpermittedStations = input.servicePoints.filter(
+                  (sp) => !managerStationsLower.includes(sp.toLowerCase().trim()),
+                );
+                if (unpermittedStations.length > 0) {
+                  return {
+                    success: false,
+                    error: `Managers cannot delegate service points (${unpermittedStations.join(", ")}) beyond their own assigned stations.`,
+                  };
+                }
+              }
+            }
+          }
+
+          // Rule 3: Cross-organisation venue check
+          if (input.venueIds && input.venueIds.length > 0) {
+            const invalidVenues = input.venueIds.filter((vid) => !orgVenueIds.includes(vid));
+            if (invalidVenues.length > 0) {
+              return {
+                success: false,
+                error: "Assigned locations must belong to the current organisation.",
+              };
+            }
+          }
+
+          // Rule 6: Empty restricted assignments check
+          if (input.scopeType === "restricted") {
+            if (!input.venueIds || input.venueIds.length === 0) {
+              return {
+                success: false,
+                error: "Restricted scope requires at least one assigned location.",
+              };
+            }
+          }
+
           set((state) => ({
             memberships: (state.memberships || []).map((m) =>
               m.id === input.membershipId
@@ -1699,6 +1875,40 @@ export const usePewa = create<PewaState & Actions>()(
           get().log({
             kind: "team.member_revoked",
             message: `Membership revoked for identity ${targetMem.identityId} (${targetMem.role}) in ${s.organisation.name}`,
+          });
+
+          return { success: true };
+        },
+        switchOrganisation: (orgId) => {
+          const s = get();
+          const identityId = s.personalIdentity?.id;
+          if (!identityId) {
+            return { success: false, error: "Personal identity required to switch organisation." };
+          }
+          const targetMembership = (s.memberships || []).find(
+            (m) => m.identityId === identityId && m.orgId === orgId && m.status === "active",
+          );
+          if (!targetMembership) {
+            return { success: false, error: "No active membership found in target organisation." };
+          }
+          const targetOrg: Organisation = (s.organisations || []).find((o) => o.id === orgId) ||
+            (s.organisation?.id === orgId ? s.organisation : null) ||
+            KNOWN_ORGANISATIONS[orgId] || {
+              id: orgId,
+              name: targetMembership.orgId,
+              businessType: "Food & Beverage",
+              currency: "KES",
+              status: "active" as const,
+            };
+
+          set({
+            organisation: targetOrg,
+            role: targetMembership.role,
+          });
+
+          get().log({
+            kind: "organisation.switched",
+            message: `Active organisation switched to “${targetOrg.name}” (${ROLE_LABELS[targetMembership.role]})`,
           });
 
           return { success: true };
