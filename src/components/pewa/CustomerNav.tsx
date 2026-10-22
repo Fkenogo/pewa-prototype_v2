@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { Compass, Home, ClipboardList } from "lucide-react";
+import { Compass, Home, ClipboardList, QrCode } from "lucide-react";
 
 export function CustomerNav() {
   return (
     <nav
       aria-label="Customer navigation"
-      className="fixed inset-x-0 bottom-0 z-40 mx-auto grid max-w-lg grid-cols-3 border-t bg-card pb-safe"
+      className="fixed inset-x-0 bottom-0 z-40 mx-auto grid max-w-lg grid-cols-4 border-t bg-card pb-safe"
     >
       <Link
         to="/"
@@ -23,6 +23,14 @@ export function CustomerNav() {
       >
         <Compass className="h-5 w-5" />
         Directory
+      </Link>
+      <Link
+        to="/scan"
+        className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs"
+        activeProps={{ className: "text-primary font-bold" }}
+      >
+        <QrCode className="h-5 w-5" />
+        Scan
       </Link>
       <Link
         to="/orders"

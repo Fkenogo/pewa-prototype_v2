@@ -9,6 +9,7 @@ import {
   Building2,
   X,
   SlidersHorizontal,
+  QrCode,
 } from "lucide-react";
 import { evaluateCampaignDelivery, formatPrice, usePewa } from "@/lib/pewa/store";
 import type { Menu, Offering, PromotionCampaign, SharedOffering, Venue } from "@/lib/pewa/types";
@@ -602,7 +603,7 @@ export function Discovery({
           placeholder="Search businesses, dishes, or dietary tags…"
           className="h-full min-w-0 flex-1 bg-transparent outline-none text-base"
         />
-        {q && (
+        {q ? (
           <button
             type="button"
             onClick={() => setQ("")}
@@ -611,6 +612,15 @@ export function Discovery({
           >
             <X className="h-3.5 w-3.5" />
           </button>
+        ) : (
+          <Link
+            to="/scan"
+            aria-label="Scan QR code"
+            className="flex items-center gap-1 rounded-lg bg-primary/10 px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/20 shrink-0"
+          >
+            <QrCode className="h-4 w-4" />
+            <span className="text-[11px]">Scan</span>
+          </Link>
         )}
       </label>
 

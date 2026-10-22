@@ -24,9 +24,11 @@ import {
 export function CartDrawer({
   open,
   onOpenChange,
+  servicePoint,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  servicePoint?: string | undefined;
 }) {
   const state = usePewa();
   const navigate = useNavigate();
@@ -143,6 +145,7 @@ export function CartDrawer({
                     guestContact,
                     service: chosenService,
                     note,
+                    servicePoint,
                   });
                   if (result.error) {
                     toast.error(result.error);
@@ -162,6 +165,9 @@ export function CartDrawer({
                       {guestName} · {guestContact}
                     </p>
                     <p>{chosenService}</p>
+                    {servicePoint && (
+                      <p className="font-medium text-primary">Station: {servicePoint}</p>
+                    )}
                     {note && <p className="break-words">{note}</p>}
                     <p className="font-semibold">This is a request, not a confirmed sale.</p>
                     <p className="text-muted-foreground">

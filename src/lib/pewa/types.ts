@@ -95,6 +95,32 @@ export interface TeamInvitation {
   cancelledAt?: string | undefined;
 }
 
+export type AccessChannel = "qr" | "code" | "direct" | "whatsapp";
+export type AccessStatus = "active" | "disabled";
+
+/**
+ * Prototype representation of a unified menu-access reference (R3-C).
+ * Represents an entry point (QR code, short code, direct link, or WhatsApp)
+ * bound to an organisation, venue, published menu, and service context.
+ */
+export interface MenuAccessReference {
+  id: string;
+  orgId: string;
+  venueId: string;
+  menuId: string;
+  servicePoint?: string | undefined;
+  shortCode: string;
+  channel: AccessChannel;
+  status: AccessStatus;
+  type: "public" | "protected";
+  label: string;
+  customPrompt?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
+  createdById?: string | undefined;
+  disabledAt?: string | undefined;
+}
+
 export type ContactVisibility = "public" | "private";
 
 export interface OnboardingDraft {
@@ -365,6 +391,7 @@ export interface PewaState {
   identities?: PersonalIdentity[] | undefined;
   memberships?: OrganisationMembership[] | undefined;
   invitations?: TeamInvitation[] | undefined;
+  accessReferences?: MenuAccessReference[] | undefined;
   onboardingDraft?: OnboardingDraft | null | undefined;
 }
 

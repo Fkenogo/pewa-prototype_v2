@@ -29,6 +29,10 @@ import type {
   UsageDisputeCase,
   ModerationCase,
   VenueOfferingOverride,
+  AccessChannel,
+  AccessStatus,
+  MenuAccessReference,
+  Venue,
 } from "./types";
 import {
   buildScenario,
@@ -262,7 +266,11 @@ type Actions = {
   addCartLine: (venueId: string, line: Omit<CartLine, "id">) => string | null;
   updateCartQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
-  submitOrder: (input: Pick<OrderRequest, "guestName" | "guestContact" | "service" | "note">) => {
+  submitOrder: (
+    input: Pick<OrderRequest, "guestName" | "guestContact" | "service" | "note"> & {
+      servicePoint?: string | undefined;
+    },
+  ) => {
     id?: string;
     error?: string;
   };
@@ -340,6 +348,35 @@ type Actions = {
     error?: string | undefined;
   };
   switchOrganisation: (orgId: string) => {
+    success: boolean;
+    error?: string | undefined;
+  };
+  createAccessReference: (input: {
+    venueId: string;
+    menuId: string;
+    servicePoint?: string | undefined;
+    channel?: AccessChannel | undefined;
+    label?: string | undefined;
+    customPrompt?: string | undefined;
+    shortCode?: string | undefined;
+  }) => {
+    success: boolean;
+    error?: string | undefined;
+    reference?: MenuAccessReference | undefined;
+  };
+  updateAccessReferenceStatus: (
+    referenceId: string,
+    status: AccessStatus,
+  ) => {
+    success: boolean;
+    error?: string | undefined;
+  };
+  regenerateAccessCode: (referenceId: string) => {
+    success: boolean;
+    error?: string | undefined;
+    newCode?: string | undefined;
+  };
+  deleteAccessReference: (referenceId: string) => {
     success: boolean;
     error?: string | undefined;
   };
@@ -811,6 +848,7 @@ export const usePewa = create<PewaState & Actions>()(
             ...input,
             guestName: input.guestName.trim(),
             guestContact: input.guestContact.trim(),
+            servicePoint: input.servicePoint?.trim() || undefined,
             id,
             reference: `PEWA-${String(sequence).padStart(4, "0")}`,
             venueId: venue.id,
@@ -1183,6 +1221,7 @@ export const usePewa = create<PewaState & Actions>()(
             organisations: sc.organisations || (sc.organisation ? [sc.organisation] : []),
             memberships: sc.memberships,
             invitations: sc.invitations || [],
+            accessReferences: sc.accessReferences || [],
           });
         },
         reset: () => {
@@ -1209,6 +1248,7 @@ export const usePewa = create<PewaState & Actions>()(
             organisations: sc.organisations || (sc.organisation ? [sc.organisation] : []),
             memberships: sc.memberships,
             invitations: sc.invitations || [],
+            accessReferences: sc.accessReferences || [],
           });
         },
         log: (e) =>
@@ -1888,7 +1928,7 @@ export const usePewa = create<PewaState & Actions>()(
 
           // Rule 6: Empty restricted assignments check
           if (input.scopeType === "restricted") {
-            if (!input.venueIds || input.venueIds.length === 0) {
+            if (targetVenueIds.length === 0) {
               return {
                 success: false,
                 error: "Restricted scope requires at least one assigned location.",
@@ -1988,6 +2028,323 @@ export const usePewa = create<PewaState & Actions>()(
           get().log({
             kind: "organisation.switched",
             message: `Active organisation switched to “${targetOrg.name}” (${ROLE_LABELS[targetMembership.role]})`,
+          });
+
+          return { success: true };
+        },
+        createAccessReference: (input) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!canAuthorMenus(effectiveRole)) {
+            return {
+              success: false,
+              error:
+                "Unauthorized: only owners, administrators, and authorized managers can create menu access references.",
+            };
+          }
+
+          const callerMembership = getActiveOrganisationMembership(s);
+          if (!callerMembership || callerMembership.status !== "active") {
+            return { success: false, error: "Active business membership required." };
+          }
+
+          // Operational scope containment for restricted managers (R3-B integration):
+          if (effectiveRole === "manager" && callerMembership.scopeType === "restricted") {
+            const allowedVenues =
+              callerMembership.venueIds && callerMembership.venueIds.length > 0
+                ? callerMembership.venueIds
+                : callerMembership.venueId
+                  ? [callerMembership.venueId]
+                  : [];
+            if (!allowedVenues.includes(input.venueId)) {
+              return {
+                success: false,
+                error:
+                  "Managers cannot create access references for venues outside their assigned scope.",
+              };
+            }
+            if (callerMembership.servicePoints && callerMembership.servicePoints.length > 0) {
+              if (!input.servicePoint) {
+                return {
+                  success: false,
+                  error:
+                    "Managers restricted to specific stations must assign an authorized service point.",
+                };
+              }
+              const managerStationsLower = callerMembership.servicePoints.map((sp) =>
+                sp.toLowerCase().trim(),
+              );
+              if (!managerStationsLower.includes(input.servicePoint.toLowerCase().trim())) {
+                return {
+                  success: false,
+                  error: `Managers cannot create access references for service points (${input.servicePoint}) outside their assigned stations.`,
+                };
+              }
+            }
+          }
+
+          // Validate venue belongs to current organization
+          const orgVenues = s.venues.filter((v) => v.orgId === s.organisation?.id);
+          const targetVenue = orgVenues.find((v) => v.id === input.venueId);
+          if (!targetVenue) {
+            return {
+              success: false,
+              error: "Selected venue does not belong to the current organisation.",
+            };
+          }
+
+          // Validate target menu belongs to organization and is published
+          const targetMenu = s.menus.find(
+            (m) => m.id === input.menuId && m.orgId === s.organisation?.id,
+          );
+          if (!targetMenu) {
+            return {
+              success: false,
+              error: "Selected menu does not belong to the current organisation.",
+            };
+          }
+          if (targetMenu.status !== "published") {
+            return {
+              success: false,
+              error: `Cannot generate access for a ${targetMenu.status} menu. Only published menus can receive access references.`,
+            };
+          }
+
+          // Validate service point against venue configured contexts if available
+          if (
+            input.servicePoint &&
+            targetVenue.serviceContexts &&
+            targetVenue.serviceContexts.length > 0
+          ) {
+            const configuredLower = targetVenue.serviceContexts.map((c) => c.toLowerCase().trim());
+            if (!configuredLower.includes(input.servicePoint.toLowerCase().trim())) {
+              return {
+                success: false,
+                error: `Service point "${input.servicePoint}" is not configured on ${targetVenue.name}.`,
+              };
+            }
+          }
+
+          const existingRefs = s.accessReferences || [];
+          const existingCodes = existingRefs.map((r) => r.shortCode);
+
+          let finalCode = input.shortCode?.trim().toUpperCase();
+          if (finalCode) {
+            if (existingCodes.some((c) => c.toUpperCase() === finalCode)) {
+              return {
+                success: false,
+                error: `Menu code "${finalCode}" is already in use. Please choose a unique code.`,
+              };
+            }
+          } else {
+            const prefixHint = targetVenue.slug.slice(0, 3).toUpperCase();
+            finalCode = generateUniqueShortCode(existingCodes, prefixHint);
+          }
+
+          const channel = input.channel || "qr";
+          const newRef: MenuAccessReference = {
+            id: uid("acc"),
+            orgId: s.organisation!.id,
+            venueId: input.venueId,
+            menuId: input.menuId,
+            servicePoint: input.servicePoint?.trim() || undefined,
+            shortCode: finalCode,
+            channel,
+            status: "active",
+            type: targetMenu.isProtected ? "protected" : "public",
+            label:
+              input.label?.trim() ||
+              `${targetMenu.name} · ${input.servicePoint || targetVenue.name} (${channel.toUpperCase()})`,
+            customPrompt: input.customPrompt?.trim() || undefined,
+            createdAt: now(),
+            updatedAt: now(),
+            createdById: s.personalIdentity?.id,
+          };
+
+          set((state) => ({
+            accessReferences: [newRef, ...(state.accessReferences || [])],
+          }));
+
+          get().log({
+            kind: "access.created",
+            message: `Created ${newRef.channel.toUpperCase()} access reference "${newRef.label}" (${newRef.shortCode}) for ${targetMenu.name}`,
+          });
+
+          return { success: true, reference: newRef };
+        },
+        updateAccessReferenceStatus: (referenceId, status) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!canAuthorMenus(effectiveRole)) {
+            return { success: false, error: "Unauthorized to update access references." };
+          }
+          const existing = (s.accessReferences || []).find((r) => r.id === referenceId);
+          if (!existing) {
+            return { success: false, error: "Access reference not found." };
+          }
+          if (existing.orgId !== s.organisation?.id) {
+            return {
+              success: false,
+              error: "Access reference belongs to a different organisation.",
+            };
+          }
+
+          // Manager operational scope check
+          if (effectiveRole === "manager") {
+            const callerMembership = getActiveOrganisationMembership(s);
+            if (callerMembership?.scopeType === "restricted") {
+              const allowedVenues =
+                callerMembership.venueIds && callerMembership.venueIds.length > 0
+                  ? callerMembership.venueIds
+                  : callerMembership.venueId
+                    ? [callerMembership.venueId]
+                    : [];
+              if (!allowedVenues.includes(existing.venueId)) {
+                return {
+                  success: false,
+                  error: "Unauthorized: access reference is outside your assigned venue scope.",
+                };
+              }
+              if (
+                callerMembership.servicePoints &&
+                callerMembership.servicePoints.length > 0 &&
+                existing.servicePoint
+              ) {
+                const mgrLower = callerMembership.servicePoints.map((p) => p.toLowerCase().trim());
+                if (!mgrLower.includes(existing.servicePoint.toLowerCase().trim())) {
+                  return {
+                    success: false,
+                    error: "Unauthorized: access reference is outside your assigned station scope.",
+                  };
+                }
+              }
+            }
+          }
+
+          set((state) => ({
+            accessReferences: (state.accessReferences || []).map((r) =>
+              r.id === referenceId
+                ? {
+                    ...r,
+                    status,
+                    updatedAt: now(),
+                    disabledAt: status === "disabled" ? now() : undefined,
+                  }
+                : r,
+            ),
+          }));
+
+          get().log({
+            kind: "access.status_changed",
+            message: `${status === "disabled" ? "Disabled" : "Re-enabled"} access reference "${existing.label}" (${existing.shortCode})`,
+          });
+
+          return { success: true };
+        },
+        regenerateAccessCode: (referenceId) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!canAuthorMenus(effectiveRole)) {
+            return { success: false, error: "Unauthorized to regenerate access codes." };
+          }
+          const existing = (s.accessReferences || []).find((r) => r.id === referenceId);
+          if (!existing) {
+            return { success: false, error: "Access reference not found." };
+          }
+          if (existing.orgId !== s.organisation?.id) {
+            return {
+              success: false,
+              error: "Access reference belongs to a different organisation.",
+            };
+          }
+
+          // Manager scope check
+          if (effectiveRole === "manager") {
+            const callerMembership = getActiveOrganisationMembership(s);
+            if (callerMembership?.scopeType === "restricted") {
+              const allowedVenues =
+                callerMembership.venueIds && callerMembership.venueIds.length > 0
+                  ? callerMembership.venueIds
+                  : callerMembership.venueId
+                    ? [callerMembership.venueId]
+                    : [];
+              if (!allowedVenues.includes(existing.venueId)) {
+                return {
+                  success: false,
+                  error: "Unauthorized: access reference is outside your assigned venue scope.",
+                };
+              }
+            }
+          }
+
+          const otherCodes = (s.accessReferences || [])
+            .filter((r) => r.id !== referenceId)
+            .map((r) => r.shortCode);
+          const prefix = existing.shortCode.split("-")[0] || "PEWA";
+          const newCode = generateUniqueShortCode(otherCodes, prefix);
+
+          set((state) => ({
+            accessReferences: (state.accessReferences || []).map((r) =>
+              r.id === referenceId
+                ? {
+                    ...r,
+                    shortCode: newCode,
+                    updatedAt: now(),
+                  }
+                : r,
+            ),
+          }));
+
+          get().log({
+            kind: "access.code_regenerated",
+            message: `Regenerated code for "${existing.label}": new code is ${newCode}`,
+          });
+
+          return { success: true, newCode };
+        },
+        deleteAccessReference: (referenceId) => {
+          const s = get();
+          const effectiveRole = getEffectiveBusinessRole(s);
+          if (!canAuthorMenus(effectiveRole)) {
+            return { success: false, error: "Unauthorized to delete access references." };
+          }
+          const existing = (s.accessReferences || []).find((r) => r.id === referenceId);
+          if (!existing) {
+            return { success: false, error: "Access reference not found." };
+          }
+          if (existing.orgId !== s.organisation?.id) {
+            return {
+              success: false,
+              error: "Access reference belongs to a different organisation.",
+            };
+          }
+
+          // Manager scope check
+          if (effectiveRole === "manager") {
+            const callerMembership = getActiveOrganisationMembership(s);
+            if (callerMembership?.scopeType === "restricted") {
+              const allowedVenues =
+                callerMembership.venueIds && callerMembership.venueIds.length > 0
+                  ? callerMembership.venueIds
+                  : callerMembership.venueId
+                    ? [callerMembership.venueId]
+                    : [];
+              if (!allowedVenues.includes(existing.venueId)) {
+                return {
+                  success: false,
+                  error: "Unauthorized: access reference is outside your assigned venue scope.",
+                };
+              }
+            }
+          }
+
+          set((state) => ({
+            accessReferences: (state.accessReferences || []).filter((r) => r.id !== referenceId),
+          }));
+
+          get().log({
+            kind: "access.deleted",
+            message: `Deleted access reference "${existing.label}" (${existing.shortCode})`,
           });
 
           return { success: true };
@@ -3376,3 +3733,136 @@ export const formatPrice = (amount: number, currency: string) => {
     return `${currency} ${amount.toFixed(2)}`;
   }
 };
+
+export interface MenuAccessResolutionResult {
+  success: boolean;
+  error?: string | undefined;
+  reference?: MenuAccessReference | undefined;
+  venue?: Venue | undefined;
+  menu?: Menu | undefined;
+  isProtected?: boolean | undefined;
+  targetUrl?: string | undefined;
+}
+
+export function generateUniqueShortCode(existingCodes: string[], prefixHint?: string): string {
+  const sanitize = (str: string) => str.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const basePrefix =
+    prefixHint && prefixHint.trim().length > 0 ? sanitize(prefixHint).slice(0, 4) : "PEWA";
+  const existingUpper = new Set(existingCodes.map((c) => c.toUpperCase()));
+
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  for (let attempt = 0; attempt < 200; attempt++) {
+    let suffix = "";
+    for (let i = 0; i < 4; i++) {
+      suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const candidate = `${basePrefix}-${suffix}`;
+    if (!existingUpper.has(candidate)) {
+      return candidate;
+    }
+  }
+  return `${basePrefix}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
+}
+
+export function resolveMenuAccess(
+  input: { code?: string | undefined; accessId?: string | undefined },
+  state: PewaState,
+): MenuAccessResolutionResult {
+  const codeParam = input.code?.trim().toUpperCase();
+  const idParam = input.accessId?.trim();
+
+  if (!codeParam && !idParam) {
+    return { success: false, error: "No menu code or access identifier provided." };
+  }
+
+  const accessRefs = state.accessReferences || [];
+  const ref = accessRefs.find((r) => {
+    if (idParam && r.id === idParam) return true;
+    if (codeParam && r.shortCode.toUpperCase() === codeParam) return true;
+    return false;
+  });
+
+  if (!ref) {
+    return {
+      success: false,
+      error: "Invalid or unknown menu code. Please verify the code or scan again.",
+    };
+  }
+
+  if (ref.status === "disabled") {
+    return {
+      success: false,
+      error: "This menu access reference has been disabled by the business.",
+      reference: ref,
+    };
+  }
+
+  const allVenues = getAuthoritativeVenues(state);
+  const venue = allVenues.find((v) => v.id === ref.venueId);
+  if (!venue) {
+    return {
+      success: false,
+      error: "The venue associated with this menu is no longer available.",
+      reference: ref,
+    };
+  }
+
+  // Cross-organisation reference integrity (Scenario L):
+  // The venue's organization must match the access reference organization.
+  if (venue.orgId !== ref.orgId) {
+    return {
+      success: false,
+      error: "Security validation error: access reference does not match venue organisation.",
+      reference: ref,
+      venue,
+    };
+  }
+
+  const allMenus = getAuthoritativeMenus(state);
+  const menu = allMenus.find((m) => m.id === ref.menuId);
+  if (!menu) {
+    return {
+      success: false,
+      error: "The referenced menu could not be found.",
+      reference: ref,
+      venue,
+    };
+  }
+
+  // Check publication state (Scenario G & K):
+  // Draft, archived or unpublished menus cannot be accessed via customer access links.
+  if (menu.status !== "published") {
+    return {
+      success: false,
+      error: `This menu is currently ${menu.status}. Only published menus can be accessed by customers.`,
+      reference: ref,
+      venue,
+      menu,
+    };
+  }
+
+  // Protected menu check
+  const isProtected = Boolean(menu.isProtected || ref.type === "protected");
+
+  const queryParams = new URLSearchParams();
+  queryParams.set("menu", menu.id);
+  queryParams.set("access", ref.id);
+  queryParams.set("code", ref.shortCode);
+  if (ref.servicePoint) {
+    queryParams.set("sp", ref.servicePoint);
+  }
+  if (ref.channel) {
+    queryParams.set("channel", ref.channel);
+  }
+
+  const targetUrl = `/m/${venue.slug}?${queryParams.toString()}`;
+
+  return {
+    success: true,
+    reference: ref,
+    venue,
+    menu,
+    isProtected,
+    targetUrl,
+  };
+}

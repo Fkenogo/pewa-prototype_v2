@@ -16,12 +16,15 @@ import { Route as DocsRouteImport } from './routes/docs'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as OrdersRouteImport } from './routes/orders'
+import { Route as ScanRouteImport } from './routes/scan'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminAccessRouteImport } from './routes/admin.access'
 import { Route as AdminActivityRouteImport } from './routes/admin.activity'
 import { Route as AdminBillingRouteImport } from './routes/admin.billing'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminPromotionsRouteImport } from './routes/admin.promotions'
 import { Route as AdminTeamRouteImport } from './routes/admin.team'
+import { Route as CCodeRouteImport } from './routes/c.$code'
 import { Route as InviteInviteIdRouteImport } from './routes/invite.$inviteId'
 import { Route as MSlugRouteImport } from './routes/m.$slug'
 import { Route as OrdersIndexRouteImport } from './routes/orders.index'
@@ -63,9 +66,19 @@ const OrdersRoute = OrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScanRoute = ScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAccessRoute = AdminAccessRouteImport.update({
+  id: '/access',
+  path: '/access',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminActivityRoute = AdminActivityRouteImport.update({
@@ -92,6 +105,11 @@ const AdminTeamRoute = AdminTeamRouteImport.update({
   id: '/team',
   path: '/team',
   getParentRoute: () => AdminRoute,
+} as any)
+const CCodeRoute = CCodeRouteImport.update({
+  id: '/c/$code',
+  path: '/c/$code',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const InviteInviteIdRoute = InviteInviteIdRouteImport.update({
   id: '/invite/$inviteId',
@@ -127,11 +145,14 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/scan': typeof ScanRoute
+  '/admin/access': typeof AdminAccessRoute
   '/admin/activity': typeof AdminActivityRoute
   '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/promotions': typeof AdminPromotionsRoute
   '/admin/team': typeof AdminTeamRoute
+  '/c/$code': typeof CCodeRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
@@ -145,11 +166,14 @@ export interface FileRoutesByTo {
   '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
+  '/scan': typeof ScanRoute
+  '/admin/access': typeof AdminAccessRoute
   '/admin/activity': typeof AdminActivityRoute
   '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/promotions': typeof AdminPromotionsRoute
   '/admin/team': typeof AdminTeamRoute
+  '/c/$code': typeof CCodeRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
@@ -166,11 +190,14 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/scan': typeof ScanRoute
+  '/admin/access': typeof AdminAccessRoute
   '/admin/activity': typeof AdminActivityRoute
   '/admin/billing': typeof AdminBillingRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/promotions': typeof AdminPromotionsRoute
   '/admin/team': typeof AdminTeamRoute
+  '/c/$code': typeof CCodeRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/m/$slug': typeof MSlugRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
@@ -188,11 +215,14 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/operator'
     | '/orders'
+    | '/scan'
+    | '/admin/access'
     | '/admin/activity'
     | '/admin/billing'
     | '/admin/orders'
     | '/admin/promotions'
     | '/admin/team'
+    | '/c/$code'
     | '/invite/$inviteId'
     | '/m/$slug'
     | '/orders/$orderId'
@@ -206,11 +236,14 @@ export interface FileRouteTypes {
     | '/docs'
     | '/onboarding'
     | '/operator'
+    | '/scan'
+    | '/admin/access'
     | '/admin/activity'
     | '/admin/billing'
     | '/admin/orders'
     | '/admin/promotions'
     | '/admin/team'
+    | '/c/$code'
     | '/invite/$inviteId'
     | '/m/$slug'
     | '/orders/$orderId'
@@ -226,11 +259,14 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/operator'
     | '/orders'
+    | '/scan'
+    | '/admin/access'
     | '/admin/activity'
     | '/admin/billing'
     | '/admin/orders'
     | '/admin/promotions'
     | '/admin/team'
+    | '/c/$code'
     | '/invite/$inviteId'
     | '/m/$slug'
     | '/orders/$orderId'
@@ -247,6 +283,8 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   OperatorRoute: typeof OperatorRoute
   OrdersRoute: typeof OrdersRouteWithChildren
+  ScanRoute: typeof ScanRoute
+  CCodeRoute: typeof CCodeRoute
   InviteInviteIdRoute: typeof InviteInviteIdRoute
   MSlugRoute: typeof MSlugRoute
 }
@@ -302,11 +340,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/scan': {
+      id: '/scan'
+      path: '/scan'
+      fullPath: '/scan'
+      preLoaderRoute: typeof ScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/access': {
+      id: '/admin/access'
+      path: '/access'
+      fullPath: '/admin/access'
+      preLoaderRoute: typeof AdminAccessRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/activity': {
@@ -343,6 +395,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/team'
       preLoaderRoute: typeof AdminTeamRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/c/$code': {
+      id: '/c/$code'
+      path: '/c/$code'
+      fullPath: '/c/$code'
+      preLoaderRoute: typeof CCodeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/invite/$inviteId': {
       id: '/invite/$inviteId'
@@ -383,6 +442,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminAccessRoute: typeof AdminAccessRoute
   AdminActivityRoute: typeof AdminActivityRoute
   AdminBillingRoute: typeof AdminBillingRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
@@ -393,6 +453,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAccessRoute: AdminAccessRoute,
   AdminActivityRoute: AdminActivityRoute,
   AdminBillingRoute: AdminBillingRoute,
   AdminOrdersRoute: AdminOrdersRoute,
@@ -425,6 +486,8 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   OperatorRoute: OperatorRoute,
   OrdersRoute: OrdersRouteWithChildren,
+  ScanRoute: ScanRoute,
+  CCodeRoute: CCodeRoute,
   InviteInviteIdRoute: InviteInviteIdRoute,
   MSlugRoute: MSlugRoute,
 }

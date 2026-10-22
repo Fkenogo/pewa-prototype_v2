@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   Eye,
   Heart,
@@ -16,6 +16,7 @@ import {
   formatPrice,
   getEffectiveBusinessRole,
   getLiveMenu,
+  resolveMenuAccess,
   usePewa,
 } from "@/lib/pewa/store";
 import type { Menu, Offering } from "@/lib/pewa/types";
@@ -49,8 +50,22 @@ import {
 import { getAuthoritativeVenues, getAuthoritativeMenus } from "@/lib/pewa/ordering";
 
 export const Route = createFileRoute("/m/$slug")({
-  validateSearch: (search: Record<string, unknown>): { preview?: string | undefined } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    preview?: string | undefined;
+    access?: string | undefined;
+    code?: string | undefined;
+    menu?: string | undefined;
+    sp?: string | undefined;
+    channel?: string | undefined;
+  } => ({
     preview: typeof search["preview"] === "string" ? search["preview"] : undefined,
+    access: typeof search["access"] === "string" ? search["access"] : undefined,
+    code: typeof search["code"] === "string" ? search["code"] : undefined,
+    menu: typeof search["menu"] === "string" ? search["menu"] : undefined,
+    sp: typeof search["sp"] === "string" ? search["sp"] : undefined,
+    channel: typeof search["channel"] === "string" ? search["channel"] : undefined,
   }),
   head: ({ params }) => {
     const name = params.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -114,11 +129,11 @@ function PublicMenu() {
   const isPreviewMode = Boolean(previewMenu);
   const isPreviewDenied = isPreviewRequested && !isPreviewMode;
 
-  const live: Menu[] = venue
-    ? previewMenu
-      ? [previewMenu]
-      : getVenuePublishedMenus(venue, allMenus, allVenues, { includeProtected: true })
-    : [];
+  const live: Menu[] = useMemo(() => {
+    if (!venue) return [];
+    if (previewMenu) return [previewMenu];
+    return getVenuePublishedMenus(venue, allMenus, allVenues, { includeProtected: true });
+  }, [venue, previewMenu, allMenus, allVenues]);
   const [menuIdx, setMenuIdx] = useState(0);
   const [contact, setContact] = useState(false);
   const [detail, setDetail] = useState<Offering | null>(null);
@@ -127,6 +142,27 @@ function PublicMenu() {
   const [nameInput, setNameInput] = useState("");
   const venueId = venue?.id;
   const hasPublishedMenu = live.length > 0 && !isPreviewMode;
+
+  const resolvedAccess = useMemo(() => {
+    if (search.access || search.code) {
+      return resolveMenuAccess({ accessId: search.access, code: search.code }, state);
+    }
+    return null;
+  }, [search.access, search.code, state]);
+
+  const requestedMenuId = resolvedAccess?.menu?.id || search.menu;
+  const activeServicePoint = resolvedAccess?.reference?.servicePoint || search.sp;
+  const accessChannel = resolvedAccess?.reference?.channel || search.channel;
+
+  useEffect(() => {
+    if (requestedMenuId && live.length > 0) {
+      const idx = live.findIndex((m) => m.id === requestedMenuId);
+      if (idx >= 0) {
+        setMenuIdx(idx);
+      }
+    }
+  }, [requestedMenuId, live]);
+
   useEffect(() => {
     if (venueId && hasPublishedMenu) visitVenue(venueId);
   }, [venueId, hasPublishedMenu, visitVenue]);
@@ -181,6 +217,39 @@ function PublicMenu() {
           </span>
           <span className="font-medium text-foreground">Showing public menu</span>
         </aside>
+      )}
+      {resolvedAccess && !resolvedAccess.success && (
+        <aside
+          role="status"
+          aria-label="Access link inactive"
+          className="bg-amber-100 border-b border-amber-300 text-amber-950 px-4 py-2.5 text-xs font-medium flex items-center justify-between gap-2"
+        >
+          <span>⚠️ {resolvedAccess.error} Showing standard published menu.</span>
+        </aside>
+      )}
+      {activeServicePoint && (
+        <div
+          data-testid="service-context-banner"
+          className="bg-primary/10 border-b border-primary/20 px-4 py-2 text-xs flex items-center justify-between text-primary font-medium"
+        >
+          <span className="flex items-center gap-1.5 min-w-0 truncate">
+            <span className="inline-block h-2 w-2 rounded-full bg-primary" />
+            <span className="truncate">
+              Service Station: <strong>{activeServicePoint}</strong>
+            </span>
+          </span>
+          {accessChannel && (
+            <span className="shrink-0 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-primary/20">
+              {accessChannel === "qr"
+                ? "QR Scan"
+                : accessChannel === "whatsapp"
+                  ? "WhatsApp"
+                  : accessChannel === "code"
+                    ? "Short Code"
+                    : "Direct Link"}
+            </span>
+          )}
+        </div>
       )}
       <header className="bg-primary px-4 pb-6 pt-16 text-primary-foreground">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-foreground font-display text-3xl text-primary">
@@ -509,7 +578,7 @@ function PublicMenu() {
       </div>
 
       <ContactDrawer venue={venue} open={contact} onOpenChange={setContact} />
-      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
+      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} servicePoint={activeServicePoint} />
 
       <Drawer open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DrawerContent className="mx-auto max-w-lg">
