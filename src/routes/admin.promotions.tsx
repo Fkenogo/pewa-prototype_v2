@@ -46,8 +46,13 @@ function PromotionsPage() {
   // New campaign form state
   const [title, setTitle] = useState("");
   const [tagline, setTagline] = useState("");
-  const [venueId, setVenueId] = useState(venues[0]?.id || "");
+  const [venueId, setVenueId] = useState("");
   const [budget, setBudget] = useState("50");
+
+  // Campaign targets are limited to venues of the active organisation. The effective selection is
+  // derived on each render, so an organisation switch revalidates it without a global fallback.
+  const orgVenues = venues.filter((v) => v.orgId === organisation?.id);
+  const selectedVenue = orgVenues.find((v) => v.id === venueId) || orgVenues[0];
 
   const allVenues = getAuthoritativeVenues({ venues });
   const allMenus = getAuthoritativeMenus({ menus });
@@ -78,12 +83,15 @@ function PromotionsPage() {
       toast.error("Please enter both a campaign title and a promotional tagline.");
       return;
     }
-    const targetVenue = venues.find((v) => v.id === venueId) || venues[0];
-    if (!targetVenue) return;
+    if (!selectedVenue) {
+      toast.error("No eligible venue in the active organisation to target.");
+      return;
+    }
+    const targetVenue = selectedVenue;
 
     const refStartMs = resolveScenarioReferenceTimeMs(simulatedTime);
 
-    createCampaign({
+    const campaignId = createCampaign({
       orgId: targetVenue.orgId,
       venueId: targetVenue.id,
       title: title.trim(),
@@ -95,6 +103,13 @@ function PromotionsPage() {
       endDate: new Date(refStartMs + 14 * 86400000).toISOString(),
     });
 
+    if (!campaignId) {
+      toast.error(
+        "Campaign could not be created. Check that you can manage promotions for the active organisation.",
+      );
+      return;
+    }
+
     setCreateModalOpen(false);
     setTitle("");
     setTagline("");
@@ -105,7 +120,7 @@ function PromotionsPage() {
     venues.some((v) => v.id === c.venueId && v.orgId === organisation?.id),
   );
 
-  const selectedFormVenue = venues.find((v) => v.id === venueId) || venues[0];
+  const selectedFormVenue = selectedVenue;
   const selectedFormPublicMenu = selectedFormVenue
     ? getVenuePublishedMenus(selectedFormVenue, allMenus, allVenues, { includeProtected: false })[0]
     : undefined;
@@ -408,16 +423,23 @@ function PromotionsPage() {
             <div>
               <label className="text-xs font-semibold text-muted-foreground">Target Venue</label>
               <select
-                value={venueId}
+                value={selectedVenue?.id || ""}
                 onChange={(e) => setVenueId(e.target.value)}
+                disabled={orgVenues.length === 0}
                 className="mt-1 h-11 w-full rounded-md border bg-background px-3 text-sm"
               >
-                {venues.map((v) => (
+                {orgVenues.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.name}
                   </option>
                 ))}
               </select>
+              {orgVenues.length === 0 && (
+                <p className="mt-1 text-xs text-destructive" role="alert">
+                  No venue is available in {organisation?.name || "the active organisation"}.
+                  Register a venue before launching a campaign.
+                </p>
+              )}
             </div>
 
             <div>
@@ -464,7 +486,7 @@ function PromotionsPage() {
             )}
 
             <DialogFooter className="pt-2">
-              <Button type="submit" className="h-11 w-full">
+              <Button type="submit" className="h-11 w-full" disabled={!selectedVenue}>
                 Launch Sponsored Campaign
               </Button>
             </DialogFooter>

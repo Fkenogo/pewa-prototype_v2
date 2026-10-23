@@ -2221,8 +2221,9 @@ export const usePewa = create<PewaState & Actions>()(
           if (!targetMembership) {
             return { success: false, error: "No active membership found in target organisation." };
           }
-          const targetOrg: Organisation = (s.organisations || []).find((o) => o.id === orgId) ||
-            (s.organisation?.id === orgId ? s.organisation : null) ||
+          // The active organisation record is authoritative over any older list entry.
+          const targetOrg: Organisation = (s.organisation?.id === orgId ? s.organisation : null) ||
+            (s.organisations || []).find((o) => o.id === orgId) ||
             KNOWN_ORGANISATIONS[orgId] || {
               id: orgId,
               name: targetMembership.orgId,
@@ -2232,6 +2233,12 @@ export const usePewa = create<PewaState & Actions>()(
             };
 
           set({
+            organisations: upsertOrganisationRecord(
+              s.organisation
+                ? upsertOrganisationRecord(s.organisations, s.organisation)
+                : s.organisations,
+              targetOrg,
+            ),
             organisation: targetOrg,
             role: targetMembership.role,
           });
@@ -2693,15 +2700,12 @@ export const usePewa = create<PewaState & Actions>()(
             const otherMemberships = (prev.memberships || []).filter(
               (m) => !(m.identityId === ownerIdentity.id && m.orgId === orgId),
             );
-            const organisations = (prev.organisations || [])
-              .filter((org) => org.id !== orgId)
-              .concat(
-                prev.organisation &&
-                  !prev.organisations?.some((org) => org.id === prev.organisation?.id)
-                  ? [prev.organisation]
-                  : [],
-                [newOrganisation],
-              );
+            const organisations = upsertOrganisationRecord(
+              prev.organisation
+                ? upsertOrganisationRecord(prev.organisations, prev.organisation)
+                : prev.organisations,
+              newOrganisation,
+            );
             return {
               organisation: newOrganisation,
               organisations,
@@ -3805,6 +3809,25 @@ export const canAuthorMenus = (r: Role) => r === "owner" || r === "admin" || r =
 export const canToggleAvailability = (r: Role) => canAuthorMenus(r) || r === "staff";
 export const canManageOrders = (r: Role) => canAuthorMenus(r) || r === "staff";
 export const canManageBilling = (r: Role) => r === "owner" || r === "admin";
+/**
+ * Returns the organisation list with `org` stored exactly once (latest record wins).
+ * Used so the active organisation, which may live outside the explicit list on legacy state,
+ * is merged by id rather than appended.
+ */
+function upsertOrganisationRecord(
+  list: Organisation[] | undefined,
+  org: Organisation,
+): Organisation[] {
+  return [...dedupeOrganisations(list).filter((o) => o.id !== org.id), org];
+}
+
+/** Collapses duplicate organisation IDs, keeping the last record for each. */
+function dedupeOrganisations(list: Organisation[] | undefined): Organisation[] {
+  const byId = new Map<string, Organisation>();
+  for (const o of list || []) byId.set(o.id, o);
+  return Array.from(byId.values());
+}
+
 export const canManagePromotions = (r: Role) => r === "owner" || r === "admin" || r === "manager";
 export const canManageTeam = (r: Role) => r === "owner" || r === "admin" || r === "manager";
 export const canViewActivity = (r: Role) => isBusinessRole(r);
