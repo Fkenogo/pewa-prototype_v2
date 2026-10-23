@@ -8,7 +8,7 @@ export function CustomerNav() {
       className="fixed inset-x-0 bottom-0 z-40 mx-auto grid max-w-lg grid-cols-4 border-t bg-card pb-safe"
     >
       <Link
-        to="/"
+        to="/discover"
         className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs"
         activeProps={{ className: "text-primary font-bold" }}
         activeOptions={{ exact: true }}

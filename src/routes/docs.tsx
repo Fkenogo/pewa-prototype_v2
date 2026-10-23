@@ -180,7 +180,7 @@ function DocsPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to="/">Customer Home</Link>
+            <Link to="/discover">Customer Home</Link>
           </Button>
           <Button asChild size="sm">
             <Link to="/admin">Business Workspace</Link>
@@ -408,7 +408,7 @@ function DocsPage() {
                         navigate({ to: "/m/$slug", params: { slug: "grand-horizon-hotel" } });
                       else if (s.id === "delivery-only")
                         navigate({ to: "/m/$slug", params: { slug: "cloudburger" } });
-                      else if (s.id === "sponsored-campaign") navigate({ to: "/" });
+                      else if (s.id === "sponsored-campaign") navigate({ to: "/discover" });
                       else if (
                         [
                           "unavailable-item",

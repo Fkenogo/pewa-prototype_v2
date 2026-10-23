@@ -68,7 +68,7 @@ export function DirectCodeRoute() {
           </Link>
         </Button>
         <Button asChild variant="outline" className="h-11 w-full">
-          <Link to="/">
+          <Link to="/discover">
             <ArrowLeft className="mr-2 h-4 w-4" /> Browse all menus
           </Link>
         </Button>

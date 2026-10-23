@@ -77,7 +77,7 @@ describe("R3-D customer order route isolation", () => {
     const Profile = routeComponent(ProfileRoute);
     render(<Profile />);
     fireEvent.click(screen.getByRole("button", { name: "Continue browsing as a guest" }));
-    expect(routeParams.navigate).toHaveBeenCalledWith({ to: "/" });
+    expect(routeParams.navigate).toHaveBeenCalledWith({ to: "/discover" });
   });
 
   it("hides Customer A's order from Customer B and guest, then restores it for A", () => {

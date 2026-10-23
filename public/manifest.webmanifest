@@ -5,5 +5,5 @@
   "display": "standalone",
   "background_color": "#f7f4ec",
   "theme_color": "#2f5a43",
-  "icons": [{ "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }]
+  "icons": [{ "src": "/pewa-icon.jpg", "sizes": "1024x1024", "type": "image/jpeg" }]
 }
