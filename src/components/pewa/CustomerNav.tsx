@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Compass, Home, ClipboardList, QrCode } from "lucide-react";
+import { Compass, Home, UserRound, QrCode } from "lucide-react";
 
 export function CustomerNav() {
   return (
@@ -33,12 +33,12 @@ export function CustomerNav() {
         Scan
       </Link>
       <Link
-        to="/orders"
+        to="/profile"
         className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs"
         activeProps={{ className: "text-primary font-bold" }}
       >
-        <ClipboardList className="h-5 w-5" />
-        My requests
+        <UserRound className="h-5 w-5" />
+        Profile
       </Link>
     </nav>
   );

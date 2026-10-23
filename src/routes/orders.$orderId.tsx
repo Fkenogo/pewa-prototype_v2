@@ -20,10 +20,16 @@ export const Route = createFileRoute("/orders/$orderId")({
 });
 function Tracking() {
   const { orderId } = Route.useParams();
-  const { orders, venues, withdrawOrder } = usePewa();
+  const { orders, venues, withdrawOrder, customerContext } = usePewa();
   const [contact, setContact] = useState(false);
   const [confirmWithdrawal, setConfirmWithdrawal] = useState(false);
-  const order = orders.find((o) => o.id === orderId);
+  const order = orders.find(
+    (o) =>
+      o.id === orderId &&
+      (customerContext.kind === "identified"
+        ? o.customerIdentityId === customerContext.identityId
+        : !o.customerIdentityId),
+  );
   const venue = getAuthoritativeVenues({ venues }).find((v) => v.id === order?.venueId);
   if (!order)
     return (

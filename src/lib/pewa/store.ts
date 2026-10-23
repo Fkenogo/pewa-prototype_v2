@@ -33,6 +33,9 @@ import type {
   AccessStatus,
   MenuAccessReference,
   Venue,
+  CustomerContext,
+  CustomerOrderDraft,
+  CustomerOrderDraftTouched,
 } from "./types";
 import {
   buildScenario,
@@ -89,6 +92,11 @@ export {
 };
 
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+const normalizeCustomerEmail = (value: string) => value.trim().toLowerCase();
+const normalizeCustomerMobile = (value: string): string | null => {
+  const normalized = value.trim().replace(/[\s()-]/g, "");
+  return /^\+?\d{7,15}$/.test(normalized) ? normalized : null;
+};
 
 export const slugify = (s: string) =>
   s
@@ -137,6 +145,22 @@ export interface CompleteOnboardingInput {
 }
 
 type Actions = {
+  customerContext: CustomerContext;
+  customerIdentityIds: string[];
+  orderDraft: CustomerOrderDraft;
+  orderDraftTouched: CustomerOrderDraftTouched;
+  createCustomerProfile: (input: { fullName: string; email?: string; mobile?: string }) => {
+    ok: boolean;
+    error?: string;
+  };
+  continueAsExistingCustomer: () => boolean;
+  updateCustomerProfile: (input: { fullName?: string; email?: string; mobile?: string }) => boolean;
+  continueAsGuest: () => void;
+  resumePreviousCustomerProfile: () => boolean;
+  selectCustomerProfile: (identityId: string) => boolean;
+  updateOrderDraft: (draft: Partial<CustomerOrderDraft>) => void;
+  autofillCustomerOrderDraft: (identityId: string, identity: PersonalIdentity) => void;
+  clearOrderDraft: () => void;
   setRole: (r: Role) => void;
   loadScenario: (id: ScenarioId) => void;
   reset: () => void;
@@ -705,6 +729,10 @@ export const usePewa = create<PewaState & Actions>()(
       const initialSeed = buildScenario("new-cafe");
       return {
         ...initialSeed,
+        customerContext: { kind: "guest" },
+        customerIdentityIds: [],
+        orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
+        orderDraftTouched: { guestName: false, guestContact: false, service: false, note: false },
         menus: ensurePublishedSnapshots(initialSeed.menus, initialSeed.sharedOfferings),
         visitVenue: (id) =>
           set((s) => {
@@ -860,8 +888,21 @@ export const usePewa = create<PewaState & Actions>()(
             status: "pending",
             submittedAt: now(),
             unitConsumed: false,
+            customerIdentityId:
+              s.customerContext.kind === "identified" ? s.customerContext.identityId : undefined,
           };
-          set({ orders: [order, ...s.orders], cart: null, orderSequence: sequence });
+          set({
+            orders: [order, ...s.orders],
+            cart: null,
+            orderSequence: sequence,
+            orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
+            orderDraftTouched: {
+              guestName: false,
+              guestContact: false,
+              service: false,
+              note: false,
+            },
+          });
           get().log({
             kind: "order.submitted",
             message: `${order.reference} submitted — awaiting business acceptance; no unit consumed`,
@@ -1215,6 +1256,15 @@ export const usePewa = create<PewaState & Actions>()(
           }
           set({
             ...sc,
+            customerContext: { kind: "guest" },
+            customerIdentityIds: [],
+            orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
+            orderDraftTouched: {
+              guestName: false,
+              guestContact: false,
+              service: false,
+              note: false,
+            },
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
@@ -1242,6 +1292,15 @@ export const usePewa = create<PewaState & Actions>()(
           }
           set({
             ...sc,
+            customerContext: { kind: "guest" },
+            customerIdentityIds: [],
+            orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
+            orderDraftTouched: {
+              guestName: false,
+              guestContact: false,
+              service: false,
+              note: false,
+            },
             personalIdentity: persona,
             menus: ensurePublishedSnapshots(sc.menus, sc.sharedOfferings),
             role: nextRole,
@@ -1258,6 +1317,158 @@ export const usePewa = create<PewaState & Actions>()(
               200,
             ),
           })),
+        createCustomerProfile: (input) => {
+          const fullName = input.fullName.trim();
+          const emailInput = (input.email || "").trim();
+          const mobileInput = (input.mobile || "").trim();
+          const email = emailInput ? normalizeCustomerEmail(emailInput) : "";
+          const mobile = mobileInput ? normalizeCustomerMobile(mobileInput) : "";
+          if (get().customerContext.kind !== "guest")
+            return { ok: false, error: "Return to guest mode before creating a profile." };
+          if (!fullName) return { ok: false, error: "Enter your name." };
+          if (!email && !mobile)
+            return { ok: false, error: "Add an email address or mobile number." };
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+            return { ok: false, error: "Enter a valid email address." };
+          if (mobileInput && !mobile) return { ok: false, error: "Enter a valid mobile number." };
+          const identity: PersonalIdentity = {
+            id: uid("id"),
+            fullName,
+            email,
+            mobile: mobile || "",
+            preferredSignIn: email ? "email" : "mobile",
+            verifiedSimulation: false,
+            createdAt: now(),
+          };
+          const s = get();
+          set({
+            identities: [identity, ...(s.identities || [])],
+            customerIdentityIds: [identity.id, ...(s.customerIdentityIds || [])],
+            customerContext: { kind: "identified", identityId: identity.id },
+          });
+          return { ok: true };
+        },
+        continueAsExistingCustomer: () => {
+          const s = get();
+          const identity =
+            s.personalIdentity &&
+            (s.identities || []).find((item) => item.id === s.personalIdentity?.id);
+          if (!identity || s.customerContext.kind !== "guest") return false;
+          set({
+            customerContext: { kind: "identified", identityId: identity.id },
+            customerIdentityIds: [
+              identity.id,
+              ...(s.customerIdentityIds || []).filter((id) => id !== identity.id),
+            ],
+          });
+          return true;
+        },
+        updateCustomerProfile: (input) => {
+          const s = get();
+          if (s.customerContext.kind !== "identified") return false;
+          const id = s.customerContext.identityId;
+          const existing = (s.identities || []).find((identity) => identity.id === id);
+          if (!existing) return false;
+          const fullName = input.fullName === undefined ? existing.fullName : input.fullName.trim();
+          const emailInput = input.email === undefined ? existing.email : input.email.trim();
+          const mobileInput = input.mobile === undefined ? existing.mobile : input.mobile.trim();
+          const email = emailInput ? normalizeCustomerEmail(emailInput) : "";
+          const mobile = mobileInput ? normalizeCustomerMobile(mobileInput) : "";
+          if (
+            !fullName ||
+            (!email && !mobile) ||
+            (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ||
+            (mobileInput && !mobile)
+          )
+            return false;
+          const identifiersChanged =
+            email !== normalizeCustomerEmail(existing.email) ||
+            (existing.mobile ? normalizeCustomerMobile(existing.mobile) : "") !== mobile;
+          const identity = {
+            ...existing,
+            fullName,
+            email,
+            mobile: mobile || "",
+            preferredSignIn: email ? ("email" as const) : ("mobile" as const),
+            ...(existing.verifiedSimulation && identifiersChanged
+              ? { verifiedSimulation: false, verifiedAt: undefined }
+              : {}),
+          };
+          set({
+            identities: (s.identities || []).map((item) => (item.id === id ? identity : item)),
+            personalIdentity: s.personalIdentity?.id === id ? identity : s.personalIdentity,
+          });
+          return true;
+        },
+        continueAsGuest: () =>
+          set((s) => {
+            const current = s.customerContext;
+            const previousIdentityId =
+              current?.kind === "identified" ? current.identityId : current?.previousIdentityId;
+            return {
+              customerContext: {
+                kind: "guest",
+                ...(previousIdentityId ? { previousIdentityId } : {}),
+              },
+            };
+          }),
+        resumePreviousCustomerProfile: () => {
+          const s = get();
+          const context = s.customerContext;
+          if (context?.kind !== "guest" || !context.previousIdentityId) return false;
+          const identity = (s.identities || []).find(
+            (item) => item.id === context.previousIdentityId,
+          );
+          if (!identity) return false;
+          set({ customerContext: { kind: "identified", identityId: identity.id } });
+          return true;
+        },
+        selectCustomerProfile: (identityId) => {
+          const s = get();
+          if (!(s.customerIdentityIds || []).includes(identityId)) return false;
+          if (!(s.identities || []).some((identity) => identity.id === identityId)) return false;
+          set({ customerContext: { kind: "identified", identityId } });
+          return true;
+        },
+        updateOrderDraft: (draft) =>
+          set((s) => ({
+            orderDraft: { ...s.orderDraft, ...draft },
+            orderDraftTouched: {
+              ...s.orderDraftTouched,
+              ...Object.fromEntries(Object.keys(draft).map((key) => [key, true])),
+            } as CustomerOrderDraftTouched,
+          })),
+        autofillCustomerOrderDraft: (identityId, identity) =>
+          set((s) => {
+            if (
+              s.customerContext.kind !== "identified" ||
+              s.customerContext.identityId !== identityId
+            )
+              return s;
+            const nextDraft = {
+              ...s.orderDraft,
+              ...(s.orderDraftTouched.guestName ? {} : { guestName: identity.fullName }),
+              ...(s.orderDraftTouched.guestContact
+                ? {}
+                : { guestContact: identity.email || identity.mobile }),
+            };
+            if (
+              nextDraft.guestName === s.orderDraft.guestName &&
+              nextDraft.guestContact === s.orderDraft.guestContact
+            )
+              return s;
+            return { orderDraft: nextDraft };
+          }),
+        clearOrderDraft: () =>
+          set({
+            orderDraft: { guestName: "", guestContact: "", service: "", note: "" },
+            orderDraftTouched: {
+              guestName: false,
+              guestContact: false,
+              service: false,
+              note: false,
+            },
+          }),
         upsertPersonalIdentity: (input) => {
           const s = get();
           const cleanEmail = (input.email || "").trim();
@@ -3464,9 +3675,27 @@ export const usePewa = create<PewaState & Actions>()(
       merge: (persisted, current) => {
         const p = persisted as Partial<PewaState> | undefined;
         if (!p) return current;
+        const legacyCustomerIds = (p.identities || [])
+          .filter(
+            (identity) =>
+              !identity.verifiedSimulation &&
+              !(p.memberships || []).some((membership) => membership.identityId === identity.id),
+          )
+          .map((identity) => identity.id);
+        const legacyContextId =
+          p.customerContext?.kind === "identified"
+            ? p.customerContext.identityId
+            : p.customerContext?.previousIdentityId;
+        const customerIdentityIds = p.customerIdentityIds || [
+          ...new Set([...legacyCustomerIds, ...(legacyContextId ? [legacyContextId] : [])]),
+        ];
         return {
           ...current,
           ...p,
+          customerContext: p.customerContext || current.customerContext,
+          customerIdentityIds,
+          orderDraft: p.orderDraft || current.orderDraft,
+          orderDraftTouched: p.orderDraftTouched || current.orderDraftTouched,
           venues: (p.venues || current.venues).map((v) => ({
             ...v,
             category: v.category || current.venues.find((cv) => cv.id === v.id)?.category || "Café",

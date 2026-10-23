@@ -41,6 +41,25 @@ export interface PersonalIdentity {
   createdAt: string;
 }
 
+/** Active customer browsing identity, independent of the business role selector. */
+export type CustomerContext =
+  | { kind: "guest"; previousIdentityId?: string | undefined }
+  | { kind: "identified"; identityId: string };
+
+export interface CustomerOrderDraft {
+  guestName: string;
+  guestContact: string;
+  service: string;
+  note: string;
+}
+
+export interface CustomerOrderDraftTouched {
+  guestName: boolean;
+  guestContact: boolean;
+  service: boolean;
+  note: boolean;
+}
+
 export type MembershipRole = "owner" | "admin" | "manager" | "staff";
 export type MembershipStatus = "active" | "invited" | "revoked";
 
@@ -388,6 +407,11 @@ export interface PewaState {
   sharedOfferings?: SharedOffering[] | undefined;
   simulatedTime?: string | undefined; // "HH:MM" e.g. "09:30" or ISO string
   personalIdentity?: PersonalIdentity | null | undefined;
+  customerContext?: CustomerContext | undefined;
+  /** Locally retained identities explicitly entered as customer profiles. */
+  customerIdentityIds?: string[] | undefined;
+  orderDraft?: CustomerOrderDraft | undefined;
+  orderDraftTouched?: CustomerOrderDraftTouched | undefined;
   identities?: PersonalIdentity[] | undefined;
   memberships?: OrganisationMembership[] | undefined;
   invitations?: TeamInvitation[] | undefined;
@@ -434,6 +458,8 @@ export interface OrderRequest {
   declineReason?: string;
   unitConsumed: boolean;
   servicePoint?: string | undefined;
+  /** Prototype ownership binding for identified customer history. */
+  customerIdentityId?: string | undefined;
 }
 
 export interface OrderPolicy {
