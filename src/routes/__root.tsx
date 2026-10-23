@@ -143,12 +143,19 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <HydrationGate>
-        <OfflineBanner />
-        <Outlet />
-        {pathname !== "/" && <ScenarioPanel />}
-        <Toaster position="top-center" />
-      </HydrationGate>
+      {pathname === "/" ? (
+        <>
+          <Outlet />
+          <Toaster position="top-center" />
+        </>
+      ) : (
+        <HydrationGate>
+          <OfflineBanner />
+          <Outlet />
+          <ScenarioPanel />
+          <Toaster position="top-center" />
+        </HydrationGate>
+      )}
     </QueryClientProvider>
   );
 }

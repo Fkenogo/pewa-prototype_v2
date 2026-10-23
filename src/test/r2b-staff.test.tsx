@@ -44,6 +44,17 @@ describe("R2-B: Operational Staff Experience Alignment & Boundaries", () => {
     usePewa.getState().loadScenario("admitted-pending");
   });
 
+  it("routes the Operator Console's customer links to Discovery", () => {
+    usePewa.getState().setRole("operator");
+    const Operator = getRouteComponent(OperatorRoute);
+    render(<Operator />);
+
+    expect(screen.getByRole("link", { name: "Customer Home" })).toHaveAttribute(
+      "href",
+      "/discover",
+    );
+  });
+
   describe("Scenario Staff A — Obvious route to business orders workspace", () => {
     it("presents an obvious route to orders workspace when Operational Staff role is active", () => {
       usePewa.getState().setRole("staff");

@@ -1,4 +1,5 @@
 import React from "react";
+import { renderToString } from "react-dom/server";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePewa } from "@/lib/pewa/store";
@@ -89,9 +90,45 @@ describe("R3-LP-001 public landing and discovery entry", () => {
     expect(hasLinkTo("Business Workspace", "/admin")).toBe(true);
     expect(screen.getAllByRole("img", { name: "PEWA" })[0]).toHaveAttribute(
       "src",
-      "/pewa-horizontal.png",
+      "/pewa-horizontal-cropped.png",
     );
-    expect(screen.getAllByText("DEMONSTRATION").length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/DEMONSTRATION/).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/DEMONSTRATION · MENU PREVIEW/)).toHaveLength(4);
+    expect(screen.getByAltText(/Flat White from a demonstration menu/)).toBeInTheDocument();
+    expect(screen.queryByText("Published menu")).not.toBeInTheDocument();
+    expect(
+      screen.queryAllByRole("link").some((link) => link.getAttribute("href")?.startsWith("/m/")),
+    ).toBe(false);
+  });
+
+  it("server-renders public landing copy without store hydration", () => {
+    const LandingPage = routeOptions(LandingRoute).component;
+    const html = renderToString(<LandingPage />);
+
+    expect(html).toContain("Your menu deserves to be seen.");
+    expect(html).toContain("Get Your Business Started");
+    expect(html).toContain("Explore Menus");
+    expect(html).not.toContain("Loading");
+  });
+
+  it("keeps static menu artwork clearly illustrative when stored publication changes", () => {
+    usePewa.setState((state) => ({
+      menus: state.menus.map((candidate) =>
+        candidate.id === "menu_ggc_allday" ? { ...candidate, status: "archived" } : candidate,
+      ),
+    }));
+    const LandingPage = routeOptions(LandingRoute).component;
+    render(<LandingPage />);
+
+    expect(screen.getAllByText(/DEMONSTRATION · MENU PREVIEW/)).toHaveLength(4);
+    expect(screen.queryByText("Published menu")).not.toBeInTheDocument();
+    expect(
+      screen.queryAllByRole("link").some((link) => link.getAttribute("href")?.startsWith("/m/")),
+    ).toBe(false);
+    expect(screen.getByRole("link", { name: "Explore the Directory" })).toHaveAttribute(
+      "href",
+      "/directory",
+    );
   });
 
   it("provides compact mobile navigation to business and customer journeys", () => {

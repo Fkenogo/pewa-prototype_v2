@@ -598,7 +598,7 @@ function PublicMenu() {
         <p className="italic">{PEWA_TAG_DISCLAIMER}</p>
         <p>
           Prices and dishes are set by {venue.name}. Menu powered by{" "}
-          <Link to="/" className="underline">
+          <Link to="/discover" className="underline">
             PEWA
           </Link>
           .

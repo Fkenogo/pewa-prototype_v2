@@ -80,6 +80,18 @@ describe("R3-D customer order route isolation", () => {
     expect(routeParams.navigate).toHaveBeenCalledWith({ to: "/discover" });
   });
 
+  it("returns order-list and profile headers to customer Discovery", () => {
+    const Orders = routeComponent(OrdersRoute);
+    const Profile = routeComponent(ProfileRoute);
+
+    const orders = render(<Orders />);
+    expect(screen.getByRole("link", { name: "pewa" })).toHaveAttribute("href", "/discover");
+    orders.unmount();
+
+    render(<Profile />);
+    expect(screen.getByRole("link", { name: "pewa" })).toHaveAttribute("href", "/discover");
+  });
+
   it("hides Customer A's order from Customer B and guest, then restores it for A", () => {
     expect(
       usePewa.getState().createCustomerProfile({ fullName: "Customer A", email: "a@example.test" })
