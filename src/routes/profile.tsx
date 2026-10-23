@@ -1,8 +1,17 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { pageHead } from "@/lib/pewa/metadata";
-import { usePewa } from "@/lib/pewa/store";
+import {
+  getActiveOrganisationMembership,
+  hasActiveBusinessMembership,
+  usePewa,
+} from "@/lib/pewa/store";
 import { getAuthoritativeVenues } from "@/lib/pewa/ordering";
+import {
+  clearDeferredInstallPrompt,
+  subscribeInstallPrompt,
+  type DeferredInstallPrompt,
+} from "@/lib/pewa/install-prompt";
 import { CustomerNav } from "@/components/pewa/CustomerNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,13 +22,9 @@ export const Route = createFileRoute("/profile")({
   component: Profile,
 });
 
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
-
 function Profile() {
   const state = usePewa();
+  const navigate = useNavigate();
   const context = state.customerContext;
   const identified = context.kind === "identified";
   const identityId = context.kind === "identified" ? context.identityId : "";
@@ -29,7 +34,7 @@ function Profile() {
   const [mobile, setMobile] = useState(identity?.mobile || "");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
-  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
   const [dismissed, setDismissed] = useState(true);
   const [installGuidance, setInstallGuidance] = useState(
     "This browser has not offered an install option.",
@@ -45,10 +50,7 @@ function Profile() {
     identified ? order.customerIdentityId === identityId : !order.customerIdentityId,
   );
   const hasBusinessWorkspace =
-    !!identityId &&
-    (state.memberships || []).some(
-      (membership) => membership.identityId === identityId && membership.status === "active",
-    );
+    !!getActiveOrganisationMembership(state) && hasActiveBusinessMembership(state);
 
   useEffect(() => {
     setName(identity?.fullName || "");
@@ -66,12 +68,7 @@ function Profile() {
           ? "Use your browser menu and choose Add to Home Screen if it is available."
           : "This browser has not offered an install option.",
     );
-    const handler = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as InstallPromptEvent);
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
+    return subscribeInstallPrompt(setInstallPrompt);
   }, []);
 
   const submitProfile = (event: React.FormEvent) => {
@@ -140,14 +137,40 @@ function Profile() {
           </Button>
         </section>
       )}
-      {!identified && context.kind === "guest" && context.previousIdentityId && (
-        <Button
-          variant="outline"
-          className="mt-4 min-h-11 w-full"
-          onClick={() => state.resumePreviousCustomerProfile()}
-        >
-          Return to previous customer profile
-        </Button>
+      {state.customerIdentityIds.length > 0 && (
+        <section className="mt-4 rounded-xl border p-4" aria-label="Local customer profiles">
+          <h2 className="font-semibold">Switch customer profile</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            These simulated profiles are saved locally. Selecting one does not verify your
+            real-world identity.
+          </p>
+          <div className="mt-3 space-y-2">
+            {state.customerIdentityIds.map((customerId) => {
+              const customer = state.identities?.find((item) => item.id === customerId);
+              if (!customer) return null;
+              const active = identified && identityId === customer.id;
+              return (
+                <div
+                  key={customer.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                >
+                  <span className="min-w-0 truncate text-sm font-medium">{customer.fullName}</span>
+                  {active ? (
+                    <span className="text-xs text-muted-foreground">Current profile</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => state.selectCustomerProfile(customer.id)}
+                    >
+                      Use profile
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {(!identified || identity) && (
@@ -241,6 +264,7 @@ function Profile() {
         className="mt-5 min-h-11 w-full"
         onClick={() => {
           if (identified) state.continueAsGuest();
+          void navigate({ to: "/" });
         }}
       >
         {" "}
@@ -261,8 +285,10 @@ function Profile() {
             <Button
               className="mt-3 min-h-11 w-full"
               onClick={async () => {
-                await installPrompt.prompt();
-                await installPrompt.userChoice;
+                const prompt = installPrompt;
+                await prompt.prompt();
+                await prompt.userChoice;
+                clearDeferredInstallPrompt();
                 setInstallPrompt(null);
               }}
             >

@@ -53,6 +53,13 @@ export interface CustomerOrderDraft {
   note: string;
 }
 
+export interface CustomerOrderDraftTouched {
+  guestName: boolean;
+  guestContact: boolean;
+  service: boolean;
+  note: boolean;
+}
+
 export type MembershipRole = "owner" | "admin" | "manager" | "staff";
 export type MembershipStatus = "active" | "invited" | "revoked";
 
@@ -401,7 +408,10 @@ export interface PewaState {
   simulatedTime?: string | undefined; // "HH:MM" e.g. "09:30" or ISO string
   personalIdentity?: PersonalIdentity | null | undefined;
   customerContext?: CustomerContext | undefined;
+  /** Locally retained identities explicitly entered as customer profiles. */
+  customerIdentityIds?: string[] | undefined;
   orderDraft?: CustomerOrderDraft | undefined;
+  orderDraftTouched?: CustomerOrderDraftTouched | undefined;
   identities?: PersonalIdentity[] | undefined;
   memberships?: OrganisationMembership[] | undefined;
   invitations?: TeamInvitation[] | undefined;

@@ -57,6 +57,114 @@ describe("R3-D customer context and local continuity", () => {
     expect(usePewa.getState().customerContext).toEqual({ kind: "identified", identityId });
   });
 
+  it("preserves verified business identity metadata when only the name changes as a customer", () => {
+    usePewa.getState().loadScenario("established-restaurant");
+    const before = usePewa.getState();
+    const businessIdentity = before.personalIdentity!;
+    const verified = before.upsertPersonalIdentity({
+      id: businessIdentity.id,
+      fullName: businessIdentity.fullName,
+      email: businessIdentity.email,
+      mobile: businessIdentity.mobile,
+      verifiedSimulation: true,
+    });
+    const memberships = structuredClone(usePewa.getState().memberships);
+    expect(usePewa.getState().continueAsExistingCustomer()).toBe(true);
+    expect(usePewa.getState().updateCustomerProfile({})).toBe(true);
+    expect(
+      usePewa.getState().identities?.find((identity) => identity.id === verified.id)
+        ?.verifiedSimulation,
+    ).toBe(true);
+    expect(usePewa.getState().updateCustomerProfile({ fullName: "Updated name" })).toBe(true);
+    const saved = usePewa.getState().identities?.find((identity) => identity.id === verified.id);
+    expect(saved?.verifiedSimulation).toBe(true);
+    expect(saved?.verifiedAt).toBe(verified.verifiedAt);
+    expect(usePewa.getState().updateCustomerProfile({ email: "changed@example.test" })).toBe(true);
+    expect(
+      usePewa.getState().identities?.find((identity) => identity.id === verified.id)
+        ?.verifiedSimulation,
+    ).toBe(false);
+    expect(
+      usePewa.getState().identities?.find((identity) => identity.id === verified.id)?.verifiedAt,
+    ).toBeUndefined();
+    expect(usePewa.getState().memberships).toEqual(memberships);
+  });
+
+  it("retains multiple explicitly selected customer profiles through repeated guest transitions", () => {
+    const store = usePewa.getState();
+    expect(store.createCustomerProfile({ fullName: "Amina", email: "a@example.test" }).ok).toBe(
+      true,
+    );
+    const a = usePewa.getState().customerContext;
+    const aId = a.kind === "identified" ? a.identityId : "";
+    usePewa.getState().continueAsGuest();
+    expect(
+      usePewa.getState().createCustomerProfile({ fullName: "Bina", email: "b@example.test" }).ok,
+    ).toBe(true);
+    const b = usePewa.getState().customerContext;
+    const bId = b.kind === "identified" ? b.identityId : "";
+    usePewa.getState().continueAsGuest();
+    expect(usePewa.getState().selectCustomerProfile(aId)).toBe(true);
+    expect(usePewa.getState().customerContext).toEqual({ kind: "identified", identityId: aId });
+    usePewa.getState().continueAsGuest();
+    expect(usePewa.getState().selectCustomerProfile(bId)).toBe(true);
+    usePewa.getState().continueAsGuest();
+    expect(usePewa.getState().selectCustomerProfile(aId)).toBe(true);
+    expect(usePewa.getState().customerIdentityIds).toEqual([bId, aId]);
+  });
+
+  it("rejects punctuation-only mobile values during profile creation and editing", () => {
+    const store = usePewa.getState();
+    expect(store.createCustomerProfile({ fullName: "Guest", mobile: "-------" }).ok).toBe(false);
+    expect(store.createCustomerProfile({ fullName: "Guest", mobile: "       " }).ok).toBe(false);
+    expect(
+      store.createCustomerProfile({ fullName: "Guest", mobile: "+254 (711) 223-344" }).ok,
+    ).toBe(true);
+    const context = usePewa.getState().customerContext;
+    expect(context.kind).toBe("identified");
+    expect(
+      usePewa
+        .getState()
+        .identities?.find(
+          (identity) => identity.id === (context.kind === "identified" ? context.identityId : ""),
+        )?.mobile,
+    ).toBe("+254711223344");
+    expect(usePewa.getState().updateCustomerProfile({ mobile: "--- ---" })).toBe(false);
+  });
+
+  it("autofills untouched order contact fields but respects deliberate clearing and replacement", () => {
+    const store = usePewa.getState();
+    expect(store.createCustomerProfile({ fullName: "Amina", mobile: "+254 711 223 344" }).ok).toBe(
+      true,
+    );
+    const first = usePewa.getState().customerContext;
+    if (first.kind !== "identified") throw new Error("Profile was not identified");
+    const identityA = usePewa
+      .getState()
+      .identities?.find((identity) => identity.id === first.identityId);
+    if (!identityA) throw new Error("Customer A identity was not found");
+    usePewa.getState().autofillCustomerOrderDraft(first.identityId, identityA);
+    expect(usePewa.getState().orderDraft.guestContact).toBe("+254711223344");
+
+    usePewa.getState().updateOrderDraft({ guestContact: "" });
+    usePewa.getState().autofillCustomerOrderDraft(first.identityId, identityA);
+    expect(usePewa.getState().orderDraft.guestContact).toBe("");
+    usePewa.getState().updateOrderDraft({ guestContact: "manual@example.test" });
+
+    usePewa.getState().continueAsGuest();
+    expect(
+      usePewa.getState().createCustomerProfile({ fullName: "Bina", email: "b@example.test" }).ok,
+    ).toBe(true);
+    const second = usePewa.getState().customerContext;
+    if (second.kind !== "identified") throw new Error("Second profile was not identified");
+    const identityB = usePewa
+      .getState()
+      .identities?.find((identity) => identity.id === second.identityId);
+    if (!identityB) throw new Error("Customer B identity was not found");
+    usePewa.getState().autofillCustomerOrderDraft(second.identityId, identityB);
+    expect(usePewa.getState().orderDraft.guestContact).toBe("manual@example.test");
+  });
+
   it("binds a submitted order to the active profile and keeps hotel verification separate", () => {
     usePewa.getState().loadScenario("units-available");
     expect(

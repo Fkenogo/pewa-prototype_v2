@@ -16,6 +16,9 @@ import { ScenarioPanel } from "@/components/pewa/ScenarioPanel";
 import { HydrationGate } from "@/components/pewa/HydrationGate";
 import { OfflineBanner } from "@/components/pewa/OfflineBanner";
 import { Toaster } from "@/components/ui/sonner";
+import { initializeInstallPromptCapture } from "@/lib/pewa/install-prompt";
+
+initializeInstallPromptCapture();
 
 function NotFoundComponent() {
   return (

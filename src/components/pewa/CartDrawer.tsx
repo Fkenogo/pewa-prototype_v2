@@ -39,17 +39,16 @@ export function CartDrawer({
   const guestContact = draft.guestContact;
   const service = draft.service;
   const note = draft.note;
+  const customerContext = state.customerContext;
+  const customerIdentity =
+    customerContext.kind === "identified"
+      ? state.identities?.find((item) => item.id === customerContext.identityId)
+      : undefined;
+  const autofillCustomerOrderDraft = state.autofillCustomerOrderDraft;
   useEffect(() => {
-    const context = state.customerContext;
-    if (context.kind !== "identified") return;
-    const identity = state.identities?.find((item) => item.id === context.identityId);
-    if (!identity) return;
-    const guestName = draft.guestName || identity.fullName;
-    const guestContact = draft.guestContact || identity.email || identity.mobile;
-    if (guestName !== draft.guestName || guestContact !== draft.guestContact) {
-      state.updateOrderDraft({ guestName, guestContact });
-    }
-  }, [draft.guestContact, draft.guestName, state]);
+    if (customerContext.kind !== "identified" || !customerIdentity) return;
+    autofillCustomerOrderDraft(customerContext.identityId, customerIdentity);
+  }, [customerContext, customerIdentity, autofillCustomerOrderDraft]);
   const venue = getAuthoritativeVenues(state).find((v) => v.id === state.cart?.venueId);
   const lines = state.cart?.lines ?? [];
   const error = lines.length ? validateCart(state, state.cart) : null;
