@@ -18,7 +18,7 @@ function Requests() {
   );
   return (
     <main className="mx-auto min-h-screen max-w-lg px-4 pb-28 pt-16">
-      <Link to="/" className="font-display text-xl text-primary">
+      <Link to="/discover" className="font-display text-xl text-primary">
         pewa
       </Link>
       <h1 className="mt-4 text-3xl">My requests</h1>

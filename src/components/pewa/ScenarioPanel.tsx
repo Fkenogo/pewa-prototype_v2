@@ -149,7 +149,7 @@ export function ScenarioPanel() {
               </h3>
               <div className="flex flex-wrap gap-2 text-xs">
                 <Link
-                  to="/"
+                  to="/discover"
                   onClick={() => setOpen(false)}
                   className="rounded-full bg-proto-foreground/10 px-3 py-2"
                 >
@@ -293,7 +293,7 @@ export function ScenarioPanel() {
                           navigate({ to: "/m/$slug", params: { slug: "grand-horizon-hotel" } });
                         else if (s.id === "delivery-only")
                           navigate({ to: "/m/$slug", params: { slug: "cloudburger" } });
-                        else if (s.id === "sponsored-campaign") navigate({ to: "/" });
+                        else if (s.id === "sponsored-campaign") navigate({ to: "/discover" });
                         else if (
                           [
                             "unavailable-item",

@@ -187,7 +187,7 @@ function PublicMenu() {
       <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-3 px-6 text-center">
         <h1 className="text-2xl">We couldn't find this menu</h1>
         <p className="text-muted-foreground">The link may be mistyped.</p>
-        <Link to="/" className="font-semibold text-primary underline">
+        <Link to="/discover" className="font-semibold text-primary underline">
           Browse menus
         </Link>
       </main>
@@ -220,7 +220,10 @@ function PublicMenu() {
           >
             Browse Public Menu
           </Link>
-          <Link to="/" className="mt-2 text-xs font-medium text-muted-foreground hover:underline">
+          <Link
+            to="/discover"
+            className="mt-2 text-xs font-medium text-muted-foreground hover:underline"
+          >
             Back to Discovery
           </Link>
         </div>
@@ -332,7 +335,10 @@ function PublicMenu() {
         </div>
       </header>
       <div className="flex items-center justify-between gap-2 px-4 py-2 text-xs">
-        <Link to="/" className="flex h-10 items-center font-medium text-primary hover:underline">
+        <Link
+          to="/discover"
+          className="flex h-10 items-center font-medium text-primary hover:underline"
+        >
           ← Discover menus
         </Link>
         <Link
@@ -592,7 +598,7 @@ function PublicMenu() {
         <p className="italic">{PEWA_TAG_DISCLAIMER}</p>
         <p>
           Prices and dishes are set by {venue.name}. Menu powered by{" "}
-          <Link to="/" className="underline">
+          <Link to="/discover" className="underline">
             PEWA
           </Link>
           .

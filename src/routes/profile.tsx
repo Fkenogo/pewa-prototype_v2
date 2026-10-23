@@ -92,7 +92,7 @@ function Profile() {
 
   return (
     <main className="mx-auto min-h-screen max-w-lg px-4 pb-28 pt-12">
-      <Link to="/" className="font-display text-xl text-primary">
+      <Link to="/discover" className="font-display text-xl text-primary">
         pewa
       </Link>
       <h1 className="mt-5 text-3xl font-semibold">Profile</h1>
@@ -230,10 +230,10 @@ function Profile() {
           Favorites and recent menus stay local to this browser. They are not synced between
           devices.
         </p>
-        <Link to="/" search={{ filter: "saved" }} className="block rounded-lg border p-4">
+        <Link to="/discover" search={{ filter: "saved" }} className="block rounded-lg border p-4">
           Favorites <span className="text-muted-foreground">· {favouriteNames.length}</span>
         </Link>
-        <Link to="/" search={{ filter: "recents" }} className="block rounded-lg border p-4">
+        <Link to="/discover" search={{ filter: "recents" }} className="block rounded-lg border p-4">
           Recent menus <span className="text-muted-foreground">· {recentNames.length}</span>
         </Link>
         <Link to="/orders" className="block rounded-lg border p-4">
@@ -264,7 +264,7 @@ function Profile() {
         className="mt-5 min-h-11 w-full"
         onClick={() => {
           if (identified) state.continueAsGuest();
-          void navigate({ to: "/" });
+          void navigate({ to: "/discover" });
         }}
       >
         {" "}

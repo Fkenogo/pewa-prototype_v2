@@ -241,7 +241,7 @@ export function ScanPage() {
     <main className="mx-auto min-h-screen max-w-lg px-4 pb-28 pt-5">
       <header className="mb-4 flex items-center justify-between">
         <Link
-          to="/"
+          to="/discover"
           className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
         >
           <ArrowLeft className="h-4 w-4" /> Discover menus

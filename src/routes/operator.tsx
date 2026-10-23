@@ -176,7 +176,7 @@ export function OperatorConsolePage() {
               </Button>
             )}
             <Button asChild variant="outline" className="w-full">
-              <Link to="/">Back to Home</Link>
+              <Link to="/discover">Back to Home</Link>
             </Button>
           </div>
         </div>
@@ -334,7 +334,7 @@ export function OperatorConsolePage() {
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-              <Link to="/">
+              <Link to="/discover">
                 <Eye className="mr-1.5 h-3.5 w-3.5" />
                 Customer Home
               </Link>

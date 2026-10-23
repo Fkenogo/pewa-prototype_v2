@@ -77,7 +77,19 @@ describe("R3-D customer order route isolation", () => {
     const Profile = routeComponent(ProfileRoute);
     render(<Profile />);
     fireEvent.click(screen.getByRole("button", { name: "Continue browsing as a guest" }));
-    expect(routeParams.navigate).toHaveBeenCalledWith({ to: "/" });
+    expect(routeParams.navigate).toHaveBeenCalledWith({ to: "/discover" });
+  });
+
+  it("returns order-list and profile headers to customer Discovery", () => {
+    const Orders = routeComponent(OrdersRoute);
+    const Profile = routeComponent(ProfileRoute);
+
+    const orders = render(<Orders />);
+    expect(screen.getByRole("link", { name: "pewa" })).toHaveAttribute("href", "/discover");
+    orders.unmount();
+
+    render(<Profile />);
+    expect(screen.getByRole("link", { name: "pewa" })).toHaveAttribute("href", "/discover");
   });
 
   it("hides Customer A's order from Customer B and guest, then restores it for A", () => {

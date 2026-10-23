@@ -580,7 +580,7 @@ export function Discovery({
   return (
     <main className="mx-auto min-h-screen max-w-lg px-4 pb-28 pt-5">
       <header className="mb-4 pr-32">
-        <Link to="/" className="font-display text-3xl font-bold text-primary">
+        <Link to="/discover" className="font-display text-3xl font-bold text-primary">
           pewa
         </Link>
       </header>

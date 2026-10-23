@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DirectoryRouteImport } from './routes/directory'
+import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as OperatorRouteImport } from './routes/operator'
@@ -45,6 +46,11 @@ const AdminRoute = AdminRouteImport.update({
 const DirectoryRoute = DirectoryRouteImport.update({
   id: '/directory',
   path: '/directory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiscoverRoute = DiscoverRouteImport.update({
+  id: '/discover',
+  path: '/discover',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsRoute = DocsRouteImport.update({
@@ -147,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/directory': typeof DirectoryRoute
+  '/discover': typeof DiscoverRoute
   '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/directory': typeof DirectoryRoute
+  '/discover': typeof DiscoverRoute
   '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
@@ -194,6 +202,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/directory': typeof DirectoryRoute
+  '/discover': typeof DiscoverRoute
   '/docs': typeof DocsRoute
   '/onboarding': typeof OnboardingRoute
   '/operator': typeof OperatorRoute
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/directory'
+    | '/discover'
     | '/docs'
     | '/onboarding'
     | '/operator'
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/directory'
+    | '/discover'
     | '/docs'
     | '/onboarding'
     | '/operator'
@@ -266,6 +277,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/directory'
+    | '/discover'
     | '/docs'
     | '/onboarding'
     | '/operator'
@@ -291,6 +303,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   DirectoryRoute: typeof DirectoryRoute
+  DiscoverRoute: typeof DiscoverRoute
   DocsRoute: typeof DocsRoute
   OnboardingRoute: typeof OnboardingRoute
   OperatorRoute: typeof OperatorRoute
@@ -323,6 +336,13 @@ declare module '@tanstack/react-router' {
       path: '/directory'
       fullPath: '/directory'
       preLoaderRoute: typeof DirectoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/discover': {
+      id: '/discover'
+      path: '/discover'
+      fullPath: '/discover'
+      preLoaderRoute: typeof DiscoverRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs': {
@@ -502,6 +522,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   DirectoryRoute: DirectoryRoute,
+  DiscoverRoute: DiscoverRoute,
   DocsRoute: DocsRoute,
   OnboardingRoute: OnboardingRoute,
   OperatorRoute: OperatorRoute,
