@@ -30,14 +30,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/onboarding")({
@@ -130,7 +122,6 @@ function Onboarding() {
   } = usePewa();
 
   const [registerAnotherOrg, setRegisterAnotherOrg] = useState(false);
-  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [createdSummary, setCreatedSummary] = useState<{
     menuId: string;
     orgName: string;
@@ -387,22 +378,20 @@ function Onboarding() {
                 <Users className="h-4 w-4 text-primary" />
                 <span>Invite your team</span>
               </div>
-              <span className="rounded bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                Staged for R3-B
-              </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Organisation Administrators, Business Managers, and Operational Staff can be invited
-              to join <b>{createdSummary.orgName}</b> with role-scoped permissions.
+              Set up role-scoped access for <b>{createdSummary.orgName}</b> in Team Management.
+              Invitations are simulated in this prototype; no external email or SMS is sent.
             </p>
             <Button
-              type="button"
+              asChild
               variant="outline"
               size="sm"
               className="h-9 w-full text-xs font-semibold"
-              onClick={() => setInviteModalOpen(true)}
             >
-              <Users className="mr-1.5 h-3.5 w-3.5" /> Invite your team (Preview roles)
+              <Link to="/admin/team">
+                <Users className="mr-1.5 h-3.5 w-3.5" /> Open Team Management
+              </Link>
             </Button>
           </section>
 
@@ -429,55 +418,6 @@ function Onboarding() {
             </Button>
           </div>
         </div>
-
-        <Dialog open={inviteModalOpen} onOpenChange={setInviteModalOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Invite your team (Preview)</DialogTitle>
-              <DialogDescription>
-                You can invite team members to collaborate in <b>{createdSummary.orgName}</b>.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2.5 text-xs">
-              <div className="rounded-lg border p-3">
-                <p className="font-semibold text-foreground">Organisation Administrator</p>
-                <p className="text-muted-foreground">
-                  Full management of venues, menus, promotions, and billing.
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="font-semibold text-foreground">Business Manager</p>
-                <p className="text-muted-foreground">
-                  Authors and publishes menus, manages promotions, and handles customer orders.
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="font-semibold text-foreground">Operational Staff</p>
-                <p className="text-muted-foreground">
-                  Handles live order requests and item availability without menu-authoring or
-                  billing access.
-                </p>
-              </div>
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-900 dark:text-amber-200">
-                <b>Prototype Notice:</b> Live invitation dispatch, acceptance tokens, and
-                team-membership lifecycle management are staged for work package <b>R3-B</b>. No
-                external email or SMS invitation is sent from this prototype screen.
-              </div>
-            </div>
-            <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
-              <Button asChild variant="default" className="w-full sm:w-auto">
-                <Link to="/admin/team">Open Team Management</Link>
-              </Button>
-              <Button
-                onClick={() => setInviteModalOpen(false)}
-                variant="outline"
-                className="w-full sm:w-auto"
-              >
-                Got it
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </main>
     );
   }

@@ -182,17 +182,11 @@ describe("R3-A: Business Registration, Personal Identity and Organisation Onboar
       // Create organisation & menu
       fireEvent.click(screen.getByTestId("onboarding-continue-btn"));
 
-      // Completion handoff view appears with Invite Team preview
+      // Completion handoff view links directly to the live team management route
       expect(screen.getByTestId("onboarding-completion-handoff")).toBeInTheDocument();
-      const inviteBtn = screen.getByRole("button", {
-        name: /Invite your team \(Preview roles\)/i,
-      });
-      expect(inviteBtn).toBeInTheDocument();
-
-      // Open the Invite Team preview modal and verify staged R3-B disclosure
-      fireEvent.click(inviteBtn);
-      expect(screen.getByText(/Invite your team \(Preview\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Live invitation dispatch, acceptance tokens/i)).toBeInTheDocument();
+      const teamLink = screen.getByRole("link", { name: /Open Team Management/i });
+      expect(teamLink).toHaveAttribute("href", "/admin/team");
+      expect(screen.getByText(/Invitations are simulated in this prototype/i)).toBeInTheDocument();
 
       const stateAfterComplete = usePewa.getState();
       expect(stateAfterComplete.organisation?.name).toBe("Kilimanjaro Hospitality Ltd");

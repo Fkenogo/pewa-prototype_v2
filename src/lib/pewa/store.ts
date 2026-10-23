@@ -2655,7 +2655,7 @@ export const usePewa = create<PewaState & Actions>()(
                     sections: [],
                     updatedAt: now(),
                   })),
-                ...s.menus.filter((m) => m.orgId !== s.organisation?.id),
+                ...s.menus.filter((m) => m.orgId !== orgId),
               ];
 
           const foundingMembership: OrganisationMembership = {
@@ -2668,31 +2668,43 @@ export const usePewa = create<PewaState & Actions>()(
             joinedAt: now(),
           };
 
+          const newOrganisation: Organisation = {
+            id: orgId,
+            name: cleanOrgName,
+            tradingName:
+              i.tradingName?.trim() ||
+              (isUpdatingExistingOrg ? s.organisation?.tradingName : undefined),
+            businessType: i.businessType,
+            category: i.category || i.businessType,
+            country:
+              i.country?.trim() ||
+              (isUpdatingExistingOrg ? s.organisation?.country : undefined) ||
+              "Kenya",
+            currency: i.currency,
+            primaryContact:
+              i.primaryBusinessContact?.trim() ||
+              (isUpdatingExistingOrg ? s.organisation?.primaryContact : undefined),
+            primaryContactVisibility: visibility,
+            ownerIdentityId: ownerIdentity.id,
+            status: "active",
+          };
+
           set((prev) => {
             const otherMemberships = (prev.memberships || []).filter(
               (m) => !(m.identityId === ownerIdentity.id && m.orgId === orgId),
             );
+            const organisations = (prev.organisations || [])
+              .filter((org) => org.id !== orgId)
+              .concat(
+                prev.organisation &&
+                  !prev.organisations?.some((org) => org.id === prev.organisation?.id)
+                  ? [prev.organisation]
+                  : [],
+                [newOrganisation],
+              );
             return {
-              organisation: {
-                id: orgId,
-                name: cleanOrgName,
-                tradingName:
-                  i.tradingName?.trim() ||
-                  (isUpdatingExistingOrg ? prev.organisation?.tradingName : undefined),
-                businessType: i.businessType,
-                category: i.category || i.businessType,
-                country:
-                  i.country?.trim() ||
-                  (isUpdatingExistingOrg ? prev.organisation?.country : undefined) ||
-                  "Kenya",
-                currency: i.currency,
-                primaryContact:
-                  i.primaryBusinessContact?.trim() ||
-                  (isUpdatingExistingOrg ? prev.organisation?.primaryContact : undefined),
-                primaryContactVisibility: visibility,
-                ownerIdentityId: ownerIdentity.id,
-                status: "active",
-              },
+              organisation: newOrganisation,
+              organisations,
               venues: [
                 {
                   id: venueId,
@@ -2721,9 +2733,7 @@ export const usePewa = create<PewaState & Actions>()(
                     uniqueContexts.length > 0 ? uniqueContexts : existingOrgVenue?.serviceContexts,
                   currency: i.currency,
                 },
-                ...prev.venues.filter(
-                  (v) => v.orgId !== prev.organisation?.id && v.orgId !== orgId,
-                ),
+                ...prev.venues.filter((v) => v.orgId !== orgId),
               ],
               menus: newMenus,
               memberships: [...otherMemberships, foundingMembership],
