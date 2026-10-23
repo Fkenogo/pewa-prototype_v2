@@ -1,16 +1,20 @@
-# R3 Closure Record — PEWA Prototype Implementation Programme
+# R3 Programme Closure Record — PEWA Prototype Implementation Programme
 
 **Programme:** PEWA Prototype R3 (Work Packages R3-A through R3-E, incl. R3-LP-001)
 **Reference Baseline:** `b7a08e9e5541f7cc93a0d41dfa948c5b10b47f95` (merge commit of PR #15)
 **Date:** 23 October 2026
-**Disposition:** R3 IMPLEMENTATION ACCEPTED — FORMAL CLOSURE RECORD
+**Disposition:** R3 IMPLEMENTATION COMPLETE AND MERGED — FORMAL CLOSURE PENDING FOUNDER AUTHORISATION
+**Implementation Status:** COMPLETE — all six work packages delivered and merged
+**Formal Closure Status:** **NOT YET AUTHORISED** — granted only by the Founder's final merge authorisation of this record
 **Prototype Status:** **UNFROZEN — FOUNDER REFINEMENT IN PROGRESS**
 
 ---
 
 ## 1. Executive Summary
 
-The R3 prototype programme is complete and merged. Six work packages were implemented, reviewed and merged into `main` through Pull Requests #10 to #15. This document records the formal closure of R3 for Founder approval.
+The R3 prototype implementation is complete and merged. Six work packages were implemented, reviewed and merged into `main` through Pull Requests #10 to #15. This document records implementation completion and the supporting evidence on which the Founder is asked to authorise formal closure of R3.
+
+**Formal closure of the R3 programme is not authorised by this record.** Implementation completion and Founder-authorised formal closure are distinct states: the implementation is finished and verified, while formal closure remains outstanding until the Founder's final merge authorisation.
 
 This is a documentation and governance close-out only. No application code was modified to produce it, no feature was introduced, no closed package was reopened, and no product requirement was altered.
 
@@ -92,11 +96,17 @@ The R2 stage (PRs #6–#9) was merged but was never reflected in `roadmap.md`; o
 
 The in-app Deliverables viewer at `/docs` (Deliverables A–H index) does not list this closure record. Adding it would require modifying application code (`src/routes/docs.tsx`), which this documentation-only closure is not permitted to do. This record is therefore discoverable through `docs/` and `roadmap.md` only.
 
+### 5.4 Experience Reference Freeze Decision — OUTSTANDING (independent of R3 closure)
+
+The Experience Reference freeze decision remains an **independent, outstanding Founder decision**. It is not an item of R3 closure acceptance, is not granted or pre-empted by this record, and is tracked separately from the R3 formal closure gate in §8. The Experience Reference stays **UNFROZEN — FOUNDER REFINEMENT IN PROGRESS** until that separate decision is made.
+
 ---
 
 ## 6. Experience Reference Status
 
 The PEWA Experience Reference **remains UNFROZEN — FOUNDER REFINEMENT IN PROGRESS**. R3 closure does not freeze the Experience Reference, does not designate a freeze candidate, and does not alter Deliverable H (`docs/EXPERIENCE_REFERENCE_FREEZE_CANDIDATE.md`). The prototype status banner continues to read `UNFROZEN — FOUNDER REFINEMENT IN PROGRESS`.
+
+The Experience Reference freeze decision is an **independent, outstanding Founder decision**. It sits outside R3 closure, is not part of the R3 closure acceptance checklist, and is neither granted, pre-empted nor implied by this record.
 
 ---
 
@@ -113,13 +123,14 @@ Both threads were replied to with the correction evidence and marked resolved on
 
 ---
 
-## 8. Closure Gate
+## 8. Formal Closure Authorisation Gate
 
-This record closes the **implementation** stage of R3. It does not close the programme, does not freeze the Experience Reference, and does not close R2-E.
+The **implementation** stage of R3 is complete and verified. This record does not itself authorise formal closure: formal closure of the R3 programme is granted only by the Founder's final merge authorisation of this record.
 
-- [ ] R3 implementation closure accepted by Founder
-- [ ] Experience Reference freeze decision (separate, outstanding)
+- [ ] Founder authorisation of R3 formal closure (implementation complete; awaiting final authorisation)
+
+This record does not freeze the Experience Reference (see §6) and does not close, implement, reopen or redefine R2-E (see §5.1).
 
 Founder Signature: __________________________    Date: ______________
 
-**STOP — AWAITING FOUNDER CLOSURE APPROVAL.**
+**STOP — RETURNED FOR FINAL FOUNDER MERGE AUTHORISATION.**
