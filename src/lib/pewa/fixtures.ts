@@ -771,6 +771,10 @@ export const SCENARIO_DEMO_IDENTITIES: PersonalIdentity[] = [
   SAMPLE_STAFF_IDENTITY,
 ];
 
+// Relative timestamps keep the sample invitation pending whenever the prototype is loaded.
+// Expiry behaviour itself is unchanged: the store still compares expiresAt with Date.now().
+const SAMPLE_INVITATION_CREATED_MS = Date.now() - 24 * 60 * 60 * 1000;
+
 export const samplePendingInvitation: TeamInvitation = {
   id: "inv_sample_brian",
   token: "tok_sample_brian",
@@ -784,8 +788,8 @@ export const samplePendingInvitation: TeamInvitation = {
   servicePoints: ["Main Counter", "Dine-in Area"],
   invitedById: SAMPLE_FOUNDER_IDENTITY.id,
   invitedByName: SAMPLE_FOUNDER_IDENTITY.fullName,
-  createdAt: "2026-10-21T09:00:00.000Z",
-  expiresAt: "2026-10-28T09:00:00.000Z",
+  createdAt: new Date(SAMPLE_INVITATION_CREATED_MS).toISOString(),
+  expiresAt: new Date(SAMPLE_INVITATION_CREATED_MS + 7 * 24 * 60 * 60 * 1000).toISOString(),
   status: "pending",
 };
 
