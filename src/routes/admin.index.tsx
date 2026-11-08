@@ -519,7 +519,7 @@ function Overview() {
             </div>
           </div>
           {live && (
-            <div className="mt-3.5 flex gap-2">
+            <div className="mt-3.5 grid grid-cols-2 gap-2 sm:flex">
               <Button
                 variant="secondary"
                 size="sm"
@@ -540,7 +540,7 @@ function Overview() {
                 asChild
                 variant="outline"
                 size="sm"
-                className="h-10 flex-1 text-xs font-semibold"
+                className="col-span-2 h-10 flex-1 text-xs font-semibold"
               >
                 <Link to="/admin/access">
                   <QrCode className="h-3.5 w-3.5 mr-1" /> Table QRs & Access

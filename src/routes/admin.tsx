@@ -1,5 +1,7 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Menu } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   Activity,
   BookOpen,
@@ -62,6 +64,7 @@ function AdminLayout() {
     memberships,
   });
 
+  const [menuOpen, setMenuOpen] = useState(false);
   const navItems = useMemo(() => {
     if (effectiveRole === "staff") {
       return [
@@ -178,20 +181,38 @@ function AdminLayout() {
           ))}
         </nav>
       </aside>
-      <div className="flex-1 pb-24 md:pb-8">
+      <header className="sticky top-0 z-40 flex h-16 items-center gap-2 border-b bg-card/95 pl-4 pr-44 backdrop-blur md:hidden">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-display text-lg font-bold leading-tight text-primary">pewa</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {organisation.name} · {ROLE_LABELS[activeMembership?.role || effectiveRole]}
+          </p>
+        </div>
+        <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="h-11 w-11 shrink-0" aria-label="Open menu">
+              <Menu className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-72 max-w-[85vw] overflow-y-auto p-4">
+            <SheetHeader className="text-left">
+              <SheetTitle className="font-display text-2xl text-primary">pewa</SheetTitle>
+            </SheetHeader>
+            <p className="mt-2 truncate text-sm font-semibold">{organisation.name}</p>
+            {personalIdentity && (
+              <p className="truncate text-xs text-muted-foreground">{personalIdentity.fullName}</p>
+            )}
+            <nav className="mt-4 space-y-1" onClick={() => setMenuOpen(false)}>
+              {navItems.map((n) => (
+                <NavItem key={n.label} {...n} desktop />
+              ))}
+            </nav>
+          </SheetContent>
+        </Sheet>
+      </header>
+      <div className="min-w-0 flex-1 overflow-x-hidden pb-8">
         <Outlet />
       </div>
-      <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t bg-card pb-safe pt-1 md:hidden"
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,
-        }}
-      >
-        {navItems.map((n) => (
-          <NavItem key={n.label} {...n} />
-        ))}
-      </nav>
     </div>
   );
 }
