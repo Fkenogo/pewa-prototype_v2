@@ -181,7 +181,7 @@ function AdminLayout() {
           ))}
         </nav>
       </aside>
-      <header className="sticky top-0 z-40 flex h-16 items-center gap-2 border-b bg-card/95 pl-4 pr-32 backdrop-blur md:hidden">
+      <header className="sticky top-0 z-40 flex h-16 items-center gap-2 border-b bg-card/95 pl-4 pr-44 backdrop-blur md:hidden">
         <div className="min-w-0 flex-1">
           <p className="truncate font-display text-lg font-bold leading-tight text-primary">pewa</p>
           <p className="truncate text-xs text-muted-foreground">

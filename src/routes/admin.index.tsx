@@ -519,7 +519,7 @@ function Overview() {
             </div>
           </div>
           {live && (
-            <div className="mt-3.5 flex gap-2">
+            <div className="mt-3.5 grid grid-cols-2 gap-2 sm:flex">
               <Button
                 variant="secondary"
                 size="sm"
