@@ -37,6 +37,8 @@ import {
 } from "@/lib/pewa/store";
 import type { ModerationCase, OrgStatus, Role, UsageDisputeCase } from "@/lib/pewa/types";
 import { Badge } from "@/components/ui/badge";
+import { Menu as MenuIcon } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -285,26 +287,76 @@ export function OperatorConsolePage() {
     <div className="min-h-screen bg-muted/20 pb-20">
       {/* Top Console Navigation */}
       <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 py-4 pl-4 pr-32 sm:px-6 md:flex-wrap md:gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               <Shield className="h-5 w-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-display text-xl font-bold tracking-tight text-foreground">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-display text-lg sm:text-xl font-bold tracking-tight text-foreground">
                   PEWA Operator
                 </span>
-                <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
+                <Badge variant="outline" className="hidden border-primary/30 bg-primary/10 text-primary sm:inline-flex">
                   Platform Operations
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="hidden text-xs text-muted-foreground sm:block">
                 Administrative oversight, compliance & commercial dispute resolution
               </p>
             </div>
           </div>
 
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 md:hidden" aria-label="Open menu">
+                <MenuIcon className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-72 max-w-[85vw] p-4">
+              <SheetHeader className="text-left">
+                <SheetTitle className="font-display text-xl">PEWA Operator</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4">
+          <div className="flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center">
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-xs">
+              <span className="text-muted-foreground">Active Role:</span>
+              <span className="font-bold text-foreground">{ROLE_LABELS[role]}</span>
+              {role !== "operator" ? (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setRole("operator");
+                    toast.success("Switched to PEWA Operator role");
+                  }}
+                >
+                  <UserCheck className="mr-1 h-3 w-3" />
+                  Act as Operator
+                </Button>
+              ) : (
+                <Badge className="bg-emerald-600 text-white">Operator Active</Badge>
+              )}
+            </div>
+
+            <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+              <Link to="/admin">
+                <Store className="mr-1.5 h-3.5 w-3.5" />
+                Merchant Workspace
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+              <Link to="/discover">
+                <Eye className="mr-1.5 h-3.5 w-3.5" />
+                Customer Home
+              </Link>
+            </Button>
+          </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+          <div className="hidden md:block">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-xs">
               <span className="text-muted-foreground">Active Role:</span>
@@ -339,6 +391,7 @@ export function OperatorConsolePage() {
                 Customer Home
               </Link>
             </Button>
+          </div>
           </div>
         </div>
 
