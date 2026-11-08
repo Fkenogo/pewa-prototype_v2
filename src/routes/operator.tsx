@@ -287,7 +287,7 @@ export function OperatorConsolePage() {
     <div className="min-h-screen bg-muted/20 pb-20">
       {/* Top Console Navigation */}
       <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 py-4 pl-4 pr-32 sm:px-6 md:flex-wrap md:gap-4">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 py-4 pl-4 pr-32 md:px-6 md:flex-wrap md:gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               <Shield className="h-5 w-5" />
